@@ -56,7 +56,7 @@ def extract_sample(sample_size):
     return results
  
  
-def save_csv(rows, filename="rq01_rq02_sample.csv"):
+def save_csv(rows, filename="lab01/dados/rq01_rq02_sample.csv"):
     with open(filename, "w", newline="", encoding="utf-8") as f:
         writer = csv.DictWriter(f, fieldnames=rows[0].keys())
         writer.writeheader()
