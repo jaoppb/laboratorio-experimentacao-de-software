@@ -1,0 +1,6 @@
+{
+    "repo": "repo['nameWithOwner']",
+    "primary_language": "repo['primaryLanguage']['name'] if repo.get('primaryLanguage') else None",
+    "__connections__": 0,
+    "__optimal_batch_size__": 100
+}

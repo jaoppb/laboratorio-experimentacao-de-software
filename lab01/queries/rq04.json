@@ -1,0 +1,7 @@
+{
+    "repo": "repo['nameWithOwner']",
+    "updated_at": "repo['updatedAt']",
+    "time_since_update_days": "(datetime.now(timezone.utc) - datetime.fromisoformat(repo['updatedAt'].replace('Z', '+00:00'))).days",
+    "__connections__": 0,
+    "__optimal_batch_size__": 100
+}

@@ -1,0 +1,6 @@
+{
+    "repo": "repo['nameWithOwner']",
+    "total_releases": "repo['releases']['totalCount']",
+    "__connections__": 1,
+    "__optimal_batch_size__": 40
+}
