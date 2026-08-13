@@ -14,15 +14,8 @@ class QueryLoader:
             content = f.read()
             
         with open(json_path, "r", encoding="utf-8") as f:
-            raw_mappings = json.load(f)
+            metadata_json = json.load(f)
             
-        connections = raw_mappings.pop("__connections__", 0)
-        optimal_batch_size = raw_mappings.pop("__optimal_batch_size__", 5)
-        
-        metadata = QueryMetadata(
-            connections=connections,
-            optimal_batch_size=optimal_batch_size,
-            mappings=raw_mappings
-        )
+        metadata = QueryMetadata(**metadata_json)
             
         return Query(name=rq_name, content=content, metadata=metadata)

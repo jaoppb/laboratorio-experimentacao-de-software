@@ -1,16 +1,21 @@
 {
-    "repo": "repo['nameWithOwner']",
-    "created_at": "repo['createdAt']",
-    "age_days": "(datetime.now(timezone.utc) - datetime.fromisoformat(repo['createdAt'].replace('Z', '+00:00'))).days",
-    "merged_pull_requests": "repo['mergedPRs']['totalCount']",
-    "total_releases": "repo['releases']['totalCount']",
-    "updated_at": "repo['updatedAt']",
-    "time_since_update_days": "(datetime.now(timezone.utc) - datetime.fromisoformat(repo['updatedAt'].replace('Z', '+00:00'))).days",
-    "primary_language": "repo['primaryLanguage']['name'] if repo.get('primaryLanguage') else None",
-    "closed_issues": "repo['closedIssues']['totalCount']",
-    "open_issues": "repo['openIssues']['totalCount']",
-    "total_issues": "repo['closedIssues']['totalCount'] + repo['openIssues']['totalCount']",
-    "closed_issues_ratio": "repo['closedIssues']['totalCount'] / (repo['closedIssues']['totalCount'] + repo['openIssues']['totalCount']) if (repo['closedIssues']['totalCount'] + repo['openIssues']['totalCount']) > 0 else None",
-    "__connections__": 4,
-    "__optimal_batch_size__": 5
+    "config": {
+        "connections": 4,
+        "optimal_batch_size": 100,
+        "cost": 1
+    },
+    "extractors": {
+        "repo": "repo['nameWithOwner']",
+        "created_at": "repo['createdAt']",
+        "age_days": "(datetime.now(timezone.utc) - datetime.fromisoformat(repo['createdAt'].replace('Z', '+00:00'))).days",
+        "merged_pull_requests": "repo['mergedPRs']['totalCount']",
+        "total_releases": "repo['releases']['totalCount']",
+        "updated_at": "repo['updatedAt']",
+        "time_since_update_days": "(datetime.now(timezone.utc) - datetime.fromisoformat(repo['updatedAt'].replace('Z', '+00:00'))).days",
+        "primary_language": "repo['primaryLanguage']['name'] if repo.get('primaryLanguage') else None",
+        "closed_issues": "repo['closedIssues']['totalCount']",
+        "open_issues": "repo['openIssues']['totalCount']",
+        "total_issues": "repo['closedIssues']['totalCount'] + repo['openIssues']['totalCount']",
+        "closed_issues_ratio": "repo['closedIssues']['totalCount'] / (repo['closedIssues']['totalCount'] + repo['openIssues']['totalCount']) if (repo['closedIssues']['totalCount'] + repo['openIssues']['totalCount']) > 0 else None"
+    }
 }

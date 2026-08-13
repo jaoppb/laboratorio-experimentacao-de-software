@@ -11,13 +11,13 @@ class QueryRunner:
     def __init__(self, client: GitHubClient):
         self.client = client
 
-    def run_query(self, query_obj: Query, sample_size: int) -> List[Dict]:
+    async def run_query(self, query_obj: Query, sample_size: int) -> List[Dict]:
         results = []
         cursor = None
         
         # Dynamically load the best batch size from the JSON declarative configuration
-        connections = query_obj.metadata.connections
-        batch_size = query_obj.metadata.optimal_batch_size
+        connections = query_obj.metadata.config.connections
+        batch_size = query_obj.metadata.config.optimal_batch_size
             
         logger.info(f"  [Optimizer] Selected batch size of {batch_size} for {connections} connection(s)")
         
@@ -34,7 +34,17 @@ class QueryRunner:
             query_obj.metadata.last_theoretical_cost = theoretical_cost
             logger.info(f"  [Calculated Metadata] Expected Cost: {theoretical_cost} points")
             
-            data = self.client.run_query(query_obj.content, variables)
+            try:
+                data = await self.client.run_query(query_obj.content, variables)
+            except Exception as e:
+                if batch_size > 1:
+                    new_batch_size = max(1, batch_size // 2)
+                    logger.warning(f"  [Optimizer] Query failed. Backing off batch size: {batch_size} -> {new_batch_size}")
+                    batch_size = new_batch_size
+                    continue
+                else:
+                    logger.error(f"  [Optimizer] Query failed even with batch_size=1. Aborting.")
+                    raise e
             
             if "rateLimit" in data["data"]:
                 rl = data["data"]["rateLimit"]
@@ -56,7 +66,7 @@ class QueryRunner:
                     "timezone": timezone
                 }
                 
-                for target_col, python_expr in query_obj.metadata.mappings.items():
+                for target_col, python_expr in query_obj.metadata.extractors.items():
                     try:
                         parsed_row[target_col] = eval(python_expr, env)
                     except Exception as e:

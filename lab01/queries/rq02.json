@@ -1,6 +1,11 @@
 {
-    "repo": "repo['nameWithOwner']",
-    "merged_pull_requests": "repo['mergedPRs']['totalCount']",
-    "__connections__": 1,
-    "__optimal_batch_size__": 40
+    "config": {
+        "connections": 1,
+        "optimal_batch_size": 100,
+        "cost": 1
+    },
+    "extractors": {
+        "repo": "repo['nameWithOwner']",
+        "merged_pull_requests": "repo['mergedPRs']['totalCount']"
+    }
 }

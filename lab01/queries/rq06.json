@@ -1,9 +1,14 @@
 {
-    "repo": "repo['nameWithOwner']",
-    "closed_issues": "repo['closedIssues']['totalCount']",
-    "open_issues": "repo['openIssues']['totalCount']",
-    "total_issues": "repo['closedIssues']['totalCount'] + repo['openIssues']['totalCount']",
-    "closed_issues_ratio": "repo['closedIssues']['totalCount'] / (repo['closedIssues']['totalCount'] + repo['openIssues']['totalCount']) if (repo['closedIssues']['totalCount'] + repo['openIssues']['totalCount']) > 0 else None",
-    "__connections__": 2,
-    "__optimal_batch_size__": 20
+    "config": {
+        "connections": 2,
+        "optimal_batch_size": 100,
+        "cost": 1
+    },
+    "extractors": {
+        "repo": "repo['nameWithOwner']",
+        "closed_issues": "repo['closedIssues']['totalCount']",
+        "open_issues": "repo['openIssues']['totalCount']",
+        "total_issues": "repo['closedIssues']['totalCount'] + repo['openIssues']['totalCount']",
+        "closed_issues_ratio": "repo['closedIssues']['totalCount'] / (repo['closedIssues']['totalCount'] + repo['openIssues']['totalCount']) if (repo['closedIssues']['totalCount'] + repo['openIssues']['totalCount']) > 0 else None"
+    }
 }

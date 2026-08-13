@@ -1,11 +1,15 @@
-from dataclasses import dataclass, field
+from dataclasses import dataclass
+from pydantic import BaseModel
 from typing import Dict, Any
 
-@dataclass
-class QueryMetadata:
+class QueryConfig(BaseModel):
     connections: int
-    optimal_batch_size: int
-    mappings: Dict[str, str] = field(default_factory=dict)
+    optimal_batch_size: int = 10
+    cost: int
+
+class QueryMetadata(BaseModel):
+    config: QueryConfig
+    extractors: Dict[str, str]
     last_theoretical_cost: int = 0
     last_actual_cost: int = 0
 
@@ -18,7 +22,6 @@ class Query:
     def calculate_theoretical_cost(self, first: int) -> int:
         """
         Calculates the theoretical GitHub GraphQL point cost.
-        Base cost is 1 point for the initial query.
-        Each nested connection adds 1 point per node.
+        Reads the declarative cost directly from the JSON metadata.
         """
-        return 1 + (first * self.metadata.connections)
+        return self.metadata.config.cost

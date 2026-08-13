@@ -1,7 +1,7 @@
-import time
+import asyncio
 import logging
-import requests
-from requests.exceptions import RequestException
+import httpx
+from httpx import RequestError, HTTPStatusError
 from .token_manager import TokenManager
 
 logger = logging.getLogger(__name__)
@@ -10,8 +10,9 @@ class GitHubClient:
     def __init__(self, tokens: list[str], url: str):
         self.token_manager = TokenManager(tokens)
         self.url = url
+        self.async_client = httpx.AsyncClient(timeout=30.0)
 
-    def run_query(self, query: str, variables: dict = None, retries: int = 3) -> dict:
+    async def run_query(self, query: str, variables: dict = None, retries: int = 3) -> dict:
         for attempt in range(retries):
             token = self.token_manager.current_token
             headers = {
@@ -19,7 +20,7 @@ class GitHubClient:
                 "Content-Type": "application/json"
             }
             try:
-                response = requests.post(
+                response = await self.async_client.post(
                     self.url,
                     json={"query": query, "variables": variables or {}},
                     headers=headers
@@ -45,8 +46,11 @@ class GitHubClient:
                 
                 return payload
             
-            except RequestException as e:
+            except (RequestError, HTTPStatusError) as e:
                 logger.error(f"Request failed: {e}")
-                time.sleep(2 ** attempt)
+                await asyncio.sleep(2 ** attempt)
                 
         raise Exception("Max retries exceeded or all tokens exhausted")
+        
+    async def close(self):
+        await self.async_client.aclose()

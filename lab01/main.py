@@ -1,5 +1,6 @@
 import os
 import argparse
+import asyncio
 from src.config import settings
 from src.github_client import GitHubClient
 from src.csv_manager import CSVManager
@@ -10,7 +11,7 @@ import logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
-def main():
+async def run_all():
     parser = argparse.ArgumentParser(description="Run Lab 01 Data Extractions")
     parser.add_argument(
         "--rq", 
@@ -42,23 +43,29 @@ def main():
     else:
         rqs_to_run = [args.rq]
 
-    all_datasets = []
-
-    for rq in rqs_to_run:
+    async def execute_rq(rq):
         rq_name = f"rq0{rq}" if rq != "unified" else "unified"
-        logger.info(f"Running {rq_name.upper()}...")
+        logger.info(f"Starting {rq_name.upper()}...")
         
         query_obj = query_loader.load_query(rq_name)
-        data = query_runner.run_query(query_obj, settings.sample_size)
+        data = await query_runner.run_query(query_obj, settings.sample_size)
         
         csv_manager.save(data, f"{rq_name}_sample.csv")
-        all_datasets.append(data)
-        logger.info(f"Saved {len(data)} records for {rq_name.upper()}.\n")
+        logger.info(f"Saved {len(data)} records for {rq_name.upper()}.")
+        return data
+
+    tasks = [execute_rq(rq) for rq in rqs_to_run]
+    all_datasets = await asyncio.gather(*tasks)
+    
+    await client.close()
 
     if args.merge:
         logger.info("Merging all results into a single CSV...")
         csv_manager.merge_and_save(all_datasets, "all_results.csv", merge_key="repo")
-        logger.info("Successfully merged and saved to all_results.csv.\n")
+        logger.info("Successfully merged and saved to all_results.csv.")
+
+def main():
+    asyncio.run(run_all())
 
 if __name__ == "__main__":
     main()

@@ -1,7 +1,12 @@
 {
-    "repo": "repo['nameWithOwner']",
-    "created_at": "repo['createdAt']",
-    "age_days": "(datetime.now(timezone.utc) - datetime.fromisoformat(repo['createdAt'].replace('Z', '+00:00'))).days",
-    "__connections__": 0,
-    "__optimal_batch_size__": 100
+    "config": {
+        "connections": 0,
+        "optimal_batch_size": 100,
+        "cost": 1
+    },
+    "extractors": {
+        "repo": "repo['nameWithOwner']",
+        "created_at": "repo['createdAt']",
+        "age_days": "(datetime.now(timezone.utc) - datetime.fromisoformat(repo['createdAt'].replace('Z', '+00:00'))).days"
+    }
 }
