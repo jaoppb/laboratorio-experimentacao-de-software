@@ -1,11 +1,14 @@
 from dataclasses import dataclass
+from typing import Dict
+
 from pydantic import BaseModel
-from typing import Dict, Any
+
 
 class QueryConfig(BaseModel):
     connections: int
     optimal_batch_size: int = 10
     cost: int
+
 
 class QueryMetadata(BaseModel):
     config: QueryConfig
@@ -13,12 +16,13 @@ class QueryMetadata(BaseModel):
     last_theoretical_cost: int = 0
     last_actual_cost: int = 0
 
+
 @dataclass
 class Query:
     name: str
     content: str
     metadata: QueryMetadata
-    
+
     def calculate_theoretical_cost(self, first: int) -> int:
         """
         Calculates the theoretical GitHub GraphQL point cost.

@@ -1,11 +1,3 @@
-repo,updated_at,time_since_update_days,total_releases
-codecrafters-io/build-your-own-x,2026-08-13T01:15:06Z,0,0
-sindresorhus/awesome,2026-08-13T01:17:59Z,0,0
-public-apis/public-apis,2026-08-13T01:13:41Z,0,0
-freeCodeCamp/freeCodeCamp,2026-08-13T01:11:48Z,0,0
-EbookFoundation/free-programming-books,2026-08-13T01:17:31Z,0,0
-openclaw/openclaw,2026-08-13T01:14:03Z,0,233
-nilbuild/developer-roadmap,2026-08-13T00:38:51Z,0,1
-donnemartin/system-design-primer,2026-08-13T01:18:53Z,0,0
-jwasham/coding-interview-university,2026-08-13T01:15:48Z,0,0
-vinta/awesome-python,2026-08-13T01:13:51Z,0,0
+version https://git-lfs.github.com/spec/v1
+oid sha256:f50067dc4e0597792513e9834492eee79005577fa350cbb9f3bc0f562ee386a5
+size 595

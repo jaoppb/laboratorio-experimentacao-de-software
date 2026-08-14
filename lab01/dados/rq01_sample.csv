@@ -1,11 +1,3 @@
-repo,created_at,age_days
-codecrafters-io/build-your-own-x,2018-05-09T12:03:18Z,3018
-sindresorhus/awesome,2014-07-11T13:42:37Z,4416
-public-apis/public-apis,2016-03-20T23:49:42Z,3797
-freeCodeCamp/freeCodeCamp,2014-12-24T17:49:19Z,4249
-EbookFoundation/free-programming-books,2013-10-11T06:50:37Z,4689
-openclaw/openclaw,2025-11-24T10:16:47Z,262
-nilbuild/developer-roadmap,2017-03-15T13:45:52Z,3438
-donnemartin/system-design-primer,2017-02-26T16:15:28Z,3455
-jwasham/coding-interview-university,2016-06-06T02:34:12Z,3720
-vinta/awesome-python,2014-06-27T21:00:06Z,4429
+version https://git-lfs.github.com/spec/v1
+oid sha256:7862ddee79312c302c091c0532b3a096a8f555f7054665988d91a404efc56a73
+size 573

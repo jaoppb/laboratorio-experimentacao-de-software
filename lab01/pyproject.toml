@@ -5,9 +5,29 @@ description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.14"
 dependencies = [
+    "graphql-core>=3.2.11",
     "httpx>=0.28.1",
     "pydantic>=2.13.4",
     "pydantic-settings>=2.15.0",
     "python-dotenv>=1.2.2",
     "requests>=2.34.2",
+    "structlog>=26.1.0",
+]
+
+[tool.ruff]
+line-length = 88
+target-version = "py310"
+
+[tool.ruff.lint]
+# Select Pyflakes (F), pycodestyle (E, W), Flake8-bugbear (B), and isort (I)
+select = ["F", "E", "W", "B", "I"]
+ignore = ["E501"]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+
+[dependency-groups]
+dev = [
+    "ruff>=0.16.3",
 ]
