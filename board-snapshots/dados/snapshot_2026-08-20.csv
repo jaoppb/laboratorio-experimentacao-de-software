@@ -1,0 +1,13 @@
+issue_number,title,status,assignee,lab,sprint,rq
+11,Consolidar hipóteses informais em documento único (primeira versão do relatório),Done,"jaoppb, marcelacamposm, GabriAssiss",Lab01,S02,
+9,Validar dados de RQ03 + RQ04 na base de 1000 repositórios,Done,jaoppb,Lab01,S02,
+8,Validar dados de RQ01 + RQ02 na base de 1000 repositórios,Done,marcelacamposm,Lab01,S02,
+10,Validar dados de RQ05 + RQ06 na base de 1000 repositórios,Done,GabriAssiss,Lab01,S02,
+7,Implementar paginação para consulta de 100000 repositórios,Done,jaoppb,Lab01,S02,
+12,Atualizar board e exportar snapshot da Sprint S02,To Do,marcelacamposm,,,
+5,"Integrar scripts individuais em uma única consulta do grupo (100 repos, requisição automática)",Done,jaoppb,Lab01,S01,
+1,Setup inicial: estrutura de pastas e READMEs,Done,marcelacamposm,Geral,,
+2,Extrair e validar dados para RQ01 + RQ02,Done,marcelacamposm,Lab01,S01,
+3,Extrair e validar dados para RQ03 + RQ04,Done,jaoppb,Lab01,S01,
+4,Extrair e validar dados para RQ05 + RQ06,Done,GabriAssiss,Lab01,S01,
+6,"Criar script GraphQL para gerar snapshot do Project (Status, Sprint, Lab) em CSV",Done,marcelacamposm,Lab01,S01,
