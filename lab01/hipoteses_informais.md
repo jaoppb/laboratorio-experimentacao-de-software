@@ -65,15 +65,34 @@ tendência central (média e mediana), dispersão (desvio padrão) e extremos
 
 ## RQ05 + RQ06 (Gabriel)
 
-**Metodologia:** _(descrever brevemente como foi feita a validação)_
+**Metodologia:** Análise recalculada sobre o dataset completo `dados/unified_sample.csv` contendo 99984 repositórios. Embora os testes de validação em [lab01/tests/test_validacao_rq05_rq06.py](lab01/tests/test_validacao_rq05_rq06.py#L1-L100) façam uma amostra de 1000 quando aplicados, aqui extraímos estatísticas para todo o conjunto para obter medidas mais representativas. Foram computadas contagens por `primary_language`, verificados valores ausentes e calculadas estatísticas descritivas de `closed_issues_ratio` (média, mediana, quartis, desvio padrão) e detecção de outliers via IQR.
 
 **RQ05 - Linguagem primária**
-- _(distribuição por categoria/linguagem)_
-- **Hipótese informal:** _(preencher)_
+- Top 10 linguagens observadas no dataset completo (n=99984):
+  - Python: 18089
+  - JavaScript: 11858
+  - TypeScript: 9083
+  - Java: 6021
+  - Go: 5750
+  - C++: 5306
+  - C: 3927
+  - Rust: 3307
+  - C#: 2975
+  - Shell: 2495
+- Valores ausentes em `primary_language`: 8180 de 99984 (≈8.18%). Muitos registros sem linguagem identificada correspondem a coleções, documentação ou repositórios onde não foi possível inferir uma linguagem primária; portanto recomenda-se tratar explicitamente uma categoria "missing/other" nas análises por linguagem.
+- **Hipótese informal:** a distribuição de popularidade continua concentrada em algumas linguagens dominantes — Python, JavaScript e TypeScript lideram com folga —, mas existe uma fração relevante de repositórios sem linguagem bem definida. Isso reforça a necessidade de incluir uma categoria "missing/other" para evitar viés em análises por linguagem.
 
 **RQ06 - Razão de issues fechadas/total**
-- _(estatísticas encontradas)_
-- **Hipótese informal:** _(preencher)_
+- Estatísticas (dataset completo, após remover valores ausentes):
+  - Observações não-nulas: 95153
+  - Média: 0.688900
+  - Mediana: 0.750000
+  - Mínimo: 0.000000
+  - Máximo: 1.000000
+  - Desvio padrão (populacional): 0.264522
+  - Valores ausentes em `closed_issues_ratio`: 4831 de 99984 (≈4.83%) — tipicamente associados a repositórios com `total_issues == 0` (razão indefinida).
+  - Outliers (IQR): 0 observados com limites IQR ≈ [-0.0799, 1.5085], portanto não há valores além dos limites esperados pelo critério IQR.
+- **Hipótese informal:** na base completa a maioria dos repositórios fecha uma fração substancial das issues (mediana = 0.75), indicando manutenção ativa em muitos projetos. A dispersão (pstdev ≈ 0.2645) sugere variação por tipo de projeto e ecossistema; além disso, a presença de ~4.8% de valores ausentes mostra que parte da base não possui issues, exigindo tratamento explícito (ex.: filtrar ou agrupar como "sem issues") nas análises que envolvem `closed_issues_ratio`.
 
 ---
 
