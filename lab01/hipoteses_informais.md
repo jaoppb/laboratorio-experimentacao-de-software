@@ -63,7 +63,7 @@ tendência central (média e mediana), dispersão (desvio padrão) e extremos
 
 ---
 
-## RQ05 + RQ06 (Gabriel)
+## RQ05 + RQ06 (Gabriel Assis)
 
 **Metodologia:** Análise recalculada sobre o dataset completo `dados/unified_sample.csv` contendo 99984 repositórios. Embora os testes de validação em [lab01/tests/test_validacao_rq05_rq06.py](lab01/tests/test_validacao_rq05_rq06.py#L1-L100) façam uma amostra de 1000 quando aplicados, aqui extraímos estatísticas para todo o conjunto para obter medidas mais representativas. Foram computadas contagens por `primary_language`, verificados valores ausentes e calculadas estatísticas descritivas de `closed_issues_ratio` (média, mediana, quartis, desvio padrão) e detecção de outliers via IQR.
 
