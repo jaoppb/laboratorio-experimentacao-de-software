@@ -7,8 +7,10 @@ requires-python = ">=3.14"
 dependencies = [
     "graphql-core>=3.2.11",
     "httpx>=0.28.1",
+    "pandas>=3.0.5",
     "pydantic>=2.13.4",
     "pydantic-settings>=2.15.0",
+    "pytest>=9.1.1",
     "python-dotenv>=1.2.2",
     "requests>=2.34.2",
     "structlog>=26.1.0",

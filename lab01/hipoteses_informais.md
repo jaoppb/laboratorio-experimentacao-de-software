@@ -34,15 +34,32 @@ valores ausentes, distribuição e outliers (método IQR).
 
 ## RQ03 + RQ04 (João)
 
-**Metodologia:** _(descrever brevemente como foi feita a validação)_
+**Metodologia:** A validação foi realizada a partir do arquivo
+`dados/unified_sample.csv`, contendo uma amostra consolidada de 99984
+repositórios. Por meio da biblioteca `pandas`, foram calculadas métricas de
+tendência central (média e mediana), dispersão (desvio padrão) e extremos
+(mínimo e máximo) para os atributos `total_releases` (RQ03) e
+`time_since_update_days` (RQ04).
 
 **RQ03 - Total de releases**
-- _(estatísticas encontradas)_
-- **Hipótese informal:** _(preencher)_
+
+- **Estatísticas encontradas:**
+  - Média: 28.58 releases (Desvio Padrão: 87.11)
+  - Mediana: 2.00 releases
+  - Variação: de 0 a 1000 releases
+- **Hipótese informal:** Repositórios populares e com ciclo de desenvolvimento
+  maduro tendem a adotar entregas frequentes, resultando em um volume expressivo
+  de releases acumuladas.
 
 **RQ04 - Tempo desde a última atualização**
-- _(estatísticas encontradas)_
-- **Hipótese informal:** _(preencher)_
+
+- **Estatísticas encontradas:**
+  - Média: 9.25 dias (Desvio Padrão: 20.48)
+  - Mediana: 2.00 dias
+  - Variação: de 0 a 773 dias
+- **Hipótese informal:** Repositórios com grande base de usuários e
+  colaboradores recebem manutenção ativa constante, portanto a maioria
+  expressiva possui atualizações muito recentes.
 
 ---
 
@@ -63,4 +80,4 @@ valores ausentes, distribuição e outliers (método IQR).
 ## Próximos passos
 Este documento será expandido na Sprint S03 com análise e visualização de
 dados para as 7 RQs (incluindo RQ07, que cruza os resultados de RQ02, RQ03 e
-RQ04 por linguagem).
+RQ04 por linguagem)
