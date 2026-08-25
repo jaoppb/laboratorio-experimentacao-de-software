@@ -1,0 +1,10 @@
+{
+  "name": "lab01-dashboard",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Dashboard das 7 RQs do Lab01 - le dados/unified_sample.parquet direto do GitHub e calcula as estatisticas no navegador",
+  "dependencies": {
+    "hyparquet": "^1.29.1"
+  }
+}
