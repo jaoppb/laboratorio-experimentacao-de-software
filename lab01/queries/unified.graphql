@@ -13,7 +13,21 @@ query($searchQuery: String!, $first: Int!, $after: String) {
       ... on Repository {
         nameWithOwner
         createdAt
+        stargazerCount
+        forkCount
+        watchers {
+          totalCount
+        }
+        diskUsage
+        isArchived
+        isFork
         mergedPRs: pullRequests(states: MERGED) {
+          totalCount
+        }
+        openPRs: pullRequests(states: OPEN) {
+          totalCount
+        }
+        totalPRs: pullRequests {
           totalCount
         }
         releases {

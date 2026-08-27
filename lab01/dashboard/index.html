@@ -1,74 +1,13 @@
 <!doctype html>
-<html lang="pt-BR">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Repositórios Populares · Lab01 Dashboard</title>
-<link rel="stylesheet" href="styles.css">
-</head>
-<body>
-
-<div class="topbar">
-  <div class="topbar-inner">
-    <div class="brand">
-      <svg width="20" height="20" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
-        <path d="M1.5 1.75A.75.75 0 0 1 2.25 1h11.5a.75.75 0 0 1 .75.75v12.5a.75.75 0 0 1-.75.75H2.25a.75.75 0 0 1-.75-.75Zm1.5.75v11h10v-11Z"/>
-        <path d="M4.5 11.5a.75.75 0 0 1 .75-.75h1a.75.75 0 0 1 .75.75v1.25h-2.5Zm3.25-3a.75.75 0 0 1 .75-.75h1a.75.75 0 0 1 .75.75v4.25h-2.5Zm3.25-2.5a.75.75 0 0 1 .75-.75h1a.75.75 0 0 1 .75.75v6.75h-2.5Z"/>
-      </svg>
-      <span>jaoppb / laboratorio-experimentacao-de-software</span>
-      <span class="sep">/</span>
-      <b>lab01</b>
-      <span class="sep">/</span>
-      <span>dashboard</span>
-    </div>
-    <button class="theme-toggle" id="theme-toggle" type="button" aria-label="Alternar tema claro/escuro">
-      <svg id="theme-icon-dark" width="14" height="14" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
-        <path d="M9.598 1.591a.75.75 0 0 1 .785-.175 7 7 0 1 1-8.967 8.967.75.75 0 0 1 .961-.96 5.5 5.5 0 0 0 7.046-7.046.75.75 0 0 1 .175-.786Z"/>
-      </svg>
-      <svg id="theme-icon-light" width="14" height="14" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true" style="display:none">
-        <path d="M8 12a4 4 0 1 1 0-8 4 4 0 0 1 0 8ZM8 0a.75.75 0 0 1 .75.75v1.5a.75.75 0 0 1-1.5 0V.75A.75.75 0 0 1 8 0Zm0 13.5a.75.75 0 0 1 .75.75v1.5a.75.75 0 0 1-1.5 0v-1.5A.75.75 0 0 1 8 13.5Zm8-5.5a.75.75 0 0 1-.75.75h-1.5a.75.75 0 0 1 0-1.5h1.5A.75.75 0 0 1 16 8ZM2.5 8a.75.75 0 0 1-.75.75H.25a.75.75 0 0 1 0-1.5h1.5A.75.75 0 0 1 2.5 8Zm11.359-5.359a.75.75 0 0 1 0 1.061l-1.06 1.061a.75.75 0 1 1-1.062-1.06l1.061-1.062a.75.75 0 0 1 1.06 0Zm-9.5 9.5a.75.75 0 0 1 0 1.061l-1.06 1.06a.75.75 0 1 1-1.062-1.06l1.061-1.061a.75.75 0 0 1 1.06 0Zm9.5 1.061a.75.75 0 0 1-1.06 0l-1.061-1.06a.75.75 0 1 1 1.061-1.062l1.06 1.061a.75.75 0 0 1 0 1.06ZM4.359 3.702a.75.75 0 0 1-1.061 0L2.237 2.641A.75.75 0 1 1 3.3 1.58l1.06 1.061a.75.75 0 0 1 0 1.06Z"/>
-      </svg>
-      <span id="theme-label">Escuro</span>
-    </button>
-  </div>
-</div>
-
-<div class="dashboard">
-  <header class="top">
-    <span class="rq-pill">Laboratório de Experimentação de Software · Lab01S03</span>
-    <h1>Características de Repositórios Populares no GitHub</h1>
-    <p>
-      Análise das 7 questões de pesquisa do Lab01 sobre os repositórios com maior número de
-      estrelas do GitHub. Os números abaixo são calculados <b>ao vivo, no navegador</b>, a partir
-      de <code>unified_sample.parquet</code> (99.984 repositórios, convertido do CSV original por
-      <code>scripts/csv_to_parquet.py</code>) baixado diretamente do GitHub — nenhuma estatística
-      fica embutida no código. Hipóteses informais consolidadas em
-      <code>hipoteses_informais.md</code>.
-    </p>
-  </header>
-
-  <section class="kpi-grid" id="kpi-grid"></section>
-
-  <section class="rq-grid" id="rq-grid"></section>
-
-  <footer class="notes">
-    Fonte dos dados: consulta GraphQL própria à API do GitHub (sem bibliotecas de terceiros),
-    paginada para os repositórios de maior número de estrelas — script em <code>lab01/src</code>.
-    O CSV bruto é convertido para Parquet (compressão snappy, 13,06&nbsp;MB → 6,34&nbsp;MB) por
-    <code>scripts/csv_to_parquet.py</code> e commitado como blob normal do Git (não LFS, para que
-    <code>raw.githubusercontent.com</code> sirva o binário em vez do ponteiro LFS); este dashboard
-    busca esse arquivo direto do GitHub e usa
-    <a href="https://github.com/hyparam/hyparquet" target="_blank" rel="noopener">hyparquet</a>
-    (instalado via npm, MIT) para decodificá-lo e recalcular todas as estatísticas das 7 RQs em
-    JavaScript puro, no navegador. Setup local: <code>npm install</code> uma vez dentro de
-    <code>lab01/dashboard</code>, depois sirva a pasta por HTTP (não abrir via <code>file://</code>)
-    — ex.: <code>python3 -m http.server 8000</code> e acesse
-    <code>http://localhost:8000</code>.
-  </footer>
-</div>
-
-<div class="tooltip" id="tooltip"></div>
-
-<script type="module" src="dashboard.js"></script>
-</body>
+<html lang="pt-BR" class="dark">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='%232f81f7'><path d='M1.5 1.75A.75.75 0 0 1 2.25 1h11.5a.75.75 0 0 1 .75.75v12.5a.75.75 0 0 1-.75.75H2.25a.75.75 0 0 1-.75-.75Zm1.5.75v11h10v-11Z'/><path d='M4.5 11.5a.75.75 0 0 1 .75-.75h1a.75.75 0 0 1 .75.75v1.25h-2.5Zm3.25-3a.75.75 0 0 1 .75-.75h1a.75.75 0 0 1 .75.75v4.25h-2.5Zm3.25-2.5a.75.75 0 0 1 .75-.75h1a.75.75 0 0 1 .75.75v6.75h-2.5Z'/></svg>" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Repositórios Populares · Lab01 Interactive Analytics</title>
+  </head>
+  <body class="bg-gray-50 dark:bg-github-darker text-gray-900 dark:text-github-text min-h-screen antialiased transition-colors duration-200">
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
 </html>

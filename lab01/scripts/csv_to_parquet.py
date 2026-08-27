@@ -36,17 +36,25 @@ parquet_path = csv_path.with_suffix(".parquet")
 
 df = pd.read_csv(csv_path)
 
-int_cols = [
+potential_int_cols = [
     "age_days",
     "merged_pull_requests",
+    "open_pull_requests",
+    "total_pull_requests",
     "total_releases",
     "time_since_update_days",
     "closed_issues",
     "open_issues",
     "total_issues",
+    "stargazer_count",
+    "fork_count",
+    "watchers_count",
+    "disk_usage_kb",
 ]
-for col in int_cols:
-    df[col] = df[col].astype("int32")
+for col in potential_int_cols:
+    if col in df.columns:
+        df[col] = df[col].fillna(0).astype("int32")
+
 
 df["created_at"] = pd.to_datetime(df["created_at"], utc=True)
 df["updated_at"] = pd.to_datetime(df["updated_at"], utc=True)

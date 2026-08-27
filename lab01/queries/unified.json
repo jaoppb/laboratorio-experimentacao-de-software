@@ -5,17 +5,25 @@
         "cost": 1
     },
     "extractors": {
-        "repo": "repo['nameWithOwner']",
-        "created_at": "repo['createdAt']",
-        "age_days": "(datetime.now(timezone.utc) - datetime.fromisoformat(repo['createdAt'].replace('Z', '+00:00'))).days",
-        "merged_pull_requests": "repo['mergedPRs']['totalCount']",
-        "total_releases": "repo['releases']['totalCount']",
-        "updated_at": "repo['updatedAt']",
-        "time_since_update_days": "(datetime.now(timezone.utc) - datetime.fromisoformat(repo['updatedAt'].replace('Z', '+00:00'))).days",
-        "primary_language": "repo['primaryLanguage']['name'] if repo.get('primaryLanguage') else None",
-        "closed_issues": "repo['closedIssues']['totalCount']",
-        "open_issues": "repo['openIssues']['totalCount']",
-        "total_issues": "repo['closedIssues']['totalCount'] + repo['openIssues']['totalCount']",
-        "closed_issues_ratio": "repo['closedIssues']['totalCount'] / (repo['closedIssues']['totalCount'] + repo['openIssues']['totalCount']) if (repo['closedIssues']['totalCount'] + repo['openIssues']['totalCount']) > 0 else None"
+        "repo": "repo.get('nameWithOwner')",
+        "created_at": "repo.get('createdAt')",
+        "age_days": "(datetime.now(timezone.utc) - datetime.fromisoformat(repo['createdAt'].replace('Z', '+00:00'))).days if repo.get('createdAt') else None",
+        "stargazer_count": "repo.get('stargazerCount')",
+        "fork_count": "repo.get('forkCount')",
+        "watchers_count": "repo.get('watchers', {}).get('totalCount') if repo.get('watchers') else None",
+        "disk_usage_kb": "repo.get('diskUsage')",
+        "is_archived": "repo.get('isArchived')",
+        "is_fork": "repo.get('isFork')",
+        "merged_pull_requests": "repo.get('mergedPRs', {}).get('totalCount', 0)",
+        "open_pull_requests": "repo.get('openPRs', {}).get('totalCount', 0)",
+        "total_pull_requests": "repo.get('totalPRs', {}).get('totalCount', 0)",
+        "total_releases": "repo.get('releases', {}).get('totalCount', 0)",
+        "updated_at": "repo.get('updatedAt')",
+        "time_since_update_days": "(datetime.now(timezone.utc) - datetime.fromisoformat(repo['updatedAt'].replace('Z', '+00:00'))).days if repo.get('updatedAt') else None",
+        "primary_language": "repo.get('primaryLanguage', {}).get('name') if repo.get('primaryLanguage') else None",
+        "closed_issues": "repo.get('closedIssues', {}).get('totalCount', 0)",
+        "open_issues": "repo.get('openIssues', {}).get('totalCount', 0)",
+        "total_issues": "(repo.get('closedIssues', {}).get('totalCount', 0) or 0) + (repo.get('openIssues', {}).get('totalCount', 0) or 0)",
+        "closed_issues_ratio": "(repo.get('closedIssues', {}).get('totalCount', 0) / ((repo.get('closedIssues', {}).get('totalCount', 0) or 0) + (repo.get('openIssues', {}).get('totalCount', 0) or 0))) if ((repo.get('closedIssues', {}).get('totalCount', 0) or 0) + (repo.get('openIssues', {}).get('totalCount', 0) or 0)) > 0 else None"
     }
 }
