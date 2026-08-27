@@ -1,0 +1,74 @@
+name: Deploy GitHub Pages
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'lab01/**'
+      - 'pages/**'
+      - '.github/workflows/deploy-pages.yml'
+  pull_request:
+    branches:
+      - main
+    paths:
+      - 'lab01/**'
+      - 'pages/**'
+      - '.github/workflows/deploy-pages.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: 'pages'
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Setup Node.js 24
+        uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+          cache: 'npm'
+          cache-dependency-path: 'lab01/dashboard/package-lock.json'
+
+      - name: Install dependencies
+        working-directory: lab01/dashboard
+        run: npm ci
+
+      - name: Build Lab01 dashboard
+        working-directory: lab01/dashboard
+        run: npm run build
+
+      - name: Assemble Pages site
+        run: |
+          mkdir -p _site/lab01/dados
+          cp pages/index.html _site/index.html
+          cp -r lab01/dashboard/dist/* _site/lab01/
+          cp lab01/dados/unified_sample.parquet _site/lab01/dados/
+
+      - name: Upload Pages artifact
+        if: github.event_name != 'pull_request'
+        uses: actions/upload-pages-artifact@v5
+        with:
+          path: '_site'
+
+  deploy:
+    needs: build
+    if: (github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch') && github.event_name != 'pull_request'
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v5

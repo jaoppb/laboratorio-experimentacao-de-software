@@ -10,8 +10,10 @@
 - João Pedro Peres - [@jaoppb](https://github.com/jaoppb)
 - Marcela Mendes Campos - [@marcelacamposm](https://github.com/marcelacamposm)
 
-## GitHub Projects (Kanban)
-[Link do board](https://github.com/users/jaoppb/projects/3/views/1)
+## Links
+- [Portal GitHub Pages](https://jaoppb.github.io/laboratorio-experimentacao-de-software/)
+- [Dashboard Lab01](https://jaoppb.github.io/laboratorio-experimentacao-de-software/lab01/)
+- [Quadro Kanban (GitHub Projects)](https://github.com/users/jaoppb/projects/3/views/1)
 
 ## Laboratórios
 - [Lab01](./lab01/README.md)
