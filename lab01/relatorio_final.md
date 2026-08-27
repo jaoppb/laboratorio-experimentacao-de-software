@@ -7,7 +7,7 @@
 | **Turno / Período** | Noite / 6º |
 | **Professor(a)** | Danilo Maia |
 | **Laboratório** | Lab01 — Características de Repositórios Populares + Setup do Kanban |
-| **Grupo (trio)** | Marcela Campos (@marcelacamposm) · João Pedro Peres (@jaoppb) · Gabriel Assis |
+| **Grupo (trio)** | Marcela Campos (@marcelacamposm) · João Pedro Peres (@jaoppb) · Gabriel Assis (@GabriAssiss)|
 | **Link do repositório / GitHub Projects** | https://github.com/jaoppb/laboratorio-experimentacao-de-software · Projects: https://github.com/users/jaoppb/projects/3 |
 | **Data de entrega** | 26/08/2026 |
 
@@ -52,13 +52,14 @@ como quadro Kanban do grupo, processo mantido durante todo o semestre.
   substancial das suas issues, indicando manutenção ativa na maior parte dos
   projetos.
 
-Além do enunciado, o grupo propôs como contribuição adicional (30% de
-inovação): **(i)** um dashboard interativo publicado na web, com filtros
+Além do enunciado, o grupo propôs como contribuição adicional: **(i)** um dashboard interativo publicado na web, com filtros
 multidimensionais e inspeção de repositório individual; **(ii)** uma matriz
 de correlação de Spearman entre as seis métricas numéricas, ampliando o
 escopo da RQ07; **(iii)** processamento da base completa de repositórios
 (99.984, não apenas a amostra mínima de 1.000) para as visualizações do
 dashboard. Detalhes na seção 3.6.
+
+[Dashboard Interativo](https://jaoppb.github.io/laboratorio-experimentacao-de-software/lab01/)
 
 ---
 
@@ -173,8 +174,7 @@ cartões na coluna Doing (justificativa na seção 3.2), e campos customizados
 Lab, Sprint e RQ para organizar as Issues ao longo dos cinco laboratórios do
 semestre.
 
-*[inserir aqui a captura de tela (print) do board GitHub Projects, mostrando
-o estado ao final do Lab01]*
+![Board final do Lab01](docs/board_final.png)
 
 ### 3.4 Ferramentas
 
@@ -364,18 +364,6 @@ mantidos ativamente (mediana de 2 dias sem atualização) e concentram boa
 parte de sua base em poucas linguagens, com Python à frente. A taxa de
 resolução de issues é tipicamente alta (mediana de 75%), sugerindo
 comunidades ativas na triagem de problemas.
-
-**Principais limitações:** a amostra de validação estatística de RQ01/RQ02
-(1.000 repositórios) é menor que a base completa (99.984) usada para
-RQ03-RQ06 e para o dashboard; a coleta foi pontual, sem replicação em outro
-momento do semestre; a definição de "popular" via estrelas favorece certos
-tipos de repositório (listas curadas) sobre outros.
-
-Com mais tempo, o grupo padronizaria a validação estatística de todas as
-RQs sobre a base completa (99.984), e aprofundaria a matriz de correlação
-com testes de significância estatística formais. A extensão do dashboard
-interativo e do script de geração automática de resultados para os
-próximos laboratórios é a inovação que mais valeria a pena expandir.
 
 ---
 
