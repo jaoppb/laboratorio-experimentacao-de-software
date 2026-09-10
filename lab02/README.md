@@ -37,11 +37,13 @@ estática no código final de cada trial.
   todos os testes de aceitação ("time-to-green"), com limite de 35 min por
   trial. Se estourar o tempo sem sucesso, registra como **censurado em
   35 min** (o dado não é descartado).
-- **João Pedro** — Ambiente + script de métricas estáticas: monta o
-  ambiente do experimento (linguagem, IDE, assistente de IA fixado — o
-  mesmo para todos os trials) e o script que roda CK/PMD (Java) ou
-  Radon/jscpd (outra linguagem) sobre o código de cada trial, medindo
-  complexidade ciclomática, duplicação e LOC.
+- **João Pedro** — Ambiente + script de métricas estáticas: montou o
+  ambiente do experimento (Python 3, gerenciado com `uv`, IDE configurada e
+  assistente fixado no **Gemini 3.8 Flash** para todos os trials) e o script
+  de métricas estáticas ([`scripts/collect_metrics.py`](scripts/collect_metrics.py)),
+  que coleta LOC (controle), complexidade ciclomática média (Radon CC),
+  % de linhas duplicadas (jscpd / fallback Python) e Índice de Manutenibilidade
+  (Radon MI). Documentação completa em [`docs/ambiente.md`](docs/ambiente.md).
 - **Gabriel Assis** — Katas + testes de aceitação — 6 katas da XIII Maratona
   Mineira de Programação (2026), com enunciados, testes de aceitação e runner
   em [`katas/`](katas/README.md). Fonte escolhida por ser pouco indexada
@@ -51,3 +53,20 @@ estática no código final de cada trial.
   variáveis, tipo de experimento (crossover within-subject), quantidade de
   medições e ameaças à validade (efeito aprendizado, familiaridade com a
   IA, memorização de kata conhecido).
+
+## Como rodar o script de métricas estáticas
+
+```bash
+cd lab02
+uv sync
+
+# Analisar os gabaritos ou uma solução específica
+uv run python scripts/collect_metrics.py katas/gabaritos/
+
+# Gerar saída em CSV para análise da Sprint 3
+uv run python scripts/collect_metrics.py solucao.py --format csv --participant joao --treatment ai --kata 01-bario-world
+
+# Rodar os testes automatizados
+uv run pytest
+```
+

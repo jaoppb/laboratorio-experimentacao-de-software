@@ -1,0 +1,35 @@
+[project]
+name = "lab02"
+version = "0.1.0"
+description = "Lab02 - Experimento Controlado: Assistente de IA na Resolução de Katas"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "radon>=6.0.1",
+    "pytest>=8.0.0",
+]
+
+[dependency-groups]
+dev = [
+    "ruff>=0.9.0",
+]
+
+[tool.ruff]
+line-length = 88
+target-version = "py312"
+exclude = ["katas"]
+
+[tool.ruff.lint]
+select = ["F", "E", "W", "B", "I"]
+ignore = ["E501"]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+pythonpath = ["."]
+
+
