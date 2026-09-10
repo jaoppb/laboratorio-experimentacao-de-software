@@ -54,7 +54,7 @@ estática no código final de cada trial.
   medições e ameaças à validade (efeito aprendizado, familiaridade com a
   IA, memorização de kata conhecido).
 
-## Como rodar o script de métricas estáticas
+## Como rodar o script de métricas estáticas (RQ3)
 
 ```bash
 cd lab02
@@ -64,9 +64,38 @@ uv sync
 uv run python scripts/collect_metrics.py katas/gabaritos/
 
 # Gerar saída em CSV para análise da Sprint 3
-uv run python scripts/collect_metrics.py solucao.py --format csv --participant joao --treatment ai --kata 01-bario-world
+uv run python scripts/collect_metrics.py solucao.py --format csv --participant joao --treatment ai --kata 01-bario-world --trial-id trial-01
 
 # Rodar os testes automatizados
 uv run pytest
 ```
+
+## Como rodar o script de cronometragem de trials (RQ1 e RQ2)
+
+```bash
+cd lab02
+uv sync
+
+# Iniciar o cronômetro para um trial (com IA)
+uv run python scripts/time_trial.py \
+  --trial-id trial-01 \
+  --participant marcela \
+  --treatment com_ia \
+  --kata 01-bario-world \
+  --solution solucao.py
+
+# Iniciar o cronômetro para um trial manual (sem IA)
+uv run python scripts/time_trial.py \
+  --trial-id trial-02 \
+  --participant joao \
+  --treatment sem_ia \
+  --kata 02-cards \
+  --solution solucao.py
+
+# Opções adicionais:
+# --timebox MINUTOS   (padrão: 35 min)
+# --interval SEGUNDOS (padrão: 10s entre verificações automáticas)
+# --output-csv NOME   (padrão: trials.csv, salvo em lab02/dados/)
+```
+
 
