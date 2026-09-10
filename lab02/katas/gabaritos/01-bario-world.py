@@ -16,7 +16,6 @@ def solve(n, s):
             break
         if s[i] == "x":
             k = run[i + 1] if i + 1 < n else 0
-            # correr ate o fim nao gasta pulo: so pula quem precisa passar buraco
             if i + k >= n - 1:
                 return jumps
             reach = i + 2 * k + 1
