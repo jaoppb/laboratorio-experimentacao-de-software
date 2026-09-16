@@ -1,7 +1,7 @@
 file,kata,participant,treatment,trial_id,loc,sloc,lloc,comments,blank,functions_count,cc_avg,cc_max,cc_min,cc_total,cc_rank,duplicated_lines,duplication_percentage,clones_count,duplication_tool,mi,mi_rank,status,error_message
-/home/assis/Repositorios/laboratorio-experimentacao-de-software/lab02/katas/01-bario-world/Gabriel/solution.py,solution,gabriel,ai,,83,58,60,1,19,2,10.0,17,3,20,B,0,0.0,0,jscpd,57.07,A,ok,
-/home/assis/Repositorios/laboratorio-experimentacao-de-software/lab02/katas/02-cards/Gabriel/solution.py,solution,gabriel,ai,,55,34,40,4,12,1,9.0,9,9,9,B,0,0.0,0,jscpd,74.51,A,ok,
-/home/assis/Repositorios/laboratorio-experimentacao-de-software/lab02/katas/03-exploring-terrain/Gabriel/solution.py,solution,gabriel,ai,,89,57,62,9,18,1,17.0,17,17,17,C,4,4.49,1,jscpd,64.59,A,ok,
-/home/assis/Repositorios/laboratorio-experimentacao-de-software/lab02/katas/04-garment-groups/Gabriel/solution.py,solution,gabriel,ai,,26,10,11,4,7,1,2.0,2,2,2,A,0,0.0,0,jscpd,94.2,A,ok,
-/home/assis/Repositorios/laboratorio-experimentacao-de-software/lab02/katas/05-dish-rack/Gabriel/solution.py,solution,gabriel,ai,,76,45,48,8,18,3,3.33,4,3,10,A,0,0.0,0,jscpd,68.82,A,ok,
-/home/assis/Repositorios/laboratorio-experimentacao-de-software/lab02/katas/06-n-checkers/Gabriel/solution.py,solution,gabriel,ai,,64,39,42,5,15,1,8.0,8,8,8,B,0,0.0,0,jscpd,70.8,A,ok,
+/home/assis/Repositorios/laboratorio-experimentacao-de-software/lab02/katas/01-bario-world/gemini-flash-3.8/solution.py,solution,gabriel,ai,,83,58,60,1,19,2,10.0,17,3,20,B,0,0.0,0,jscpd,57.07,A,ok,
+/home/assis/Repositorios/laboratorio-experimentacao-de-software/lab02/katas/02-cards/gemini-flash-3.8/solution.py,solution,gabriel,ai,,55,34,40,4,12,1,9.0,9,9,9,B,0,0.0,0,jscpd,74.51,A,ok,
+/home/assis/Repositorios/laboratorio-experimentacao-de-software/lab02/katas/03-exploring-terrain/gemini-flash-3.8/solution.py,solution,gabriel,ai,,89,57,62,9,18,1,17.0,17,17,17,C,4,4.49,1,jscpd,64.59,A,ok,
+/home/assis/Repositorios/laboratorio-experimentacao-de-software/lab02/katas/04-garment-groups/gemini-flash-3.8/solution.py,solution,gabriel,ai,,26,10,11,4,7,1,2.0,2,2,2,A,0,0.0,0,jscpd,94.2,A,ok,
+/home/assis/Repositorios/laboratorio-experimentacao-de-software/lab02/katas/05-dish-rack/gemini-flash-3.8/solution.py,solution,gabriel,ai,,76,45,48,8,18,3,3.33,4,3,10,A,0,0.0,0,jscpd,68.82,A,ok,
+/home/assis/Repositorios/laboratorio-experimentacao-de-software/lab02/katas/06-n-checkers/gemini-flash-3.8/solution.py,solution,gabriel,ai,,64,39,42,5,15,1,8.0,8,8,8,B,0,0.0,0,jscpd,70.8,A,ok,
