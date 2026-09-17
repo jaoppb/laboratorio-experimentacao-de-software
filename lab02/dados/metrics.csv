@@ -11,6 +11,6 @@ lab02/katas/03-exploring-terrain/claude-sonnet-5/solution.py,solution,joao,ai,tr
 lab02/katas/04-garment-groups/claude-sonnet-5/solution.py,solution,joao,ai,trial-joao-04,15,8,8,3,4,1,1.0,1,1,1,A,0,0.0,0,jscpd,99.61,A,ok,
 lab02/katas/05-dish-rack/claude-sonnet-5/solution.py,solution,joao,ai,trial-joao-05,82,51,52,9,12,2,4.0,5,3,8,A,0,0.0,0,jscpd,70.52,A,ok,
 lab02/katas/06-n-checkers/claude-sonnet-5/solution.py,solution,joao,ai,trial-joao-06,42,34,34,0,8,1,6.0,6,6,6,B,0,0.0,0,jscpd,47.85,A,ok,
-lab02/katas/01-bario-world/jaoppb/solution.py,01-bario-world,joao,manual,trial-joao-manual-01,65,43,43,7,16,2,7.5,13,2,15,B,0,0.0,0,jscpd,65.03,A,ok,
+lab02/katas/01-bario-world/jaoppb/solution.py,01-bario-world,joao,manual,trial-joao-manual-01,58,47,47,0,11,0,16.0,16,16,16,C,0,0.0,0,jscpd,43.29,A,ok,
 lab02/katas/02-cards/jaoppb/solution.py,02-cards,joao,manual,trial-joao-manual-02,20,15,15,0,5,0,5.0,5,5,5,A,0,0.0,0,jscpd,60.91,A,ok,
 lab02/katas/03-exploring-terrain/jaoppb/solution.py,03-exploring-terrain,joao,manual,trial-joao-manual-03,41,30,30,0,11,2,2.0,2,2,4,A,0,0.0,0,jscpd,49.22,A,ok,
