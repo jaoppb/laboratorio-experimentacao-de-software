@@ -22,3 +22,4 @@ lab02/katas/02-cards/gabriel/solution.py,02-cards,gabriel,manual,trial-gabriel-m
 lab02/katas/03-exploring-terrain/gabriel/solution.py,03-exploring-terrain,gabriel,manual,trial-gabriel-manual-03,64,49,53,0,15,2,7.5,10,5,15,B,0,0.0,0,jscpd,42.11,A,ok,
 lab02/katas/04-garment-groups/gabriel/solution.py,04-garment-groups,gabriel,manual,trial-gabriel-manual-04,5,3,3,0,2,0,1.0,1,1,1,A,0,0.0,0,jscpd,84.72,A,ok,
 lab02/katas/05-dish-rack/gabriel/solution.py,05-dish-rack,gabriel,manual,trial-gabriel-manual-05,43,33,33,0,10,3,2.67,3,2,8,A,0,0.0,0,jscpd,47.24,A,ok,
+lab02/katas/06-n-checkers/gabriel/solution.py,06-n-checkers,gabriel,manual,trial-gabriel-manual-06,38,28,28,0,10,1,5.0,5,5,5,A,0,0.0,0,jscpd,50.34,A,ok,
