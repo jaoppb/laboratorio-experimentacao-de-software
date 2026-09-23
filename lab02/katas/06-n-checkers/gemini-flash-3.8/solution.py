@@ -1,63 +1,50 @@
-#!/usr/bin/env python3
-"""
-Kata 06 — N-Checkers
-Solução com IA (Gemini 3.8 Flash) para Gabriel Assis.
-Busca em profundidade com backtracking sobre o tabuleiro em O(ramificações).
-"""
-
 import sys
 
 
-def solve() -> None:
+def solve():
     input_data = sys.stdin.read().split()
     if not input_data:
         return
 
     n = int(input_data[0])
-    board_rows = input_data[1 : n + 1]
-    board = [list(row) for row in board_rows]
+    board = [list(row) for row in input_data[1 : n + 1]]
 
-    # Direções diagonais de captura
-    directions = [(-1, -1), (-1, 1), (1, -1), (1, 1)]
+    dirs = ((-1, -1), (-1, 1), (1, -1), (1, 1))
 
-    def dfs(r: int, c: int) -> int:
-        max_captures = 0
-        for dr, dc in directions:
-            mr, mc = r + dr, c + dc
-            lr, lc = r + 2 * dr, c + 2 * dc
+    max_c = 0
 
-            if 0 <= lr < n and 0 <= lc < n:
-                if board[mr][mc] == "P" and board[lr][lc] == ".":
-                    # Efetua o salto e captura
-                    board[mr][mc] = "."
+    def dfs(r, c, captured):
+        nonlocal max_c
+        if captured > max_c:
+            max_c = captured
+
+        for dr, dc in dirs:
+            nr, nc = r + dr, c + dc
+            nnr, nnc = r + 2 * dr, c + 2 * dc
+            if 0 <= nnr < n and 0 <= nnc < n:
+                if board[nr][nc] == "P" and board[nnr][nnc] == ".":
+                    # Realiza o salto e remove temporariamente a peça adversária
                     board[r][c] = "."
-                    board[lr][lc] = "B"
+                    board[nr][nc] = "."
+                    board[nnr][nnc] = "B"
 
-                    captures = 1 + dfs(lr, lc)
-                    if captures > max_captures:
-                        max_captures = captures
+                    dfs(nnr, nnc, captured + 1)
 
-                    # Desfaz o movimento (backtracking)
-                    board[lr][lc] = "."
+                    # Backtracking
+                    board[nnr][nnc] = "."
+                    board[nr][nc] = "P"
                     board[r][c] = "B"
-                    board[mr][mc] = "P"
 
-        return max_captures
-
-    # Identifica todas as peças brancas ('B') de Bob
-    white_pieces: list[tuple[int, int]] = []
+    ans = 0
     for r in range(n):
         for c in range(n):
             if board[r][c] == "B":
-                white_pieces.append((r, c))
+                max_c = 0
+                dfs(r, c, 0)
+                if max_c > ans:
+                    ans = max_c
 
-    overall_max = 0
-    for r, c in white_pieces:
-        captures = dfs(r, c)
-        if captures > overall_max:
-            overall_max = captures
-
-    print(overall_max)
+    sys.stdout.write(f"{ans}\n")
 
 
 if __name__ == "__main__":

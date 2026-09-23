@@ -1,89 +1,64 @@
-#!/usr/bin/env python3
-"""
-Kata 03 — Exploring the Terrain
-Solução com IA (Gemini 3.8 Flash) para Gabriel Assis.
-Simulação sobre matriz com resolução de conflitos temporais em O(T).
-"""
-
 import sys
 
 
-def main() -> None:
+def solve():
     input_data = sys.stdin.read().split()
     if not input_data:
         return
 
-    n = int(input_data[0])
-    m = int(input_data[1])
-    t = int(input_data[2])
+    iterator = iter(input_data)
+    n = int(next(iterator))
+    m = int(next(iterator))
+    t = int(next(iterator))
 
-    ptr = 3
-    # Matriz 0-indexada de minérios
-    grid: list[list[int]] = []
+    grid = []
     for _ in range(n):
-        row = [int(x) for x in input_data[ptr : ptr + m]]
+        row = [int(next(iterator)) for _ in range(m)]
         grid.append(row)
-        ptr += m
 
-    # Coordenadas de Giovana (T pares)
-    giovana_coords: list[tuple[int, int]] = []
+    gio_coords = []
     for _ in range(t):
-        r = int(input_data[ptr]) - 1
-        c = int(input_data[ptr + 1]) - 1
-        giovana_coords.append((r, c))
-        ptr += 2
+        r = int(next(iterator)) - 1
+        c = int(next(iterator)) - 1
+        gio_coords.append((r, c))
 
-    # Coordenadas de Arthur (T pares)
-    arthur_coords: list[tuple[int, int]] = []
+    art_coords = []
     for _ in range(t):
-        r = int(input_data[ptr]) - 1
-        c = int(input_data[ptr + 1]) - 1
-        arthur_coords.append((r, c))
-        ptr += 2
+        r = int(next(iterator)) - 1
+        c = int(next(iterator)) - 1
+        art_coords.append((r, c))
 
-    offsets = [(0, 0), (-1, 0), (1, 0), (0, -1), (0, 1)]
+    g_total = 0
+    a_total = 0
 
-    total_giovana = 0
-    total_arthur = 0
+    deltas = ((0, 0), (-1, 0), (1, 0), (0, -1), (0, 1))
 
     for step in range(t):
-        gr, gc = giovana_coords[step]
-        ar, ac = arthur_coords[step]
+        gr, gc = gio_coords[step]
+        ar, ac = art_coords[step]
 
-        # Células válidas no alcance de Giovana no instante step
-        g_cells = set()
-        for dr, dc in offsets:
-            nr, nc = gr + dr, gc + dc
-            if 0 <= nr < n and 0 <= nc < m:
-                g_cells.add((nr, nc))
+        # Giovana extrai células do seu alcance que não estão no alcance de Arthur
+        for dr, dc in deltas:
+            r, c = gr + dr, gc + dc
+            if 0 <= r < n and 0 <= c < m:
+                if abs(r - ar) + abs(c - ac) > 1:
+                    val = grid[r][c]
+                    if val:
+                        g_total += val
+                        grid[r][c] = 0
 
-        # Células válidas no alcance de Arthur no instante step
-        a_cells = set()
-        for dr, dc in offsets:
-            nr, nc = ar + dr, ac + dc
-            if 0 <= nr < n and 0 <= nc < m:
-                a_cells.add((nr, nc))
+        # Arthur extrai células do seu alcance que não estão no alcance de Giovana
+        for dr, dc in deltas:
+            r, c = ar + dr, ac + dc
+            if 0 <= r < n and 0 <= c < m:
+                if abs(r - gr) + abs(c - gc) > 1:
+                    val = grid[r][c]
+                    if val:
+                        a_total += val
+                        grid[r][c] = 0
 
-        # Células disputadas simultaneamente por ambos não são extraídas
-        g_exclusive = g_cells - a_cells
-        a_exclusive = a_cells - g_cells
-
-        # Extração de Giovana
-        for r, c in g_exclusive:
-            val = grid[r][c]
-            if val > 0:
-                total_giovana += val
-                grid[r][c] = 0
-
-        # Extração de Arthur
-        for r, c in a_exclusive:
-            val = grid[r][c]
-            if val > 0:
-                total_arthur += val
-                grid[r][c] = 0
-
-    print(f"{total_giovana} {total_arthur}")
+    sys.stdout.write(f"{g_total} {a_total}\n")
 
 
 if __name__ == "__main__":
-    main()
+    solve()

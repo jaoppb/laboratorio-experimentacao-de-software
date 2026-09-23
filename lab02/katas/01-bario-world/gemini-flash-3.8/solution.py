@@ -1,83 +1,80 @@
-#!/usr/bin/env python3
-"""
-Kata 01 — Bario World
-Solução com IA (Gemini 3.8 Flash) para Gabriel Assis.
-Algoritmo Guloso (BFS / Jump Game) em O(N).
-"""
-
 import sys
 
 
-def solve_case(n: int, s: str) -> int:
-    segments: list[tuple[int, int]] = []
-    in_segment = False
-    start = 0
-
-    for i, ch in enumerate(s):
-        if ch == "x":
-            if not in_segment:
-                start = i
-                in_segment = True
-        else:
-            if in_segment:
-                segments.append((start, i - 1))
-                in_segment = False
-    if in_segment:
-        segments.append((start, n - 1))
-
-    if not segments or segments[0][0] != 0 or segments[-1][1] != n - 1:
-        return -1
-
-    if segments[0][1] == n - 1:
-        return 0
-
-    curr_reach = 2 * segments[0][1] - segments[0][0] + 1
-    next_reach = curr_reach
-    jumps = 1
-    idx = 1
-    m = len(segments)
-
-    while idx < m:
-        advanced = False
-        while idx < m and segments[idx][0] <= curr_reach:
-            advanced = True
-            seg_start, seg_end = segments[idx]
-            if seg_end == n - 1:
-                return jumps
-            reach = 2 * seg_end - seg_start + 1
-            if reach > next_reach:
-                next_reach = reach
-            idx += 1
-
-        if not advanced:
-            return -1
-
-        if next_reach <= curr_reach:
-            return -1
-
-        curr_reach = next_reach
-        jumps += 1
-
-    return -1
-
-
-def main() -> None:
+def solve():
     input_data = sys.stdin.read().split()
     if not input_data:
         return
 
     t = int(input_data[0])
-    ptr = 1
-    results = []
+    idx = 1
+    out = []
 
     for _ in range(t):
-        n = int(input_data[ptr])
-        s = input_data[ptr + 1]
-        ptr += 2
-        results.append(str(solve_case(n, s)))
+        n = int(input_data[idx])
+        s = input_data[idx + 1]
+        idx += 2
 
-    sys.stdout.write("\n".join(results) + "\n")
+        # Identifica as ilhas de blocos sólidos 'x'
+        islands = []
+        i = 0
+        while i < n:
+            if s[i] == 'x':
+                start = i + 1
+                while i < n and s[i] == 'x':
+                    i += 1
+                end = i
+                islands.append((start, end))
+            else:
+                i += 1
+
+        num_islands = len(islands)
+
+        # Sem buracos: Bario corre até o fim sem gastar nenhum pulo
+        if num_islands <= 1:
+            out.append("0")
+            continue
+
+        target_start = islands[-1][0]
+
+        s0, e0 = islands[0]
+        r0 = 2 * e0 - s0 + 1
+        if r0 >= target_start:
+            out.append("1")
+            continue
+
+        cur_reach = r0
+        jumps = 1
+        cur_island = 1
+
+        possible = True
+        while cur_reach < target_start:
+            next_reach = cur_reach
+            advanced = False
+            while cur_island < num_islands and islands[cur_island][0] <= cur_reach:
+                advanced = True
+                si, ei = islands[cur_island]
+                reach_i = 2 * ei - si + 1
+                if reach_i > next_reach:
+                    next_reach = reach_i
+                cur_island += 1
+
+            if not advanced or next_reach <= cur_reach:
+                possible = False
+                break
+
+            cur_reach = next_reach
+            jumps += 1
+            if cur_reach >= target_start:
+                break
+
+        if possible and cur_reach >= target_start:
+            out.append(str(jumps))
+        else:
+            out.append("-1")
+
+    sys.stdout.write("\n".join(out) + "\n")
 
 
 if __name__ == "__main__":
-    main()
+    solve()

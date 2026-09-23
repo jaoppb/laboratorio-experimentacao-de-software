@@ -1,47 +1,43 @@
-#!/usr/bin/env python3
-"""
-Kata 05 — Loading the Dish Rack
-Solução com IA (Gemini 3.8 Flash) para Gabriel Assis.
-Divisão e conquista / árvore binária de fusões ótimas em O(C).
-"""
-
 import sys
 
-# Aumenta limite de recursão por segurança, embora a profundidade da árvore seja O(log S) <= 25
+# Aumenta limite de recursão para árvore balanceada (profundidade <= 30)
 sys.setrecursionlimit(200000)
 
 
-def get_cost(s: int, memo: dict[int, int]) -> int:
+def calc_cost(s):
+    """Calcula o esforço mínimo para preencher um bloco contíguo de tamanho s.
+
+    Corresponde à soma das profundidades em uma árvore binária quase completa de s nós.
+    """
     if s <= 1:
         return 0
-    if s in memo:
-        return memo[s]
-    left = (s - 1) // 2
-    right = s - 1 - left
-    res = (s - 1) + get_cost(left, memo) + get_cost(right, memo)
-    memo[s] = res
-    return res
+    total = 0
+    depth = 0
+    rem = s
+    count = 1
+    while rem > 0:
+        take = min(rem, count)
+        total += take * depth
+        rem -= take
+        depth += 1
+        count *= 2
+    return total
 
 
-def generate_order(start: int, s: int, out: list[int]) -> None:
-    if s <= 0:
+def generate_order(l, r, out):
+    """Gera a ordem pós-ordem de inserção para o intervalo contíguo [l, r]."""
+    if l > r:
         return
-    if s == 1:
-        out.append(start)
+    if l == r:
+        out.append(l)
         return
-    left_size = (s - 1) // 2
-    right_size = s - 1 - left_size
-    mid_pos = start + left_size
-
-    # Preenche primeiro o sub-bloco esquerdo
-    generate_order(start, left_size, out)
-    # Preenche o sub-bloco direito
-    generate_order(mid_pos + 1, right_size, out)
-    # Por fim, insere o copo central unindo os dois sub-blocos
-    out.append(mid_pos)
+    m = (l + r) // 2
+    generate_order(l, m - 1, out)
+    generate_order(m + 1, r, out)
+    out.append(m)
 
 
-def main() -> None:
+def solve():
     input_data = sys.stdin.read().split()
     if not input_data:
         return
@@ -49,28 +45,32 @@ def main() -> None:
     n = int(input_data[0])
     c = int(input_data[1])
 
-    # K é o número máximo de blocos contíguos de copos separados por pelo menos 1 vazio
-    # Cada vazio separa 2 blocos: C + K - 1 <= N => K <= N - C + 1
-    k = min(c, n - c + 1)
+    # Número máximo de componentes conexas que podemos formar com as posições vazias restantes
+    # Cada componente é separada por pelo menos 1 posição vazia
+    max_k = min(c, n - c + 1)
 
-    # Distribui os copos o mais uniformemente possível entre os K blocos
-    q = c // k
-    r = c % k
+    # Dividimos C copos em max_k componentes com tamanhos o mais equilibrados possível
+    q = c // max_k
+    r = c % max_k
 
-    memo: dict[int, int] = {}
-    total_effort = r * get_cost(q + 1, memo) + (k - r) * get_cost(q, memo)
+    # r componentes de tamanho q + 1, e (max_k - r) componentes de tamanho q
+    total_effort = r * calc_cost(q + 1) + (max_k - r) * calc_cost(q)
 
-    block_sizes = [q + 1] * r + [q] * (k - r)
+    # Constrói os intervalos de cada componente no escorredor [1, N]
+    positions_order = []
+    curr_pos = 1
 
-    positions: list[int] = []
-    curr_start = 1
-    for s in block_sizes:
-        generate_order(curr_start, s, positions)
-        curr_start += s + 1
+    for i in range(max_k):
+        size = q + 1 if i < r else q
+        comp_l = curr_pos
+        comp_r = curr_pos + size - 1
+        generate_order(comp_l, comp_r, positions_order)
+        # Deixa 1 espaço vazio entre componentes consecutivas
+        curr_pos = comp_r + 2
 
     sys.stdout.write(f"{total_effort}\n")
-    sys.stdout.write(" ".join(str(p) for p in positions) + "\n")
+    sys.stdout.write(" ".join(map(str, positions_order)) + "\n")
 
 
 if __name__ == "__main__":
-    main()
+    solve()

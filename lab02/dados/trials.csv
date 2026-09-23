@@ -1,10 +1,4 @@
 trial_id,participant,treatment,kata,file,time_seconds,censored,passed_tests,total_tests,failed_tests,success_rate,timestamp,status,actual_elapsed_seconds
-trial-gabriel-01,gabriel,ai,01-bario-world,lab02/katas/01-bario-world/gemini-flash-3.8/solution.py,0.0,False,20,20,0,1.0,2026-09-16T20:54:07.335200+00:00,completed,0.0
-trial-gabriel-02,gabriel,ai,02-cards,lab02/katas/02-cards/gemini-flash-3.8/solution.py,0.0,False,20,20,0,1.0,2026-09-16T20:54:18.285114+00:00,completed,0.0
-trial-gabriel-03,gabriel,ai,03-exploring-terrain,lab02/katas/03-exploring-terrain/gemini-flash-3.8/solution.py,0.0,False,20,20,0,1.0,2026-09-16T20:54:18.962030+00:00,completed,0.0
-trial-gabriel-04,gabriel,ai,04-garment-groups,lab02/katas/04-garment-groups/gemini-flash-3.8/solution.py,0.0,False,20,20,0,1.0,2026-09-16T20:54:19.657775+00:00,completed,0.0
-trial-gabriel-05,gabriel,ai,05-dish-rack,lab02/katas/05-dish-rack/gemini-flash-3.8/solution.py,0.0,False,20,20,0,1.0,2026-09-16T20:54:20.313031+00:00,completed,0.0
-trial-gabriel-06,gabriel,ai,06-n-checkers,lab02/katas/06-n-checkers/gemini-flash-3.8/solution.py,0.0,False,20,20,0,1.0,2026-09-16T20:54:21.420145+00:00,completed,0.0
 trial-joao-01,joao,ai,01-bario-world,lab02/katas/01-bario-world/claude-sonnet-5/solution.py,448.53,False,20,20,0,1.0,2026-09-16T23:10:17.911097+00:00,completed,448.53
 trial-joao-02,joao,ai,02-cards,lab02/katas/02-cards/claude-sonnet-5/solution.py,31.47,False,20,20,0,1.0,2026-09-16T23:10:17.911097+00:00,completed,31.47
 trial-joao-03,joao,ai,03-exploring-terrain,lab02/katas/03-exploring-terrain/claude-sonnet-5/solution.py,36.30,False,20,20,0,1.0,2026-09-16T23:10:17.911097+00:00,completed,36.30
@@ -23,3 +17,9 @@ trial-gabriel-manual-03,gabriel,manual,03-exploring-terrain,lab02/katas/03-explo
 trial-gabriel-manual-04,gabriel,manual,04-garment-groups,lab02/katas/04-garment-groups/gabriel/solution.py,252.89,False,20,20,0,1.0,2026-09-17T14:29:32.260466+00:00,completed,252.89
 trial-gabriel-manual-05,gabriel,manual,05-dish-rack,lab02/katas/05-dish-rack/gabriel/solution.py,910.94,False,20,20,0,1.0,2026-09-17T14:29:32.280248+00:00,completed,910.94
 trial-gabriel-manual-06,gabriel,manual,06-n-checkers,lab02/katas/06-n-checkers/gabriel/solution.py,1290.27,False,20,20,0,1.0,2026-09-17T14:29:32.272252+00:00,completed,1290.27
+trial-gabriel-01,gabriel,ai,01-bario-world,/home/assis/Repositorios/laboratorio-experimentacao-de-software/lab02/katas/01-bario-world/gemini-flash-3.8/solution.py,179.03,False,20,20,0,1.0,2026-09-23T18:03:16.010727+00:00,completed,179.03
+trial-gabriel-02,gabriel,ai,02-cards,/home/assis/Repositorios/laboratorio-experimentacao-de-software/lab02/katas/02-cards/gemini-flash-3.8/solution.py,31.65,False,20,20,0,1.0,2026-09-23T18:07:29.855699+00:00,completed,31.65
+trial-gabriel-03,gabriel,ai,03-exploring-terrain,/home/assis/Repositorios/laboratorio-experimentacao-de-software/lab02/katas/03-exploring-terrain/gemini-flash-3.8/solution.py,42.08,False,20,20,0,1.0,2026-09-23T18:08:23.522295+00:00,completed,42.08
+trial-gabriel-04,gabriel,ai,04-garment-groups,/home/assis/Repositorios/laboratorio-experimentacao-de-software/lab02/katas/04-garment-groups/gemini-flash-3.8/solution.py,31.6,False,20,20,0,1.0,2026-09-23T18:09:24.228880+00:00,completed,31.6
+trial-gabriel-05,gabriel,ai,05-dish-rack,/home/assis/Repositorios/laboratorio-experimentacao-de-software/lab02/katas/05-dish-rack/gemini-flash-3.8/solution.py,99.15,False,20,20,0,1.0,2026-09-23T18:10:26.197336+00:00,completed,99.15
+trial-gabriel-06,gabriel,ai,06-n-checkers,/home/assis/Repositorios/laboratorio-experimentacao-de-software/lab02/katas/06-n-checkers/gemini-flash-3.8/solution.py,157.62,False,20,20,0,1.0,2026-09-23T18:12:29.010598+00:00,completed,157.62
