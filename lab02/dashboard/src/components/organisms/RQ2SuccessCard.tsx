@@ -1,17 +1,20 @@
 import React, { useState } from 'react';
 import { SummaryStats, UnifiedTrial } from '../../types/dataset';
-import { PlotlyChart } from '../PlotlyChart';
-import { RQCardWrapper } from '../common/RQCardWrapper';
 import { useTheme } from '../../hooks/useTheme';
+import { PlotlyChart } from '../atoms/PlotlyChart';
+import { SegmentedControl } from '../atoms/SegmentedControl';
+import { RQCardWrapper } from '../molecules/RQCardWrapper';
 
 interface RQ2SuccessCardProps {
   stats: SummaryStats;
   trials: UnifiedTrial[];
 }
 
+type SplitBy = 'kata' | 'treatment';
+
 export const RQ2SuccessCard: React.FC<RQ2SuccessCardProps> = ({ stats, trials }) => {
   const { isDark } = useTheme();
-  const [splitBy, setSplitBy] = useState<'kata' | 'treatment'>('kata');
+  const [splitBy, setSplitBy] = useState<SplitBy>('kata');
 
   const axisFontColor = isDark ? '#c9d1d9' : '#24292f';
   const gridColor = isDark ? '#30363d' : '#e1e4e8';
@@ -42,7 +45,6 @@ export const RQ2SuccessCard: React.FC<RQ2SuccessCardProps> = ({ stats, trials })
       },
     ];
   } else {
-    // Treatment level summary
     const aiPassCount = trials
       .filter((t) => t.treatment === 'ai')
       .reduce((sum, t) => sum + t.passed_tests, 0);
@@ -98,34 +100,21 @@ export const RQ2SuccessCard: React.FC<RQ2SuccessCardProps> = ({ stats, trials })
   };
 
   const actionControls = (
-    <div className="flex rounded-lg border border-gray-200 dark:border-github-border overflow-hidden bg-gray-50 dark:bg-github-dark p-0.5">
-      <button
-        onClick={() => setSplitBy('kata')}
-        className={`px-2 py-1 text-[11px] font-semibold rounded-md transition ${
-          splitBy === 'kata'
-            ? 'bg-white dark:bg-github-card text-emerald-600 dark:text-emerald-400 shadow-sm'
-            : 'text-gray-600 dark:text-github-muted hover:text-gray-900'
-        }`}
-      >
-        Por Kata
-      </button>
-      <button
-        onClick={() => setSplitBy('treatment')}
-        className={`px-2 py-1 text-[11px] font-semibold rounded-md transition ${
-          splitBy === 'treatment'
-            ? 'bg-white dark:bg-github-card text-emerald-600 dark:text-emerald-400 shadow-sm'
-            : 'text-gray-600 dark:text-github-muted hover:text-gray-900'
-        }`}
-      >
-        Por Tratamento
-      </button>
-    </div>
+    <SegmentedControl<SplitBy>
+      value={splitBy}
+      onChange={setSplitBy}
+      activeColorClass="text-emerald-600 dark:text-emerald-400"
+      options={[
+        { value: 'kata', label: 'Por Kata' },
+        { value: 'treatment', label: 'Por Tratamento' },
+      ]}
+    />
   );
 
   return (
     <RQCardWrapper
       pillLabel="RQ2 · Taxa de Defeitos & Sucesso"
-      pillColorClass="bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-300"
+      pillVariant="success"
       title="O assistente de IA reduz a quantidade de defeitos nos testes?"
       subtitle={
         <div className="flex flex-wrap gap-x-3 gap-y-1">
@@ -138,7 +127,7 @@ export const RQ2SuccessCard: React.FC<RQ2SuccessCardProps> = ({ stats, trials })
           </span>
           <span>·</span>
           <span className="text-emerald-600 dark:text-emerald-400 font-semibold">
-            Status: Todos os 24 trials atingiram time-to-green (20/20 testes)
+            Status: Todos os trials atingiram time-to-green (20/20 testes)
           </span>
         </div>
       }

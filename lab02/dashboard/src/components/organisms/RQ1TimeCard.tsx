@@ -1,19 +1,24 @@
 import React, { useState } from 'react';
 import { SummaryStats, UnifiedTrial } from '../../types/dataset';
-import { PlotlyChart } from '../PlotlyChart';
-import { RQCardWrapper } from '../common/RQCardWrapper';
-import { formatDuration, formatNumber } from '../../utils/formatters';
+import { formatDuration } from '../../utils/formatters';
 import { useTheme } from '../../hooks/useTheme';
+import { PlotlyChart } from '../atoms/PlotlyChart';
+import { Button } from '../atoms/Button';
+import { SegmentedControl } from '../atoms/SegmentedControl';
+import { RQCardWrapper } from '../molecules/RQCardWrapper';
 
 interface RQ1TimeCardProps {
   stats: SummaryStats;
   trials: UnifiedTrial[];
 }
 
+type ViewMode = 'overall' | 'kata' | 'model';
+type Unit = 'seconds' | 'minutes';
+
 export const RQ1TimeCard: React.FC<RQ1TimeCardProps> = ({ stats, trials }) => {
   const { isDark } = useTheme();
-  const [viewMode, setViewMode] = useState<'overall' | 'kata' | 'model'>('overall');
-  const [unit, setUnit] = useState<'seconds' | 'minutes'>('seconds');
+  const [viewMode, setViewMode] = useState<ViewMode>('overall');
+  const [unit, setUnit] = useState<Unit>('seconds');
 
   const axisFontColor = isDark ? '#c9d1d9' : '#24292f';
   const gridColor = isDark ? '#30363d' : '#e1e4e8';
@@ -21,9 +26,12 @@ export const RQ1TimeCard: React.FC<RQ1TimeCardProps> = ({ stats, trials }) => {
   const unitMultiplier = unit === 'minutes' ? 1 / 60 : 1;
   const unitLabel = unit === 'minutes' ? 'minutos' : 'segundos';
 
-  // 1. Overall Boxplot / Distribution
-  const aiTimes = trials.filter((t) => t.treatment === 'ai').map((t) => t.time_seconds * unitMultiplier);
-  const manualTimes = trials.filter((t) => t.treatment === 'manual').map((t) => t.time_seconds * unitMultiplier);
+  const aiTimes = trials
+    .filter((t) => t.treatment === 'ai')
+    .map((t) => t.time_seconds * unitMultiplier);
+  const manualTimes = trials
+    .filter((t) => t.treatment === 'manual')
+    .map((t) => t.time_seconds * unitMultiplier);
 
   let chartData: Plotly.Data[] = [];
 
@@ -51,7 +59,6 @@ export const RQ1TimeCard: React.FC<RQ1TimeCardProps> = ({ stats, trials }) => {
       },
     ];
   } else if (viewMode === 'kata') {
-    // Grouped Bar by Kata
     const kataLabels = stats.kata_comparisons.map((k) => k.kata_title);
     const aiMedians = stats.kata_comparisons.map((k) => k.ai_time_median * unitMultiplier);
     const manualMedians = stats.kata_comparisons.map((k) => k.manual_time_median * unitMultiplier);
@@ -75,7 +82,6 @@ export const RQ1TimeCard: React.FC<RQ1TimeCardProps> = ({ stats, trials }) => {
       },
     ];
   } else {
-    // By AI Model
     const modelLabels = stats.model_comparisons.map((m) => m.model_name);
     const medians = stats.model_comparisons.map((m) => m.time_median * unitMultiplier);
 
@@ -117,64 +123,41 @@ export const RQ1TimeCard: React.FC<RQ1TimeCardProps> = ({ stats, trials }) => {
 
   const actionControls = (
     <div className="flex items-center gap-2">
-      {/* View mode selector */}
-      <div className="flex rounded-lg border border-gray-200 dark:border-github-border overflow-hidden bg-gray-50 dark:bg-github-dark p-0.5">
-        <button
-          onClick={() => setViewMode('overall')}
-          className={`px-2 py-1 text-[11px] font-semibold rounded-md transition ${
-            viewMode === 'overall'
-              ? 'bg-white dark:bg-github-card text-blue-600 dark:text-blue-400 shadow-sm'
-              : 'text-gray-600 dark:text-github-muted hover:text-gray-900'
-          }`}
-        >
-          Geral
-        </button>
-        <button
-          onClick={() => setViewMode('kata')}
-          className={`px-2 py-1 text-[11px] font-semibold rounded-md transition ${
-            viewMode === 'kata'
-              ? 'bg-white dark:bg-github-card text-blue-600 dark:text-blue-400 shadow-sm'
-              : 'text-gray-600 dark:text-github-muted hover:text-gray-900'
-          }`}
-        >
-          Por Kata
-        </button>
-        <button
-          onClick={() => setViewMode('model')}
-          className={`px-2 py-1 text-[11px] font-semibold rounded-md transition ${
-            viewMode === 'model'
-              ? 'bg-white dark:bg-github-card text-blue-600 dark:text-blue-400 shadow-sm'
-              : 'text-gray-600 dark:text-github-muted hover:text-gray-900'
-          }`}
-        >
-          Por Modelo
-        </button>
-      </div>
-
-      {/* Unit toggle */}
-      <button
+      <SegmentedControl<ViewMode>
+        value={viewMode}
+        onChange={setViewMode}
+        options={[
+          { value: 'overall', label: 'Geral' },
+          { value: 'kata', label: 'Por Kata' },
+          { value: 'model', label: 'Por Modelo' },
+        ]}
+      />
+      <Button
+        variant="outline"
+        size="sm"
         onClick={() => setUnit(unit === 'seconds' ? 'minutes' : 'seconds')}
-        className="px-2 py-1 text-[11px] font-semibold rounded-lg border border-gray-200 dark:border-github-border bg-gray-50 dark:bg-github-dark hover:bg-gray-100 dark:hover:bg-github-card text-gray-700 dark:text-github-text transition"
         title="Alternar entre segundos e minutos"
       >
         {unit === 'seconds' ? 'Segundos (s)' : 'Minutos (m)'}
-      </button>
+      </Button>
     </div>
   );
 
   return (
     <RQCardWrapper
       pillLabel="RQ1 · Tempo de Resolução"
-      pillColorClass="bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300"
+      pillVariant="primary"
       title="O assistente de IA reduz o tempo para resolver a tarefa?"
       subtitle={
         <div className="flex flex-wrap gap-x-3 gap-y-1">
           <span>
-            Mediana IA: <b>{formatDuration(stats.time_ai.median, true)}</b> (IQR: {formatDuration(stats.time_ai.iqr, true)})
+            Mediana IA: <b>{formatDuration(stats.time_ai.median, true)}</b> (IQR:{' '}
+            {formatDuration(stats.time_ai.iqr, true)})
           </span>
           <span>·</span>
           <span>
-            Mediana Manual: <b>{formatDuration(stats.time_manual.median, true)}</b> (IQR: {formatDuration(stats.time_manual.iqr, true)})
+            Mediana Manual: <b>{formatDuration(stats.time_manual.median, true)}</b> (IQR:{' '}
+            {formatDuration(stats.time_manual.iqr, true)})
           </span>
           <span>·</span>
           <span className="text-emerald-600 dark:text-emerald-400 font-semibold">

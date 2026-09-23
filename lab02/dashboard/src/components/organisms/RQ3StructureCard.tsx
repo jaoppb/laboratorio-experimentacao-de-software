@@ -1,9 +1,10 @@
 import React, { useState } from 'react';
 import { SummaryStats } from '../../types/dataset';
-import { PlotlyChart } from '../PlotlyChart';
-import { RQCardWrapper } from '../common/RQCardWrapper';
 import { formatNumber } from '../../utils/formatters';
 import { useTheme } from '../../hooks/useTheme';
+import { PlotlyChart } from '../atoms/PlotlyChart';
+import { SegmentedControl } from '../atoms/SegmentedControl';
+import { RQCardWrapper } from '../molecules/RQCardWrapper';
 
 interface RQ3StructureCardProps {
   stats: SummaryStats;
@@ -32,21 +33,30 @@ export const RQ3StructureCard: React.FC<RQ3StructureCardProps> = ({ stats }) => 
       manualValues = stats.kata_comparisons.map((k) => k.manual_cc_mean);
       yAxisTitle = 'CC Média (McCabe)';
       formatDecimals = 1;
-      metricDescription = `Média IA: ${formatNumber(stats.cc_ai.mean, 1)} · Média Manual: ${formatNumber(stats.cc_manual.mean, 1)} (Radon CC por função)`;
+      metricDescription = `Média IA: ${formatNumber(stats.cc_ai.mean, 1)} · Média Manual: ${formatNumber(
+        stats.cc_manual.mean,
+        1
+      )} (Radon CC por função)`;
       break;
     case 'mi':
       aiValues = stats.kata_comparisons.map((k) => k.ai_mi_mean);
       manualValues = stats.kata_comparisons.map((k) => k.manual_mi_mean);
       yAxisTitle = 'Índice de Manutenibilidade (0–100)';
       formatDecimals = 1;
-      metricDescription = `Média IA: ${formatNumber(stats.mi_ai.mean, 1)} · Média Manual: ${formatNumber(stats.mi_manual.mean, 1)} (Radon MI)`;
+      metricDescription = `Média IA: ${formatNumber(stats.mi_ai.mean, 1)} · Média Manual: ${formatNumber(
+        stats.mi_manual.mean,
+        1
+      )} (Radon MI)`;
       break;
     case 'loc':
       aiValues = stats.kata_comparisons.map((k) => k.ai_loc_mean);
       manualValues = stats.kata_comparisons.map((k) => k.manual_loc_mean);
       yAxisTitle = 'Linhas Físicas (LOC)';
       formatDecimals = 0;
-      metricDescription = `Média IA: ${formatNumber(stats.loc_ai.mean, 0)} LOC · Média Manual: ${formatNumber(stats.loc_manual.mean, 0)} LOC (Controle)`;
+      metricDescription = `Média IA: ${formatNumber(stats.loc_ai.mean, 0)} LOC · Média Manual: ${formatNumber(
+        stats.loc_manual.mean,
+        0
+      )} LOC (Controle)`;
       break;
     case 'dup':
       aiValues = stats.kata_comparisons.map((k) =>
@@ -57,7 +67,10 @@ export const RQ3StructureCard: React.FC<RQ3StructureCardProps> = ({ stats }) => 
       );
       yAxisTitle = '% Linhas Duplicadas (jscpd)';
       formatDecimals = 1;
-      metricDescription = `Duplicação IA: ${formatNumber(stats.dup_ai.mean, 1)}% · Duplicação Manual: ${formatNumber(stats.dup_manual.mean, 1)}%`;
+      metricDescription = `Duplicação IA: ${formatNumber(
+        stats.dup_ai.mean,
+        1
+      )}% · Duplicação Manual: ${formatNumber(stats.dup_manual.mean, 1)}%`;
       break;
   }
 
@@ -101,54 +114,23 @@ export const RQ3StructureCard: React.FC<RQ3StructureCardProps> = ({ stats }) => 
   };
 
   const actionControls = (
-    <div className="flex rounded-lg border border-gray-200 dark:border-github-border overflow-hidden bg-gray-50 dark:bg-github-dark p-0.5">
-      <button
-        onClick={() => setMetric('cc')}
-        className={`px-2 py-1 text-[11px] font-semibold rounded-md transition ${
-          metric === 'cc'
-            ? 'bg-white dark:bg-github-card text-purple-600 dark:text-purple-400 shadow-sm'
-            : 'text-gray-600 dark:text-github-muted hover:text-gray-900'
-        }`}
-      >
-        Complexidade (CC)
-      </button>
-      <button
-        onClick={() => setMetric('mi')}
-        className={`px-2 py-1 text-[11px] font-semibold rounded-md transition ${
-          metric === 'mi'
-            ? 'bg-white dark:bg-github-card text-purple-600 dark:text-purple-400 shadow-sm'
-            : 'text-gray-600 dark:text-github-muted hover:text-gray-900'
-        }`}
-      >
-        Manutenibilidade (MI)
-      </button>
-      <button
-        onClick={() => setMetric('loc')}
-        className={`px-2 py-1 text-[11px] font-semibold rounded-md transition ${
-          metric === 'loc'
-            ? 'bg-white dark:bg-github-card text-purple-600 dark:text-purple-400 shadow-sm'
-            : 'text-gray-600 dark:text-github-muted hover:text-gray-900'
-        }`}
-      >
-        Tamanho (LOC)
-      </button>
-      <button
-        onClick={() => setMetric('dup')}
-        className={`px-2 py-1 text-[11px] font-semibold rounded-md transition ${
-          metric === 'dup'
-            ? 'bg-white dark:bg-github-card text-purple-600 dark:text-purple-400 shadow-sm'
-            : 'text-gray-600 dark:text-github-muted hover:text-gray-900'
-        }`}
-      >
-        Duplicação %
-      </button>
-    </div>
+    <SegmentedControl<MetricKey>
+      value={metric}
+      onChange={setMetric}
+      activeColorClass="text-purple-600 dark:text-purple-400"
+      options={[
+        { value: 'cc', label: 'Complexidade (CC)' },
+        { value: 'mi', label: 'Manutenibilidade (MI)' },
+        { value: 'loc', label: 'Tamanho (LOC)' },
+        { value: 'dup', label: 'Duplicação %' },
+      ]}
+    />
   );
 
   return (
     <RQCardWrapper
       pillLabel="RQ3 · Métricas Estruturais de Código"
-      pillColorClass="bg-purple-100 dark:bg-purple-900/40 text-purple-700 dark:text-purple-300"
+      pillVariant="purple"
       title="O assistente de IA altera a complexidade ou manutenibilidade do código?"
       subtitle={metricDescription}
       action={actionControls}

@@ -1,14 +1,14 @@
 import React from 'react';
 import { useLab02Data } from './hooks/useLab02Data';
-import { Header } from './components/Header';
-import { AppHero } from './components/AppHero';
-import { KPIGrid } from './components/KPIGrid';
-import { CrossFilterBar } from './components/filters/CrossFilterBar';
-import { RQ1TimeCard } from './components/rq/RQ1TimeCard';
-import { RQ2SuccessCard } from './components/rq/RQ2SuccessCard';
-import { RQ3StructureCard } from './components/rq/RQ3StructureCard';
-import { TrialInspector } from './components/inspector/TrialInspector';
-import { RawDataTable } from './components/table/RawDataTable';
+import { Header } from './components/organisms/Header';
+import { AppHero } from './components/organisms/AppHero';
+import { KPIGrid } from './components/organisms/KPIGrid';
+import { CrossFilterBar } from './components/organisms/CrossFilterBar';
+import { RQ1TimeCard } from './components/organisms/RQ1TimeCard';
+import { RQ2SuccessCard } from './components/organisms/RQ2SuccessCard';
+import { RQ3StructureCard } from './components/organisms/RQ3StructureCard';
+import { TrialInspector } from './components/organisms/TrialInspector';
+import { RawDataTable } from './components/organisms/RawDataTable';
 import { AppLoading } from './components/common/AppLoading';
 import { AppError } from './components/common/AppError';
 

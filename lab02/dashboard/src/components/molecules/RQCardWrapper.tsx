@@ -1,8 +1,9 @@
 import React from 'react';
+import { Badge, BadgeVariant } from '../atoms/Badge';
 
 interface RQCardWrapperProps {
   pillLabel: string;
-  pillColorClass?: string;
+  pillVariant?: BadgeVariant;
   title: string;
   subtitle: React.ReactNode;
   action?: React.ReactNode;
@@ -12,7 +13,7 @@ interface RQCardWrapperProps {
 
 export const RQCardWrapper: React.FC<RQCardWrapperProps> = ({
   pillLabel,
-  pillColorClass = 'bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300',
+  pillVariant = 'primary',
   title,
   subtitle,
   action,
@@ -25,9 +26,7 @@ export const RQCardWrapper: React.FC<RQCardWrapperProps> = ({
     >
       <div>
         <div className="flex items-center justify-between gap-2 mb-2">
-          <span className={`px-2.5 py-0.5 rounded-full text-xs font-bold ${pillColorClass}`}>
-            {pillLabel}
-          </span>
+          <Badge variant={pillVariant}>{pillLabel}</Badge>
           {action && <div>{action}</div>}
         </div>
         <h3 className="font-bold text-sm sm:text-base text-gray-900 dark:text-white">

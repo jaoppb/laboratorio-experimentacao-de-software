@@ -1,15 +1,10 @@
 import React, { useState, useMemo } from 'react';
-import {
-  Table,
-  ArrowUpDown,
-  ArrowUp,
-  ArrowDown,
-  Download,
-  ExternalLink,
-  Target,
-} from 'lucide-react';
+import { Table, Download, ExternalLink, Target } from 'lucide-react';
 import { UnifiedTrial } from '../../types/dataset';
 import { formatDuration, formatNumber } from '../../utils/formatters';
+import { Badge } from '../atoms/Badge';
+import { Button } from '../atoms/Button';
+import { TableHeaderCell } from '../molecules/TableHeaderCell';
 
 interface RawDataTableProps {
   trials: UnifiedTrial[];
@@ -120,17 +115,6 @@ export const RawDataTable: React.FC<RawDataTableProps> = ({
     document.body.removeChild(link);
   };
 
-  const renderSortIcon = (field: SortField) => {
-    if (sortField !== field) {
-      return <ArrowUpDown className="w-3 h-3 text-gray-400 opacity-60" />;
-    }
-    return sortDirection === 'asc' ? (
-      <ArrowUp className="w-3 h-3 text-blue-500" />
-    ) : (
-      <ArrowDown className="w-3 h-3 text-blue-500" />
-    );
-  };
-
   return (
     <div className="bg-white dark:bg-github-card border border-gray-200 dark:border-github-border rounded-xl shadow-sm p-4 sm:p-5 transition-all space-y-4">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-gray-100 dark:border-github-border/60">
@@ -148,100 +132,101 @@ export const RawDataTable: React.FC<RawDataTableProps> = ({
           </div>
         </div>
 
-        <button
+        <Button
+          variant="outline"
+          size="sm"
+          icon={<Download className="w-3.5 h-3.5" />}
           onClick={exportCsv}
-          className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-gray-700 dark:text-github-text bg-gray-50 dark:bg-github-dark hover:bg-gray-100 dark:hover:bg-github-border/50 border border-gray-200 dark:border-github-border rounded-lg transition self-start sm:self-auto"
         >
-          <Download className="w-3.5 h-3.5" />
           Exportar CSV Unificado
-        </button>
+        </Button>
       </div>
 
       <div className="overflow-x-auto -mx-4 sm:mx-0">
         <table className="w-full text-left border-collapse text-xs">
           <thead>
             <tr className="border-b border-gray-200 dark:border-github-border text-gray-500 dark:text-github-muted font-semibold">
-              <th
-                onClick={() => handleSort('trial_id')}
-                className="py-2.5 px-3 cursor-pointer hover:text-gray-900 dark:hover:text-white"
+              <TableHeaderCell
+                field="trial_id"
+                currentSortField={sortField}
+                sortDirection={sortDirection}
+                onSort={handleSort}
               >
-                <div className="flex items-center gap-1">
-                  Trial ID {renderSortIcon('trial_id')}
-                </div>
-              </th>
-              <th
-                onClick={() => handleSort('participant')}
-                className="py-2.5 px-3 cursor-pointer hover:text-gray-900 dark:hover:text-white"
+                Trial ID
+              </TableHeaderCell>
+              <TableHeaderCell
+                field="participant"
+                currentSortField={sortField}
+                sortDirection={sortDirection}
+                onSort={handleSort}
               >
-                <div className="flex items-center gap-1">
-                  Participante {renderSortIcon('participant')}
-                </div>
-              </th>
-              <th
-                onClick={() => handleSort('treatment')}
-                className="py-2.5 px-3 cursor-pointer hover:text-gray-900 dark:hover:text-white"
+                Participante
+              </TableHeaderCell>
+              <TableHeaderCell
+                field="treatment"
+                currentSortField={sortField}
+                sortDirection={sortDirection}
+                onSort={handleSort}
               >
-                <div className="flex items-center gap-1">
-                  Tratamento {renderSortIcon('treatment')}
-                </div>
-              </th>
-              <th
-                onClick={() => handleSort('ai_model')}
-                className="py-2.5 px-3 cursor-pointer hover:text-gray-900 dark:hover:text-white"
+                Tratamento
+              </TableHeaderCell>
+              <TableHeaderCell
+                field="ai_model"
+                currentSortField={sortField}
+                sortDirection={sortDirection}
+                onSort={handleSort}
               >
-                <div className="flex items-center gap-1">
-                  Modelo IA {renderSortIcon('ai_model')}
-                </div>
-              </th>
-              <th
-                onClick={() => handleSort('kata')}
-                className="py-2.5 px-3 cursor-pointer hover:text-gray-900 dark:hover:text-white"
+                Modelo IA
+              </TableHeaderCell>
+              <TableHeaderCell
+                field="kata"
+                currentSortField={sortField}
+                sortDirection={sortDirection}
+                onSort={handleSort}
               >
-                <div className="flex items-center gap-1">
-                  Kata {renderSortIcon('kata')}
-                </div>
-              </th>
-              <th
-                onClick={() => handleSort('time_seconds')}
-                className="py-2.5 px-3 cursor-pointer hover:text-gray-900 dark:hover:text-white"
+                Kata
+              </TableHeaderCell>
+              <TableHeaderCell
+                field="time_seconds"
+                currentSortField={sortField}
+                sortDirection={sortDirection}
+                onSort={handleSort}
               >
-                <div className="flex items-center gap-1">
-                  Tempo {renderSortIcon('time_seconds')}
-                </div>
-              </th>
+                Tempo
+              </TableHeaderCell>
               <th className="py-2.5 px-3">Testes</th>
-              <th
-                onClick={() => handleSort('loc')}
-                className="py-2.5 px-3 cursor-pointer hover:text-gray-900 dark:hover:text-white"
+              <TableHeaderCell
+                field="loc"
+                currentSortField={sortField}
+                sortDirection={sortDirection}
+                onSort={handleSort}
               >
-                <div className="flex items-center gap-1">
-                  LOC {renderSortIcon('loc')}
-                </div>
-              </th>
-              <th
-                onClick={() => handleSort('cc_avg')}
-                className="py-2.5 px-3 cursor-pointer hover:text-gray-900 dark:hover:text-white"
+                LOC
+              </TableHeaderCell>
+              <TableHeaderCell
+                field="cc_avg"
+                currentSortField={sortField}
+                sortDirection={sortDirection}
+                onSort={handleSort}
               >
-                <div className="flex items-center gap-1">
-                  CC Média {renderSortIcon('cc_avg')}
-                </div>
-              </th>
-              <th
-                onClick={() => handleSort('mi')}
-                className="py-2.5 px-3 cursor-pointer hover:text-gray-900 dark:hover:text-white"
+                CC Média
+              </TableHeaderCell>
+              <TableHeaderCell
+                field="mi"
+                currentSortField={sortField}
+                sortDirection={sortDirection}
+                onSort={handleSort}
               >
-                <div className="flex items-center gap-1">
-                  MI {renderSortIcon('mi')}
-                </div>
-              </th>
-              <th
-                onClick={() => handleSort('duplication_percentage')}
-                className="py-2.5 px-3 cursor-pointer hover:text-gray-900 dark:hover:text-white"
+                MI
+              </TableHeaderCell>
+              <TableHeaderCell
+                field="duplication_percentage"
+                currentSortField={sortField}
+                sortDirection={sortDirection}
+                onSort={handleSort}
               >
-                <div className="flex items-center gap-1">
-                  Dup % {renderSortIcon('duplication_percentage')}
-                </div>
-              </th>
+                Dup %
+              </TableHeaderCell>
               <th className="py-2.5 px-3 text-right">Ações</th>
             </tr>
           </thead>
@@ -262,15 +247,9 @@ export const RawDataTable: React.FC<RawDataTableProps> = ({
                     {t.participant}
                   </td>
                   <td className="py-2.5 px-3">
-                    <span
-                      className={`px-2 py-0.5 rounded-full text-[11px] font-semibold ${
-                        t.treatment === 'ai'
-                          ? 'bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300'
-                          : 'bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-300'
-                      }`}
-                    >
+                    <Badge variant={t.treatment === 'ai' ? 'primary' : 'warning'}>
                       {t.treatment === 'ai' ? 'IA' : 'Manual'}
-                    </span>
+                    </Badge>
                   </td>
                   <td className="py-2.5 px-3 text-gray-600 dark:text-github-muted">
                     {t.ai_model || '—'}
@@ -298,18 +277,18 @@ export const RawDataTable: React.FC<RawDataTableProps> = ({
                   </td>
                   <td className="py-2.5 px-3 text-right">
                     <div className="flex items-center justify-end gap-1.5">
-                      <button
+                      <Button
+                        variant="icon"
                         onClick={() => onSelectTrial(t.trial_id)}
-                        className="p-1 rounded hover:bg-gray-200 dark:hover:bg-github-border text-gray-600 dark:text-github-muted hover:text-blue-600 dark:hover:text-blue-400 transition"
                         title="Inspecionar no Trial Inspector"
                       >
-                        <Target className="w-3.5 h-3.5" />
-                      </button>
+                        <Target className="w-3.5 h-3.5 text-gray-500 hover:text-blue-500" />
+                      </Button>
                       <a
                         href={t.github_url}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="p-1 rounded hover:bg-gray-200 dark:hover:bg-github-border text-gray-600 dark:text-github-muted hover:text-gray-900 dark:hover:text-white transition"
+                        className="p-1.5 rounded-lg hover:bg-gray-100 dark:hover:bg-github-card text-gray-600 dark:text-github-muted hover:text-gray-900 dark:hover:text-white transition"
                         title="Ver Código no GitHub"
                       >
                         <ExternalLink className="w-3.5 h-3.5" />
