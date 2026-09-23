@@ -98,4 +98,22 @@ uv run python scripts/time_trial.py \
 # --output-csv NOME   (padrão: trials.csv, salvo em lab02/dados/)
 ```
 
+## Como rodar a análise estatística (Passo 4 / S03)
+
+Recalcula tudo a partir do estado atual de `dados/trials.csv` + `dados/metrics.csv`
+a cada execução (nunca de números fixos): cobertura dos dados, descritivas
+(mediana/IQR), outliers (regra de Tukey) e teste de Wilcoxon pareado (IA vs
+manual, por participante+kata) para RQ1, RQ2 e RQ3.
+
+```bash
+cd lab02
+uv sync
+
+# Relatório em texto no terminal
+uv run python scripts/analyze_stats.py
+
+# Salvar um resumo em JSON (para o dashboard, por exemplo)
+uv run python scripts/analyze_stats.py --format json -o dados/analysis_summary.json
+```
+
 
