@@ -17,7 +17,7 @@
 
 ## 1. Introdução
 
-A crescente adoção de assistentes de inteligência artificial generativa (como ChatGPT/GPT-4o, Claude Sonnet 5 e Gemini Flash) no ciclo de desenvolvimento de software transformou as práticas de programação. Contudo, a literatura e a indústria ainda carecem de dados empíricos e controlados sobre os reais ganhos de produtividade e os eventuais impactos na qualidade estrutural e corretude do código produzido.
+A crescente adoção de assistentes de inteligência artificial generativa (como ChatGPT, Claude Sonnet 5 e Gemini Flash) no ciclo de desenvolvimento de software transformou as práticas de programação. Contudo, a literatura e a indústria ainda carecem de dados empíricos e controlados sobre os reais ganhos de produtividade e os eventuais impactos na qualidade estrutural e corretude do código produzido.
 
 O objetivo deste laboratório é conduzir um **experimento controlado pareado (*within-subject crossover*)** para avaliar quantitativamente os efeitos do uso de assistentes de IA frente à codificação manual na resolução de tarefas algorítmicas (*katas*).
 
