@@ -15,7 +15,7 @@
 
 ## 1. Introdução
 
-A crescente adoção de assistentes de inteligência artificial generativa (como ChatGPT/GPT-4o, Claude 3.5 Sonnet e Gemini Flash) no ciclo de desenvolvimento de software transformou as práticas de programação. Contudo, a literatura e a indústria ainda carecem de dados empíricos e controlados sobre os reais ganhos de produtividade e os eventuais impactos na qualidade estrutural e corretude do código produzido.
+A crescente adoção de assistentes de inteligência artificial generativa (como ChatGPT/GPT-4o, Claude Sonnet 5 e Gemini Flash) no ciclo de desenvolvimento de software transformou as práticas de programação. Contudo, a literatura e a indústria ainda carecem de dados empíricos e controlados sobre os reais ganhos de produtividade e os eventuais impactos na qualidade estrutural e corretude do código produzido.
 
 O objetivo deste laboratório é conduzir um **experimento controlado pareado (*within-subject crossover*)** para avaliar quantitativamente os efeitos do uso de assistentes de IA frente à codificação manual na resolução de tarefas algorítmicas (*katas*).
 
@@ -30,7 +30,7 @@ O objetivo deste laboratório é conduzir um **experimento controlado pareado (*
 - **RQ3 (João Pedro):** O código gerado por IA apresentará maior verbosidade (maior LOC bruto) e maior complexidade ciclomática pontual devido à geração de código defensivo e tratamento extensivo de casos de borda, embora a manutenibilidade geral (Índice MI) se mantenha alta.
 
 ### Inovações Propostas pelo Grupo (Fatia de 30% da Nota)
-1. **Benchmarking Multimodelo:** Comparação cruzada de desempenho entre três modelos de linguagem de ponta distintos (**Gemini Flash 3.8**, **Claude 3.5 Sonnet** e **GPT-4o**) pareados contra o desenvolvimento manual de cada integrante.
+1. **Benchmarking Multimodelo:** Comparação cruzada de desempenho entre três modelos de linguagem de ponta distintos (**Gemini Flash 3.8**, **Claude Sonnet 5** e **GPT-4o**) pareados contra o desenvolvimento manual de cada integrante.
 2. **Análise de Densidade de Complexidade e Manutenibilidade Composta:** Normalização da complexidade ciclomática por linhas lógicas de código ($\text{CC}/\text{SLOC}$) e avaliação do Índice de Manutenibilidade de Halstead/McCabe ($\text{Radon MI}$).
 3. **Dashboard Web Interativo SPA:** Construção de uma aplicação interativa moderna (React + TypeScript + TailwindCSS + Recharts) com visualização em tempo real de distribuições, *boxplots* pareados e cálculo dinâmico de Wilcoxon e *speedup*.
 
@@ -57,10 +57,10 @@ A metodologia baseia-se no framework **Goal-Question-Metric (GQM)** de Basili et
 
 ### 3.2 Tomadas de Decisão
 - **Design Experimental:** *Within-subject crossover* balanceado. Cada um dos 3 integrantes executou os 6 katas em ambos os tratamentos (18 trials com IA e 18 trials manuais, totalizando $N = 36$ trials).
-- **Time-box Rígido:** 35 minutos (2.100 segundos) por trial. Se o tempo expirasse sem aprovação em todos os testes, o trial seria computado como censurado em 35 min, preservando o número de testes aprovados para análise de defeitos.
+- **Time-box Rígido:** A atividade previa 35 minutos (2.100 segundos) por trial, porém a escolha dos katas recentes da XIII Maratona Mineira de Programação aumentou a complexidade de cada um dos problemas e inviabilizou um time-box rígido.
 - **Modelos Utilizados:** 
   - Gabriel: Gemini Flash 3.8
-  - João Pedro: Claude 3.5 Sonnet
+  - João Pedro: Claude Sonnet 5
   - Marcela: ChatGPT (GPT-4o)
 - **Política de WIP do Kanban:** Limite de WIP fixado em **6 cartões** na coluna *Doing* (exatamente 2 cartões por integrante ativo), prevenindo gargalos e garantindo fluxo contínuo.
 
@@ -73,7 +73,7 @@ A metodologia baseia-se no framework **Goal-Question-Metric (GQM)** de Basili et
 | **Lab02S01** | Seleção dos 6 katas da Maratona Mineira 2026 + 120 testes de aceitação e suites | Gabriel | `#20` |
 | **Lab02S01** | Formalização do desenho experimental, GQM e ameaças à validade | Marcela | `#21` |
 | **Lab02S02** | Execução de trials com Gemini Flash 3.8 + Trials Manuais | Gabriel | `#22` |
-| **Lab02S02** | Execução de trials com Claude 3.5 Sonnet + Trials Manuais | João Pedro | `#23` |
+| **Lab02S02** | Execução de trials com Claude Sonnet 5 + Trials Manuais | João Pedro | `#23` |
 | **Lab02S02** | Execução de trials com GPT-4o + Trials Manuais | Marcela | `#24` |
 | **Lab02S03** | Desenvolvimento do Dashboard interativo de visualização | João Pedro | `#26` |
 | **Lab02S03** | Consolidação estatística (Wilcoxon pareado, IQR, outliers) via `analyze_stats.py` | Marcela / Gabriel | `#27` |
@@ -117,7 +117,7 @@ Para cumprir a exigência dos 30% de inovação, o grupo implementou três contr
 
 ### 4.1 Coleta de Dados
 A amostra final é composta por **36 trials completos** (100% de integridade):
-- **18 trials com Assistente de IA** (6 Gemini Flash 3.8 + 6 Claude 3.5 Sonnet + 6 GPT-4o)
+- **18 trials com Assistente de IA** (6 Gemini Flash 3.8 + 6 Claude Sonnet 5 + 6 GPT-4o)
 - **18 trials Manuais** (6 Gabriel + 6 João Pedro + 6 Marcela)
 - **Zero trials censurados:** todos os 36 trials atingiram 100% de sucesso nos 20 testes de aceitação bem antes do time-box de 35 minutos (2.100s).
 
@@ -159,7 +159,7 @@ Abaixo está a síntese descritiva calculada rigorosamente sobre o dataset conso
   3. **Índice de Manutenibilidade:** Apesar da maior complexidade pontual, o MI do código com IA foi significativamente melhor ($56.84$ vs $48.71$, $p = 0.0342$), pois a modularização e clareza das variáveis compensaram o tamanho adicional.
 
 #### Análise das Inovações (30%)
-- **Comparação entre Modelos:** Claude 3.5 Sonnet, Gemini Flash 3.8 e GPT-4o apresentaram desempenho similar em taxa de sucesso (100%). O Gemini Flash destacou-se pela menor latência na geração e maior concisão em problemas de busca em grafo, enquanto Claude e GPT-4o geraram estruturas com nomes de métodos mais semânticos.
+- **Comparação entre Modelos:** Claude Sonnet 5, Gemini Flash 3.8 e GPT-4o apresentaram desempenho similar em taxa de sucesso (100%). O Gemini Flash destacou-se pela menor latência na geração e maior concisão em problemas de busca em grafo, enquanto Claude e GPT-4o geraram estruturas com nomes de métodos mais semânticos.
 - **Ameaças à Validade:** O uso dos problemas da Maratona Mineira 2026 eliminou a memorização pura. O desenho *crossover* minimizou o efeito de aprendizado.
 
 ---
