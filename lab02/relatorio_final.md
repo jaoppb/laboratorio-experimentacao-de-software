@@ -8,7 +8,9 @@
 | **Professor(a)** | Danilo Maia |
 | **Laboratório** | Lab02 — Assistentes de IA vs. Codificação Manual: Um Experimento Controlado |
 | **Grupo (trio)** | Marcela Mendes Campos (@marcelacamposm) · João Pedro Peres (@jaoppb) · Gabriel Assis de Souza (@GabriAssiss)|
-| **Link do Repositório / GitHub Projects** | [Repositório GitHub](https://github.com/jaoppb/laboratorio-experimentacao-de-software) · [GitHub Projects (v2)](https://github.com/users/jaoppb/projects/3) |
+| **Link do Repositório** | [Repositório GitHub](https://github.com/jaoppb/laboratorio-experimentacao-de-software) |
+| **Link do GitHub Projects** | [GitHub Projects (v2)](https://github.com/users/jaoppb/projects/3) |
+| **Link do Dashboard** | [Dashboard Interativo](https://jaoppb.github.io/laboratorio-experimentacao-de-software/lab02/) |
 | **Data de Entrega** | 24/09/2026 |
 
 ---
@@ -114,6 +116,8 @@ Para cumprir a exigência dos 30% de inovação, o grupo implementou três contr
 ---
 
 ## 4. Resultados
+
+[Dashboard](https://jaoppb.github.io/laboratorio-experimentacao-de-software/lab02/)
 
 ### 4.1 Coleta de Dados
 A amostra final é composta por **36 trials completos** (100% de integridade):
