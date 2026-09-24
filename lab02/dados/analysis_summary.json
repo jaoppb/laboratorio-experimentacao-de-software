@@ -1,0 +1,295 @@
+{
+  "cobertura": {
+    "por_participante": {
+      "gabriel": {
+        "ai": 6,
+        "manual": 6
+      },
+      "joao": {
+        "ai": 6,
+        "manual": 6
+      },
+      "marcela": {
+        "ai": 6,
+        "manual": 6
+      }
+    },
+    "katas": [
+      "01-bario-world",
+      "02-cards",
+      "03-exploring-terrain",
+      "04-garment-groups",
+      "05-dish-rack",
+      "06-n-checkers"
+    ],
+    "censurados": 0,
+    "status_nao_completed": []
+  },
+  "descritivas": [
+    {
+      "rq": "RQ1",
+      "metrica": "Tempo até o verde (s)",
+      "coluna": "time_seconds",
+      "ai_mediana": 43.69,
+      "ai_iqr": 142.175,
+      "manual_mediana": 982.76,
+      "manual_iqr": 314.18000000000006
+    },
+    {
+      "rq": "RQ2",
+      "metrica": "Taxa de sucesso",
+      "coluna": "success_rate",
+      "ai_mediana": 1.0,
+      "ai_iqr": 0.0,
+      "manual_mediana": 1.0,
+      "manual_iqr": 0.0
+    },
+    {
+      "rq": "RQ2",
+      "metrica": "Defeitos (testes falhando)",
+      "coluna": "failed_tests",
+      "ai_mediana": 0.0,
+      "ai_iqr": 0.0,
+      "manual_mediana": 0.0,
+      "manual_iqr": 0.0
+    },
+    {
+      "rq": "RQ3",
+      "metrica": "Complexidade ciclomática média",
+      "coluna": "cc_avg",
+      "ai_mediana": 7.0,
+      "ai_iqr": 5.5024999999999995,
+      "manual_mediana": 5.5,
+      "manual_iqr": 4.7475000000000005
+    },
+    {
+      "rq": "RQ3",
+      "metrica": "% de duplicação",
+      "coluna": "duplication_percentage",
+      "ai_mediana": 0.0,
+      "ai_iqr": 0.0,
+      "manual_mediana": 0.0,
+      "manual_iqr": 0.0
+    },
+    {
+      "rq": "RQ3",
+      "metrica": "Índice de manutenibilidade (MI)",
+      "coluna": "mi",
+      "ai_mediana": 56.835,
+      "ai_iqr": 21.827499999999993,
+      "manual_mediana": 48.71,
+      "manual_iqr": 9.532499999999999
+    },
+    {
+      "rq": "RQ3",
+      "metrica": "LOC (controle)",
+      "coluna": "loc",
+      "ai_mediana": 53.0,
+      "ai_iqr": 22.75,
+      "manual_mediana": 41.0,
+      "manual_iqr": 17.5
+    }
+  ],
+  "outliers": [
+    {
+      "rq": "RQ1",
+      "metrica": "Tempo até o verde (s)",
+      "tratamento": "ai",
+      "trial_id": "trial-joao-01",
+      "kata": "01-bario-world",
+      "participant": "joao",
+      "valor": 448.53,
+      "limite_inferior": -181.76,
+      "limite_superior": 386.94
+    },
+    {
+      "rq": "RQ1",
+      "metrica": "Tempo até o verde (s)",
+      "tratamento": "manual",
+      "trial_id": "trial-joao-manual-04",
+      "kata": "04-garment-groups",
+      "participant": "joao",
+      "valor": 42.43,
+      "limite_inferior": 361.02,
+      "limite_superior": 1617.74
+    },
+    {
+      "rq": "RQ1",
+      "metrica": "Tempo até o verde (s)",
+      "tratamento": "manual",
+      "trial_id": "trial-gabriel-manual-04",
+      "kata": "04-garment-groups",
+      "participant": "gabriel",
+      "valor": 252.89,
+      "limite_inferior": 361.02,
+      "limite_superior": 1617.74
+    },
+    {
+      "rq": "RQ1",
+      "metrica": "Tempo até o verde (s)",
+      "tratamento": "manual",
+      "trial_id": "trial-marcela-manual-04",
+      "kata": "04-garment-groups",
+      "participant": "marcela",
+      "valor": 65.1,
+      "limite_inferior": 361.02,
+      "limite_superior": 1617.74
+    },
+    {
+      "rq": "RQ3",
+      "metrica": "Complexidade ciclomática média",
+      "tratamento": "ai",
+      "trial_id": "trial-gabriel-01",
+      "kata": "01-bario-world",
+      "participant": "gabriel",
+      "valor": 18.0,
+      "limite_inferior": -4.76,
+      "limite_superior": 17.25
+    },
+    {
+      "rq": "RQ3",
+      "metrica": "Complexidade ciclomática média",
+      "tratamento": "manual",
+      "trial_id": "trial-joao-manual-01",
+      "kata": "01-bario-world",
+      "participant": "joao",
+      "valor": 16.0,
+      "limite_inferior": -4.37,
+      "limite_superior": 14.62
+    },
+    {
+      "rq": "RQ3",
+      "metrica": "Índice de manutenibilidade (MI)",
+      "tratamento": "manual",
+      "trial_id": "trial-joao-manual-04",
+      "kata": "04-garment-groups",
+      "participant": "joao",
+      "valor": 88.56,
+      "limite_inferior": 29.74,
+      "limite_superior": 67.87
+    },
+    {
+      "rq": "RQ3",
+      "metrica": "Índice de manutenibilidade (MI)",
+      "tratamento": "manual",
+      "trial_id": "trial-gabriel-manual-04",
+      "kata": "04-garment-groups",
+      "participant": "gabriel",
+      "valor": 84.72,
+      "limite_inferior": 29.74,
+      "limite_superior": 67.87
+    },
+    {
+      "rq": "RQ3",
+      "metrica": "Índice de manutenibilidade (MI)",
+      "tratamento": "manual",
+      "trial_id": "trial-marcela-manual-04",
+      "kata": "04-garment-groups",
+      "participant": "marcela",
+      "valor": 69.12,
+      "limite_inferior": 29.74,
+      "limite_superior": 67.87
+    },
+    {
+      "rq": "RQ3",
+      "metrica": "LOC (controle)",
+      "tratamento": "manual",
+      "trial_id": "trial-joao-manual-04",
+      "kata": "04-garment-groups",
+      "participant": "joao",
+      "valor": 2,
+      "limite_inferior": 9.25,
+      "limite_superior": 79.25
+    },
+    {
+      "rq": "RQ3",
+      "metrica": "LOC (controle)",
+      "tratamento": "manual",
+      "trial_id": "trial-gabriel-manual-04",
+      "kata": "04-garment-groups",
+      "participant": "gabriel",
+      "valor": 5,
+      "limite_inferior": 9.25,
+      "limite_superior": 79.25
+    }
+  ],
+  "wilcoxon": [
+    {
+      "rq": "RQ1",
+      "metrica": "Tempo até o verde (s)",
+      "coluna": "time_seconds",
+      "n_pares": 18,
+      "statistic": 0.0,
+      "p_value": 0.0,
+      "significativo_0.05": true
+    },
+    {
+      "rq": "RQ2",
+      "metrica": "Taxa de sucesso",
+      "coluna": "success_rate",
+      "n_pares": 18,
+      "resultado": "Todas as diferenças são zero — Wilcoxon indefinido."
+    },
+    {
+      "rq": "RQ2",
+      "metrica": "Defeitos (testes falhando)",
+      "coluna": "failed_tests",
+      "n_pares": 18,
+      "resultado": "Todas as diferenças são zero — Wilcoxon indefinido."
+    },
+    {
+      "rq": "RQ3",
+      "metrica": "Complexidade ciclomática média",
+      "coluna": "cc_avg",
+      "n_pares": 18,
+      "statistic": 8.0,
+      "p_value": 0.0259,
+      "significativo_0.05": true
+    },
+    {
+      "rq": "RQ3",
+      "metrica": "% de duplicação",
+      "coluna": "duplication_percentage",
+      "n_pares": 18,
+      "resultado": "Todas as diferenças são zero — Wilcoxon indefinido."
+    },
+    {
+      "rq": "RQ3",
+      "metrica": "Índice de manutenibilidade (MI)",
+      "coluna": "mi",
+      "n_pares": 18,
+      "statistic": 37.0,
+      "p_value": 0.0342,
+      "significativo_0.05": true
+    },
+    {
+      "rq": "RQ3",
+      "metrica": "LOC (controle)",
+      "coluna": "loc",
+      "n_pares": 18,
+      "statistic": 0.0,
+      "p_value": 0.0003,
+      "significativo_0.05": true
+    }
+  ],
+  "wilcoxon_rq1_por_participante": [
+    {
+      "participant": "gabriel",
+      "n_pares": 6,
+      "statistic": 0.0,
+      "p_value": 0.0312
+    },
+    {
+      "participant": "joao",
+      "n_pares": 6,
+      "statistic": 0.0,
+      "p_value": 0.0312
+    },
+    {
+      "participant": "marcela",
+      "n_pares": 6,
+      "statistic": 0.0,
+      "p_value": 0.0312
+    }
+  ]
+}

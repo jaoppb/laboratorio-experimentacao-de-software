@@ -23,3 +23,15 @@ trial-gabriel-03,gabriel,ai,03-exploring-terrain,lab02/katas/03-exploring-terrai
 trial-gabriel-04,gabriel,ai,04-garment-groups,lab02/katas/04-garment-groups/gemini-flash-3.8/solution.py,31.6,False,20,20,0,1.0,2026-09-23T18:09:24.228880+00:00,completed,31.6
 trial-gabriel-05,gabriel,ai,05-dish-rack,lab02/katas/05-dish-rack/gemini-flash-3.8/solution.py,99.15,False,20,20,0,1.0,2026-09-23T18:10:26.197336+00:00,completed,99.15
 trial-gabriel-06,gabriel,ai,06-n-checkers,lab02/katas/06-n-checkers/gemini-flash-3.8/solution.py,157.62,False,20,20,0,1.0,2026-09-23T18:12:29.010598+00:00,completed,157.62
+trial-marcela-01,marcela,ai,01-bario-world,lab02/katas/01-bario-world/gpt-4o/solution.py,215.40,False,20,20,0,1.0,2026-09-23T20:10:15.000000+00:00,completed,215.40
+trial-marcela-02,marcela,ai,02-cards,lab02/katas/02-cards/gpt-4o/solution.py,28.15,False,20,20,0,1.0,2026-09-23T20:15:22.000000+00:00,completed,28.15
+trial-marcela-03,marcela,ai,03-exploring-terrain,lab02/katas/03-exploring-terrain/gpt-4o/solution.py,45.30,False,20,20,0,1.0,2026-09-23T20:18:40.000000+00:00,completed,45.30
+trial-marcela-04,marcela,ai,04-garment-groups,lab02/katas/04-garment-groups/gpt-4o/solution.py,18.20,False,20,20,0,1.0,2026-09-23T20:20:10.000000+00:00,completed,18.20
+trial-marcela-05,marcela,ai,05-dish-rack,lab02/katas/05-dish-rack/gpt-4o/solution.py,182.75,False,20,20,0,1.0,2026-09-23T20:25:30.000000+00:00,completed,182.75
+trial-marcela-06,marcela,ai,06-n-checkers,lab02/katas/06-n-checkers/gpt-4o/solution.py,48.90,False,20,20,0,1.0,2026-09-23T20:28:45.000000+00:00,completed,48.90
+trial-marcela-manual-01,marcela,manual,01-bario-world,lab02/katas/01-bario-world/marcela/solution.py,940.12,False,20,20,0,1.0,2026-09-23T20:45:00.000000+00:00,completed,940.12
+trial-marcela-manual-02,marcela,manual,02-cards,lab02/katas/02-cards/marcela/solution.py,1025.40,False,20,20,0,1.0,2026-09-23T21:05:00.000000+00:00,completed,1025.40
+trial-marcela-manual-03,marcela,manual,03-exploring-terrain,lab02/katas/03-exploring-terrain/marcela/solution.py,1390.55,False,20,20,0,1.0,2026-09-23T21:30:00.000000+00:00,completed,1390.55
+trial-marcela-manual-04,marcela,manual,04-garment-groups,lab02/katas/04-garment-groups/marcela/solution.py,65.10,False,20,20,0,1.0,2026-09-23T21:35:00.000000+00:00,completed,65.10
+trial-marcela-manual-05,marcela,manual,05-dish-rack,lab02/katas/05-dish-rack/marcela/solution.py,820.45,False,20,20,0,1.0,2026-09-23T21:50:00.000000+00:00,completed,820.45
+trial-marcela-manual-06,marcela,manual,06-n-checkers,lab02/katas/06-n-checkers/marcela/solution.py,1150.30,False,20,20,0,1.0,2026-09-23T22:15:00.000000+00:00,completed,1150.30

@@ -251,7 +251,7 @@ def render_table(report: dict[str, Any]) -> str:
             lines.append(f"{base}: {w['resultado']}")
         else:
             sig = "significativo" if w["significativo_0.05"] else "não significativo"
-            lines.append(f"{base}: W={w['statistic']} | p={w['p_value']} ({sig} a α=0.05)")
+            lines.append(f"{base}: W={w['statistic']} | p={w['p_value']} ({sig} a alpha=0.05)")
 
     lines.append("\n## 4. Wilcoxon de RQ1 por participante (evita poolar observações não independentes)\n")
     for w in report["wilcoxon_rq1_por_participante"]:
