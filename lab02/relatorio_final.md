@@ -76,7 +76,7 @@ A metodologia baseia-se no framework **Goal-Question-Metric (GQM)** de Basili et
 | **Lab02S01** | Formalização do desenho experimental, GQM e ameaças à validade | Marcela | `#21` |
 | **Lab02S02** | Execução de trials com Gemini Flash 3.8 + Trials Manuais | Gabriel | `#22` |
 | **Lab02S02** | Execução de trials com Claude Sonnet 5 + Trials Manuais | João Pedro | `#23` |
-| **Lab02S02** | Execução de trials com GPT-4o + Trials Manuais | Marcela | `#24` |
+| **Lab02S02** | Execução de trials com GPT + Trials Manuais | Marcela | `#24` |
 | **Lab02S03** | Desenvolvimento do Dashboard interativo de visualização | João Pedro | `#26` |
 | **Lab02S03** | Consolidação estatística (Wilcoxon pareado, IQR, outliers) via `analyze_stats.py` | Marcela / Gabriel | `#27` |
 | **Relatório Final** | Redação do documento final consolidado e submissão | João Pedro / Marcela / Gabriel | `#25` |
