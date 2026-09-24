@@ -48,5 +48,6 @@ export function getModelDisplayName(modelKey: string | null): string {
   if (!modelKey || modelKey === 'manual') return 'Manual (Sem IA)';
   if (modelKey === 'gemini-flash-3.8') return 'Gemini 3.8 Flash';
   if (modelKey === 'claude-sonnet-5') return 'Claude Sonnet 5';
+  if (modelKey === 'gpt-4o') return 'GPT-4o';
   return modelKey;
 }

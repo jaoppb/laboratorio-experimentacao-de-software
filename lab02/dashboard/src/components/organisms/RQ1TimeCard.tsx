@@ -63,56 +63,109 @@ export const RQ1TimeCard: React.FC<RQ1TimeCardProps> = ({ stats, trials }) => {
     const aiMedians = stats.kata_comparisons.map((k) => k.ai_time_median * unitMultiplier);
     const manualMedians = stats.kata_comparisons.map((k) => k.manual_time_median * unitMultiplier);
 
+    const lineX: (number | null)[] = [];
+    const lineY: (string | null)[] = [];
+    stats.kata_comparisons.forEach((k) => {
+      lineX.push(k.manual_time_median * unitMultiplier, k.ai_time_median * unitMultiplier, null);
+      lineY.push(k.kata_title, k.kata_title, null);
+    });
+
     chartData = [
       {
-        type: 'bar',
-        x: kataLabels,
-        y: aiMedians,
-        name: 'IA (Mediana)',
-        marker: { color: '#2f81f7' },
-        hovertemplate: `<b>%{x}</b> (IA): %{y:.1f} ${unitLabel}<extra></extra>`,
+        type: 'scatter',
+        mode: 'lines',
+        x: lineX,
+        y: lineY,
+        line: { color: isDark ? '#484f58' : '#d0d7de', width: 3 },
+        hoverinfo: 'none',
+        showlegend: false,
       },
       {
-        type: 'bar',
-        x: kataLabels,
-        y: manualMedians,
+        type: 'scatter',
+        mode: 'markers',
+        x: manualMedians,
+        y: kataLabels,
         name: 'Manual (Mediana)',
-        marker: { color: '#f85149' },
-        hovertemplate: `<b>%{x}</b> (Manual): %{y:.1f} ${unitLabel}<extra></extra>`,
+        marker: {
+          color: '#f85149',
+          symbol: 'diamond',
+          size: 11,
+          line: { color: isDark ? '#0d1117' : '#ffffff', width: 1 },
+        },
+        hovertemplate: `<b>%{y}</b> (Manual): %{x:.1f} ${unitLabel}<extra></extra>`,
+      },
+      {
+        type: 'scatter',
+        mode: 'markers',
+        x: aiMedians,
+        y: kataLabels,
+        name: 'IA (Mediana)',
+        marker: {
+          color: '#2f81f7',
+          symbol: 'circle',
+          size: 13,
+          line: { color: isDark ? '#0d1117' : '#ffffff', width: 1.5 },
+        },
+        hovertemplate: `<b>%{y}</b> (IA): %{x:.1f} ${unitLabel}<extra></extra>`,
       },
     ];
   } else {
-    const modelLabels = stats.model_comparisons.map((m) => m.model_name);
-    const medians = stats.model_comparisons.map((m) => m.time_median * unitMultiplier);
+    // Model view: Boxplot with points showing the distribution of times per model/manual
+    const modelColors: Record<string, string> = {
+      'Gemini 3.8 Flash': '#2f81f7',
+      'Gemini Flash 3.8': '#2f81f7',
+      'Claude Sonnet 5': '#a371f7',
+      'GPT-4o': '#10b981',
+      'Manual (Sem IA)': '#f85149',
+    };
 
-    chartData = [
-      {
-        type: 'bar',
-        x: modelLabels,
-        y: medians,
-        marker: {
-          color: modelLabels.map((l) =>
-            l.includes('Gemini') ? '#2f81f7' : l.includes('Claude') ? '#a371f7' : '#f85149'
-          ),
-        },
-        hovertemplate: `<b>%{x}</b>: %{y:.1f} ${unitLabel}<extra></extra>`,
-      },
-    ];
+    chartData = stats.model_comparisons.map((m) => {
+      const modelTrials = trials.filter((t) => {
+        const key = t.ai_model || 'Manual (Sem IA)';
+        return key === m.model_name;
+      });
+
+      return {
+        type: 'box',
+        y: modelTrials.map((t) => t.time_seconds * unitMultiplier),
+        name: m.model_name,
+        marker: { color: modelColors[m.model_name] || '#8b949e' },
+        boxpoints: 'all',
+        jitter: 0.3,
+        pointpos: -1.8,
+        text: modelTrials.map((t) => `${t.kata_title} (${t.participant})`),
+        hovertemplate: `<b>%{text}</b><br>${m.model_name}: %{y:.1f} ${unitLabel}<extra></extra>`,
+      };
+    });
   }
 
   const layout: Partial<Plotly.Layout> = {
-    barmode: viewMode === 'kata' ? 'group' : undefined,
-    yaxis: {
-      title: { text: `Tempo (${unitLabel})`, font: { size: 11, color: axisFontColor } },
-      tickfont: { size: 10, color: axisFontColor },
-      gridcolor: gridColor,
-      zerolinecolor: gridColor,
-    },
-    xaxis: {
-      tickfont: { size: 10, color: axisFontColor },
-      gridcolor: 'transparent',
-    },
-    margin: { l: 55, r: 20, t: 15, b: 40 },
+    yaxis:
+      viewMode === 'kata'
+        ? {
+            tickfont: { size: 10, color: axisFontColor },
+            gridcolor: gridColor,
+            autorange: 'reversed',
+            automargin: true,
+          }
+        : {
+            title: { text: `Tempo (${unitLabel})`, font: { size: 11, color: axisFontColor } },
+            tickfont: { size: 10, color: axisFontColor },
+            gridcolor: gridColor,
+            zerolinecolor: gridColor,
+          },
+    xaxis:
+      viewMode === 'kata'
+        ? {
+            title: { text: `Tempo Mediano (${unitLabel})`, font: { size: 11, color: axisFontColor } },
+            tickfont: { size: 10, color: axisFontColor },
+            gridcolor: gridColor,
+          }
+        : {
+            tickfont: { size: 10, color: axisFontColor },
+            gridcolor: 'transparent',
+          },
+    margin: viewMode === 'kata' ? { l: 120, r: 20, t: 15, b: 40 } : { l: 55, r: 20, t: 15, b: 40 },
     legend: {
       orientation: 'h',
       y: 1.15,

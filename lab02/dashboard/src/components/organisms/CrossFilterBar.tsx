@@ -45,8 +45,10 @@ export const CrossFilterBar: React.FC<CrossFilterBarProps> = ({
     { label: 'Apenas Manual', apply: () => onUpdateFilters({ treatment: 'manual', ai_model: 'all' }) },
     { label: 'Gabriel', apply: () => onUpdateFilters({ participant: 'gabriel' }) },
     { label: 'João', apply: () => onUpdateFilters({ participant: 'joao' }) },
+    { label: 'Marcela', apply: () => onUpdateFilters({ participant: 'marcela' }) },
     { label: 'Gemini 3.8', apply: () => onUpdateFilters({ ai_model: 'gemini-flash-3.8', treatment: 'ai' }) },
     { label: 'Claude 5', apply: () => onUpdateFilters({ ai_model: 'claude-sonnet-5', treatment: 'ai' }) },
+    { label: 'GPT-4o', apply: () => onUpdateFilters({ ai_model: 'gpt-4o', treatment: 'ai' }) },
   ];
 
   return (
@@ -128,6 +130,7 @@ export const CrossFilterBar: React.FC<CrossFilterBarProps> = ({
               { value: 'all', label: 'Todos os Modelos / Modos' },
               { value: 'gemini-flash-3.8', label: 'Gemini 3.8 Flash (Gabriel)' },
               { value: 'claude-sonnet-5', label: 'Claude Sonnet 5 (João)' },
+              { value: 'gpt-4o', label: 'GPT-4o (Marcela)' },
               { value: 'manual', label: 'N/A (Apenas Manual)' },
             ]}
           />

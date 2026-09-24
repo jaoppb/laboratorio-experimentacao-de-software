@@ -12,11 +12,11 @@ interface RQ3StructureCardProps {
 }
 
 type MetricKey = 'cc' | 'mi' | 'loc' | 'dup';
-type ViewMode = 'overall' | 'kata' | 'scatter';
+type ViewMode = 'by-kata' | 'dumbbell' | 'scatter' | 'overall';
 
 export const RQ3StructureCard: React.FC<RQ3StructureCardProps> = ({ stats, trials }) => {
   const { isDark } = useTheme();
-  const [viewMode, setViewMode] = useState<ViewMode>('overall');
+  const [viewMode, setViewMode] = useState<ViewMode>('by-kata');
   const [metric, setMetric] = useState<MetricKey>('cc');
 
   const axisFontColor = isDark ? '#c9d1d9' : '#24292f';
@@ -88,35 +88,35 @@ export const RQ3StructureCard: React.FC<RQ3StructureCardProps> = ({ stats, trial
 
   let chartData: Plotly.Data[] = [];
 
-  if (viewMode === 'overall') {
-    const aiVals = aiTrials.map((t) => getMetricValue(t, metric));
-    const manualVals = manualTrials.map((t) => getMetricValue(t, metric));
-
+  if (viewMode === 'by-kata') {
+    // Grouped by Kata: shows Com IA and Manual side-by-side for each problem
     chartData = [
       {
         type: 'box',
-        y: aiVals,
+        x: aiTrials.map((t) => t.kata_title),
+        y: aiTrials.map((t) => getMetricValue(t, metric)),
         name: 'Com Assistente de IA',
         marker: { color: '#a371f7' },
         boxpoints: 'all',
         jitter: 0.3,
-        pointpos: -1.8,
-        text: aiTrials.map((t) => `${t.kata_title} (${t.participant})`),
-        hovertemplate: `<b>%{text}</b> (IA): %{y:.${formatDecimals}f}<extra></extra>`,
+        pointpos: 0,
+        text: aiTrials.map((t) => t.participant),
+        hovertemplate: `<b>%{x}</b> (IA - %{text}): %{y:.${formatDecimals}f}<extra></extra>`,
       },
       {
         type: 'box',
-        y: manualVals,
+        x: manualTrials.map((t) => t.kata_title),
+        y: manualTrials.map((t) => getMetricValue(t, metric)),
         name: 'Manual (Sem IA)',
         marker: { color: '#f59e0b' },
         boxpoints: 'all',
         jitter: 0.3,
-        pointpos: -1.8,
-        text: manualTrials.map((t) => `${t.kata_title} (${t.participant})`),
-        hovertemplate: `<b>%{text}</b> (Manual): %{y:.${formatDecimals}f}<extra></extra>`,
+        pointpos: 0,
+        text: manualTrials.map((t) => t.participant),
+        hovertemplate: `<b>%{x}</b> (Manual - %{text}): %{y:.${formatDecimals}f}<extra></extra>`,
       },
     ];
-  } else if (viewMode === 'kata') {
+  } else if (viewMode === 'dumbbell') {
     const kataLabels = stats.kata_comparisons.map((k) => k.kata_title);
     let aiValues: number[] = [];
     let manualValues: number[] = [];
@@ -190,7 +190,7 @@ export const RQ3StructureCard: React.FC<RQ3StructureCardProps> = ({ stats, trial
         hovertemplate: `<b>%{y}</b> (IA): %{x:.${formatDecimals}f}<extra></extra>`,
       },
     ];
-  } else {
+  } else if (viewMode === 'scatter') {
     // Scatter mode: LOC (controle) vs CC Média
     chartData = [
       {
@@ -214,11 +214,41 @@ export const RQ3StructureCard: React.FC<RQ3StructureCardProps> = ({ stats, trial
         hovertemplate: '<b>%{text}</b> (Manual)<br>LOC: %{x} · CC: %{y:.1f}<extra></extra>',
       },
     ];
+  } else {
+    // Consolidated overall mode across all katas
+    const aiVals = aiTrials.map((t) => getMetricValue(t, metric));
+    const manualVals = manualTrials.map((t) => getMetricValue(t, metric));
+
+    chartData = [
+      {
+        type: 'box',
+        y: aiVals,
+        name: 'Com Assistente de IA',
+        marker: { color: '#a371f7' },
+        boxpoints: 'all',
+        jitter: 0.3,
+        pointpos: -1.8,
+        text: aiTrials.map((t) => `${t.kata_title} (${t.participant})`),
+        hovertemplate: `<b>%{text}</b> (IA): %{y:.${formatDecimals}f}<extra></extra>`,
+      },
+      {
+        type: 'box',
+        y: manualVals,
+        name: 'Manual (Sem IA)',
+        marker: { color: '#f59e0b' },
+        boxpoints: 'all',
+        jitter: 0.3,
+        pointpos: -1.8,
+        text: manualTrials.map((t) => `${t.kata_title} (${t.participant})`),
+        hovertemplate: `<b>%{text}</b> (Manual): %{y:.${formatDecimals}f}<extra></extra>`,
+      },
+    ];
   }
 
   const layout: Partial<Plotly.Layout> = {
+    boxmode: viewMode === 'by-kata' ? 'group' : undefined,
     yaxis:
-      viewMode === 'kata'
+      viewMode === 'dumbbell'
         ? {
             tickfont: { size: 10, color: axisFontColor },
             gridcolor: gridColor,
@@ -237,7 +267,7 @@ export const RQ3StructureCard: React.FC<RQ3StructureCardProps> = ({ stats, trial
             gridcolor: gridColor,
           },
     xaxis:
-      viewMode === 'kata'
+      viewMode === 'dumbbell'
         ? {
             title: { text: yAxisTitle, font: { size: 11, color: axisFontColor } },
             tickfont: { size: 10, color: axisFontColor },
@@ -253,7 +283,12 @@ export const RQ3StructureCard: React.FC<RQ3StructureCardProps> = ({ stats, trial
             tickfont: { size: 10, color: axisFontColor },
             gridcolor: 'transparent',
           },
-    margin: viewMode === 'kata' ? { l: 115, r: 20, t: 15, b: 40 } : { l: 55, r: 20, t: 15, b: 40 },
+    margin:
+      viewMode === 'dumbbell'
+        ? { l: 115, r: 20, t: 15, b: 40 }
+        : viewMode === 'by-kata'
+        ? { l: 55, r: 20, t: 15, b: 45 }
+        : { l: 55, r: 20, t: 15, b: 40 },
     legend: {
       orientation: 'h',
       y: 1.15,
@@ -269,9 +304,10 @@ export const RQ3StructureCard: React.FC<RQ3StructureCardProps> = ({ stats, trial
         onChange={setViewMode}
         activeColorClass="text-purple-600 dark:text-purple-400"
         options={[
-          { value: 'overall', label: 'Geral (Boxplot)' },
-          { value: 'kata', label: 'Por Kata (Dumbbell)' },
+          { value: 'by-kata', label: 'Por Kata (Boxplot)' },
+          { value: 'dumbbell', label: 'Por Kata (Dumbbell)' },
           { value: 'scatter', label: 'Dispersão (LOC vs CC)' },
+          { value: 'overall', label: 'Geral' },
         ]}
       />
       {viewMode !== 'scatter' && (
@@ -293,6 +329,8 @@ export const RQ3StructureCard: React.FC<RQ3StructureCardProps> = ({ stats, trial
   const currentSubtitle =
     viewMode === 'scatter'
       ? 'Dispersão de Linhas de Código (LOC) vs Complexidade Ciclomática (CC) como métrica de controle metodológico'
+      : viewMode === 'by-kata' || viewMode === 'dumbbell'
+      ? `Classificação por problema (Kata): ${metricDescription}`
       : metricDescription;
 
   return (

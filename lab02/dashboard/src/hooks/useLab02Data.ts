@@ -96,6 +96,9 @@ export function useLab02Data() {
           } else if (file.includes('claude-sonnet-5')) {
             ai_model = 'Claude Sonnet 5';
             ai_model_key = 'claude-sonnet-5';
+          } else if (file.includes('gpt-4o') || file.includes('gpt')) {
+            ai_model = 'GPT-4o';
+            ai_model_key = 'gpt-4o';
           } else {
             ai_model = 'Outro Assistente IA';
             ai_model_key = 'other-ai';

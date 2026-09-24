@@ -51,7 +51,7 @@ export interface UnifiedTrial {
   kata_num: string;
   file: string;
   ai_model: string | null;
-  ai_model_key: 'gemini-flash-3.8' | 'claude-sonnet-5' | 'manual' | string;
+  ai_model_key: 'gemini-flash-3.8' | 'claude-sonnet-5' | 'gpt-4o' | 'manual' | string;
   time_seconds: number;
   actual_elapsed_seconds: number;
   censored: boolean;
