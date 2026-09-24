@@ -73,7 +73,7 @@ export const App: React.FC = () => {
             <RQ2SuccessCard stats={stats} trials={filteredTrials} />
           </div>
 
-          <RQ3StructureCard stats={stats} />
+          <RQ3StructureCard stats={stats} trials={filteredTrials} />
         </section>
 
         {/* Drill-down Trial Inspector */}

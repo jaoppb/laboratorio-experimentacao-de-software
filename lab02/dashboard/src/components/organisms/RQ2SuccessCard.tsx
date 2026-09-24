@@ -23,74 +23,151 @@ export const RQ2SuccessCard: React.FC<RQ2SuccessCardProps> = ({ stats, trials })
 
   if (splitBy === 'kata') {
     const kataLabels = stats.kata_comparisons.map((k) => k.kata_title);
-    const aiPassed = stats.kata_comparisons.map((k) => k.ai_tests_passed);
-    const manualPassed = stats.kata_comparisons.map((k) => k.manual_tests_passed);
+    const lineX: (number | null)[] = [];
+    const lineY: (string | null)[] = [];
+    const aiRates: (number | null)[] = [];
+    const manualRates: (number | null)[] = [];
+    const aiHoverTexts: string[] = [];
+    const manualHoverTexts: string[] = [];
+
+    stats.kata_comparisons.forEach((k) => {
+      const aiKataTrials = trials.filter((t) => t.kata === k.kata && t.treatment === 'ai');
+      const manualKataTrials = trials.filter((t) => t.kata === k.kata && t.treatment === 'manual');
+
+      const aiTotal = aiKataTrials.reduce((sum, t) => sum + t.total_tests, 0);
+      const aiPassed = aiKataTrials.reduce((sum, t) => sum + t.passed_tests, 0);
+      const aiRate = aiTotal > 0 ? (aiPassed / aiTotal) * 100 : null;
+
+      const manualTotal = manualKataTrials.reduce((sum, t) => sum + t.total_tests, 0);
+      const manualPassed = manualKataTrials.reduce((sum, t) => sum + t.passed_tests, 0);
+      const manualRate = manualTotal > 0 ? (manualPassed / manualTotal) * 100 : null;
+
+      aiRates.push(aiRate);
+      manualRates.push(manualRate);
+
+      aiHoverTexts.push(
+        aiRate !== null
+          ? `${aiRate.toFixed(0)}% (${aiPassed}/${aiTotal} testes)`
+          : 'Sem dados'
+      );
+      manualHoverTexts.push(
+        manualRate !== null
+          ? `${manualRate.toFixed(0)}% (${manualPassed}/${manualTotal} testes)`
+          : 'Sem dados'
+      );
+
+      if (aiRate !== null && manualRate !== null) {
+        lineX.push(manualRate, aiRate, null);
+        lineY.push(k.kata_title, k.kata_title, null);
+      }
+    });
 
     chartData = [
       {
-        type: 'bar',
-        x: kataLabels,
-        y: aiPassed,
-        name: 'Testes Passados (IA)',
-        marker: { color: '#2f81f7' },
-        hovertemplate: '<b>%{x}</b> (IA): %{y} testes passados<extra></extra>',
+        type: 'scatter',
+        mode: 'lines',
+        x: lineX,
+        y: lineY,
+        line: { color: isDark ? '#484f58' : '#d0d7de', width: 3 },
+        hoverinfo: 'none',
+        showlegend: false,
       },
       {
-        type: 'bar',
-        x: kataLabels,
-        y: manualPassed,
-        name: 'Testes Passados (Manual)',
-        marker: { color: '#238636' },
-        hovertemplate: '<b>%{x}</b> (Manual): %{y} testes passados<extra></extra>',
+        type: 'scatter',
+        mode: 'markers',
+        x: manualRates,
+        y: kataLabels,
+        name: 'Manual (Sem IA)',
+        marker: {
+          color: '#238636',
+          symbol: 'diamond',
+          size: 11,
+          line: { color: isDark ? '#0d1117' : '#ffffff', width: 1 },
+        },
+        text: manualHoverTexts,
+        hovertemplate: '<b>%{y}</b> (Manual): %{text}<extra></extra>',
+      },
+      {
+        type: 'scatter',
+        mode: 'markers',
+        x: aiRates,
+        y: kataLabels,
+        name: 'Com IA',
+        marker: {
+          color: '#2f81f7',
+          symbol: 'circle-open',
+          size: 15,
+          line: { color: '#2f81f7', width: 3 },
+        },
+        text: aiHoverTexts,
+        hovertemplate: '<b>%{y}</b> (IA): %{text}<extra></extra>',
       },
     ];
   } else {
-    const aiPassCount = trials
-      .filter((t) => t.treatment === 'ai')
-      .reduce((sum, t) => sum + t.passed_tests, 0);
-    const aiFailCount = trials
-      .filter((t) => t.treatment === 'ai')
-      .reduce((sum, t) => sum + t.failed_tests, 0);
-
-    const manualPassCount = trials
-      .filter((t) => t.treatment === 'manual')
-      .reduce((sum, t) => sum + t.passed_tests, 0);
-    const manualFailCount = trials
-      .filter((t) => t.treatment === 'manual')
-      .reduce((sum, t) => sum + t.failed_tests, 0);
+    // Strip Plot with Jitter: displays each trial's success rate per treatment
+    const aiTrials = trials.filter((t) => t.treatment === 'ai');
+    const manualTrials = trials.filter((t) => t.treatment === 'manual');
 
     chartData = [
       {
-        type: 'bar',
-        x: ['Com IA', 'Manual (Sem IA)'],
-        y: [aiPassCount, manualPassCount],
-        name: 'Testes Passados',
-        marker: { color: '#238636' },
-        hovertemplate: '<b>%{x}</b>: %{y} testes passados<extra></extra>',
+        type: 'box',
+        y: aiTrials.map((t) => (t.total_tests > 0 ? (t.passed_tests / t.total_tests) * 100 : 0)),
+        name: 'Com IA',
+        marker: { color: '#2f81f7', size: 9 },
+        boxpoints: 'all',
+        jitter: 0.35,
+        pointpos: 0,
+        fillcolor: isDark ? 'rgba(47, 129, 247, 0.15)' : 'rgba(47, 129, 247, 0.1)',
+        line: { color: '#2f81f7', width: 1.5 },
+        text: aiTrials.map((t) => `${t.kata_title} (${t.participant})`),
+        hovertemplate: '<b>%{text}</b><br>Com IA: %{y}% aprovados<extra></extra>',
       },
       {
-        type: 'bar',
-        x: ['Com IA', 'Manual (Sem IA)'],
-        y: [aiFailCount, manualFailCount],
-        name: 'Testes Falhando',
-        marker: { color: '#f85149' },
-        hovertemplate: '<b>%{x}</b>: %{y} testes falhando<extra></extra>',
+        type: 'box',
+        y: manualTrials.map((t) => (t.total_tests > 0 ? (t.passed_tests / t.total_tests) * 100 : 0)),
+        name: 'Manual (Sem IA)',
+        marker: { color: '#238636', size: 9 },
+        boxpoints: 'all',
+        jitter: 0.35,
+        pointpos: 0,
+        fillcolor: isDark ? 'rgba(35, 134, 54, 0.15)' : 'rgba(35, 134, 54, 0.1)',
+        line: { color: '#238636', width: 1.5 },
+        text: manualTrials.map((t) => `${t.kata_title} (${t.participant})`),
+        hovertemplate: '<b>%{text}</b><br>Manual: %{y}% aprovados<extra></extra>',
       },
     ];
   }
 
   const layout: Partial<Plotly.Layout> = {
-    barmode: splitBy === 'treatment' ? 'stack' : 'group',
-    yaxis: {
-      title: { text: 'Quantidade de Testes', font: { size: 11, color: axisFontColor } },
-      tickfont: { size: 10, color: axisFontColor },
-      gridcolor: gridColor,
-    },
-    xaxis: {
-      tickfont: { size: 10, color: axisFontColor },
-      gridcolor: 'transparent',
-    },
-    margin: { l: 50, r: 20, t: 15, b: 40 },
+    yaxis:
+      splitBy === 'kata'
+        ? {
+            tickfont: { size: 10, color: axisFontColor },
+            gridcolor: gridColor,
+            autorange: 'reversed',
+            automargin: true,
+          }
+        : {
+            title: { text: 'Taxa de Sucesso (%)', font: { size: 11, color: axisFontColor } },
+            tickfont: { size: 10, color: axisFontColor },
+            gridcolor: gridColor,
+            range: [0, 105],
+            dtick: 20,
+          },
+    xaxis:
+      splitBy === 'kata'
+        ? {
+            title: { text: 'Taxa de Sucesso nos Testes (%)', font: { size: 11, color: axisFontColor } },
+            tickfont: { size: 10, color: axisFontColor },
+            gridcolor: gridColor,
+            range: [0, 105],
+            dtick: 20,
+          }
+        : {
+            tickfont: { size: 10, color: axisFontColor },
+            gridcolor: 'transparent',
+          },
+    margin: splitBy === 'kata' ? { l: 120, r: 25, t: 15, b: 40 } : { l: 50, r: 20, t: 15, b: 40 },
     legend: {
       orientation: 'h',
       y: 1.15,
@@ -105,8 +182,8 @@ export const RQ2SuccessCard: React.FC<RQ2SuccessCardProps> = ({ stats, trials })
       onChange={setSplitBy}
       activeColorClass="text-emerald-600 dark:text-emerald-400"
       options={[
-        { value: 'kata', label: 'Por Kata' },
-        { value: 'treatment', label: 'Por Tratamento' },
+        { value: 'kata', label: 'Pareado por Kata (Dumbbell)' },
+        { value: 'treatment', label: 'Dispersão Geral (Strip Plot)' },
       ]}
     />
   );
