@@ -96,7 +96,7 @@ O quadro Kanban foi configurado com as colunas: `Backlog → To Do → Doing (WI
 
 | RQ | Métrica | Definição Operacional | Unidade | Ferramenta / Fonte |
 |---|---|---|---|---|
-| **RQ1** | Tempo até o Verde (*Time-to-green*) | $\Delta t = t_{\text{pass\_all}} - t_{\text{start}}$ (tempo até passar nos 20 testes de aceitação) | Segundos ($s$) | `scripts/time_trial.py` |
+| **RQ1** | Tempo até o verde (*time-to-green*) | $\Delta t = t_{\text{green}} - t_{\text{start}}$, onde $t_{\text{green}}$ é o instante da primeira checagem automática (feita a cada 10 s) em que os 20 testes de aceitação passam. Se o trial chegar a 35 min sem passar, é registrado como censurado em 2.100 s | Segundos (s) | `scripts/time_trial.py` |
 | **RQ2** | Taxa de Sucesso Funcional | $\frac{\text{Testes Aprovados}}{\text{Total de Testes (20)}}$ | Proporção ($[0, 1]$) | `scripts/time_trial.py` |
 | **RQ2** | Defeitos Residuais | Contagem absoluta de testes com falha ou erro ao final do trial | Contagem | `scripts/time_trial.py` |
 | **RQ3** | Complexidade Ciclomática Média | Média de $\text{CC} = E - N + 2P$ por função/método no arquivo | Valor escalar | `radon cc` (`collect_metrics.py`) |
