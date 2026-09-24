@@ -179,5 +179,4 @@ Como recomendação prática para a engenharia de software, o uso de assistentes
 - BASILI, Victor R.; CALDIERA, Gianluigi; ROMBACH, H. Dieter. *The Goal Question Metric Approach*. Encyclopedia of Software Engineering, p. 528-532, 1994.
 - MCCABE, Thomas J. *A Complexity Measure*. IEEE Transactions on Software Engineering, v. SE-2, n. 4, p. 308-320, 1976.
 - RADON. *Code Metrics in Python*. Disponível em: <https://radon.readthedocs.io/>.
-- VÍDEO COMPLEMENTAR DE REFERÊNCIA. *Vídeo YouTube*: <https://www.youtube.com/shorts/YwnaeO95AN8>.
 - ZUSE, Horst. *A Framework of Software Measurement*. Walter de Gruyter, 2013.
