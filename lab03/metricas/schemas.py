@@ -48,13 +48,21 @@ class WorkflowRun:
 
 @dataclass
 class Repo:
-    """Baseline stub for repository metadata."""
+    """Baseline dataclass for repository metadata."""
 
     owner: str
     name: str
     default_branch: str = "main"
     stars: int = 0
+    language: str | None = None
+    created_at: datetime | str | None = None
+    contributors_count: int = 0
     metadata: dict[str, Any] | None = None
+
+    def __post_init__(self) -> None:
+        if self.created_at is not None:
+            self.created_at = _parse_datetime(self.created_at)
+
 
 
 @dataclass

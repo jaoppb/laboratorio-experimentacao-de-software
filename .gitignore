@@ -3,6 +3,11 @@
 .env.*
 !.env.example
 
+# Cache
+cache/
+lab03/cache/
+
+
 # Python
 __pycache__/
 *.py[cod]

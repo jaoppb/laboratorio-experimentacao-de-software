@@ -1,0 +1,28 @@
+# Configuração do Pipeline Lab03 - Mineração de Métricas DORA
+
+# Janela de observação (12 meses)
+# Datas fixadas para a Sprint 01 conforme o enunciado (ajustáveis caso o professor defina janela específica)
+janela:
+  inicio: "2025-10-01"
+  fim: "2026-09-30"
+
+# Critérios de inclusão mínima e tamanho da amostra
+amostra:
+  tamanho_final: 100
+  min_releases: 5
+  min_workflow_runs: 50
+
+# Parâmetros para fatiamento de busca na Search API do GitHub
+busca:
+  min_stars: 1000
+  star_ranges:
+    - "1000..1500"
+    - "1501..2500"
+    - "2501..5000"
+    - "5001..10000"
+    - ">10000"
+
+# Diretórios de saída e cache local
+diretorios:
+  dados: "dados"
+  cache: "cache"
