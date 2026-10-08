@@ -1,0 +1,5 @@
+etapa,quantidade_restante,descartados,motivo_descarte
+Busca inicial por estrelas (Search API),0,0,-
+Filtro de Actions ativas,0,0,Workflows total_count == 0
+Filtro de releases na janela (>= 5),0,0,Menos de 5 releases na janela
+Filtro de workflow runs na janela (>= 50),0,0,Menos de 50 runs no default branch
