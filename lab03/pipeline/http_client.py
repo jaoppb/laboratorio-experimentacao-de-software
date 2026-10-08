@@ -6,9 +6,12 @@ import logging
 import os
 import time
 from collections.abc import Callable, Iterator
+from pathlib import Path
 from typing import Any, Self
 
 import httpx
+
+from pipeline.cache import HttpCache
 
 logger = logging.getLogger(__name__)
 
@@ -33,12 +36,30 @@ class GitHubClient:
         client: httpx.Client | None = None,
         sleep_fn: Callable[[float], None] = time.sleep,
         time_fn: Callable[[], float] = time.time,
+        cache: HttpCache | None = None,
+        cache_path: str | Path | None = "cache/http_cache.sqlite",
     ) -> None:
         self.base_url = base_url.rstrip("/")
         self.max_retries = max_retries
         self.backoff_factor = backoff_factor
         self.sleep_fn = sleep_fn
         self.time_fn = time_fn
+
+        disable_cache = os.getenv("DISABLE_CACHE", "").strip().lower() in (
+            "1",
+            "true",
+            "yes",
+        )
+        self._owns_cache = False
+        if cache is not None:
+            self._cache = cache
+        elif cache_path is None or (
+            disable_cache and str(cache_path) == "cache/http_cache.sqlite"
+        ):
+            self._cache = None
+        else:
+            self._cache = HttpCache(cache_path)
+            self._owns_cache = True
 
         resolved_token = token or self._resolve_env_token()
         headers = {
@@ -121,9 +142,27 @@ class GitHubClient:
             self._wait_for_rate_limit(self.last_reset)
             self.last_remaining = None
 
-    def get(self, url: str, params: dict[str, Any] | None = None) -> httpx.Response:
-        """Perform a GET request with rate limit handling and exponential backoff."""
+    @property
+    def cache(self) -> HttpCache | None:
+        """Return the active disk cache instance, if configured."""
+        return self._cache
+
+    def get(
+        self,
+        url: str,
+        params: dict[str, Any] | None = None,
+        force_refresh: bool = False,
+    ) -> httpx.Response:
+        """Perform a GET request with rate limit handling, exponential backoff, and disk cache."""
         full_url = self._resolve_url(url)
+        cache_key = HttpCache.compute_key(full_url, params=params)
+
+        if self._cache is not None and not force_refresh:
+            cached_response = self._cache.get(cache_key)
+            if cached_response is not None:
+                logger.debug("Cache hit for %s", full_url)
+                return cached_response
+
         attempt = 0
 
         while True:
@@ -165,6 +204,11 @@ class GitHubClient:
 
                 # Raise for 4xx client errors (401, 404, etc.)
                 response.raise_for_status()
+
+                # Cache successful 2xx responses
+                if self._cache is not None:
+                    self._cache.set(cache_key, full_url, response)
+
                 return response
 
             except httpx.RequestError as exc:
@@ -184,14 +228,19 @@ class GitHubClient:
                 raise
 
     def get_paginated(
-        self, url: str, params: dict[str, Any] | None = None
+        self,
+        url: str,
+        params: dict[str, Any] | None = None,
+        force_refresh: bool = False,
     ) -> Iterator[httpx.Response]:
         """Fetch all pages following RFC 5988 Link headers, yielding each Response."""
         current_url: str | None = url
         current_params: dict[str, Any] | None = params
 
         while current_url:
-            response = self.get(current_url, params=current_params)
+            response = self.get(
+                current_url, params=current_params, force_refresh=force_refresh
+            )
             yield response
 
             # Check next link in Link header
@@ -205,8 +254,10 @@ class GitHubClient:
                 current_url = None
 
     def close(self) -> None:
-        """Close the underlying HTTP client session."""
+        """Close the underlying HTTP client session and disk cache."""
         self._client.close()
+        if self._owns_cache and self._cache is not None:
+            self._cache.close()
 
     def __enter__(self) -> Self:
         return self
@@ -216,19 +267,25 @@ class GitHubClient:
 
 
 def get(
-    url: str, params: dict[str, Any] | None = None, **kwargs: Any
+    url: str,
+    params: dict[str, Any] | None = None,
+    force_refresh: bool = False,
+    **kwargs: Any,
 ) -> httpx.Response:
     """Convenience function to perform a single GET request using a temporary GitHubClient."""
     with GitHubClient(**kwargs) as client:
-        return client.get(url, params=params)
+        return client.get(url, params=params, force_refresh=force_refresh)
 
 
 def get_paginated(
-    url: str, params: dict[str, Any] | None = None, **kwargs: Any
+    url: str,
+    params: dict[str, Any] | None = None,
+    force_refresh: bool = False,
+    **kwargs: Any,
 ) -> Iterator[httpx.Response]:
     """Convenience function to perform a paginated GET request using a temporary GitHubClient."""
     client = GitHubClient(**kwargs)
     try:
-        yield from client.get_paginated(url, params=params)
+        yield from client.get_paginated(url, params=params, force_refresh=force_refresh)
     finally:
         client.close()

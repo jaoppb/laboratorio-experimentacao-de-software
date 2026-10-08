@@ -337,3 +337,130 @@ def test_malformed_rate_limit_headers():
     assert resp.status_code == 200
     assert client.last_remaining is None
     assert client.last_reset is None
+
+
+def test_client_cache_hit_avoids_repeated_api_call(tmp_path):
+    """Verify that repeated requests hit disk cache and do not call the API again."""
+    calls = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls.append(request)
+        return httpx.Response(200, json={"cached": True}, request=request)
+
+    transport = httpx.MockTransport(handler)
+    cache_db = tmp_path / "cache.sqlite"
+
+    with httpx.Client(transport=transport) as mock_httpx:
+        client = GitHubClient(client=mock_httpx, cache_path=cache_db)
+        # First request: cache miss, calls API
+        r1 = client.get("/repos/foo/bar")
+        assert r1.status_code == 200
+        assert len(calls) == 1
+        assert "X-Cache" not in r1.headers
+
+        # Second request: cache hit, does not call API
+        r2 = client.get("/repos/foo/bar")
+        assert r2.status_code == 200
+        assert len(calls) == 1  # No new API call!
+        assert r2.headers["X-Cache"] == "HIT"
+        assert r2.json() == {"cached": True}
+
+
+def test_client_resumption_after_interrupted_pagination(tmp_path):
+    """Verify acceptance criterion: interruption (Ctrl+C) and rerun resumes where it left off."""
+    api_calls = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        api_calls.append(str(request.url))
+        url_str = str(request.url)
+        if "page=2" in url_str:
+            headers = {"Link": '<https://api.github.com/runs?page=3>; rel="next"'}
+            return httpx.Response(
+                200, headers=headers, json=[{"run": 2}], request=request
+            )
+        if "page=3" in url_str:
+            return httpx.Response(200, json=[{"run": 3}], request=request)
+        # Page 1
+        headers = {"Link": '<https://api.github.com/runs?page=2>; rel="next"'}
+        return httpx.Response(200, headers=headers, json=[{"run": 1}], request=request)
+
+    transport = httpx.MockTransport(handler)
+    cache_db = tmp_path / "resumption_cache.sqlite"
+
+    # --- Run 1: Interrupted after page 2 (simulating Ctrl+C midway) ---
+    with httpx.Client(transport=transport) as mock_httpx:
+        client1 = GitHubClient(client=mock_httpx, cache_path=cache_db)
+        gen = client1.get_paginated("/runs")
+        p1 = next(gen)
+        assert p1.json() == [{"run": 1}]
+        p2 = next(gen)
+        assert p2.json() == [{"run": 2}]
+        # Simulate Ctrl+C / early exit before page 3 is requested
+        gen.close()
+        client1.close()
+
+    assert len(api_calls) == 2
+    assert api_calls == [
+        "https://api.github.com/runs",
+        "https://api.github.com/runs?page=2",
+    ]
+
+    # --- Run 2: Restart pipeline with the same cache database ---
+    with httpx.Client(transport=transport) as mock_httpx:
+        client2 = GitHubClient(client=mock_httpx, cache_path=cache_db)
+        all_pages = list(client2.get_paginated("/runs"))
+        client2.close()
+
+    # Total responses yielded is 3
+    assert len(all_pages) == 3
+    all_runs = [item for page in all_pages for item in page.json()]
+    assert all_runs == [{"run": 1}, {"run": 2}, {"run": 3}]
+
+    # Crucial check: pages 1 and 2 were replayed from SQLite cache;
+    # only page 3 was called on the network!
+    assert len(api_calls) == 3
+    assert api_calls[2] == "https://api.github.com/runs?page=3"
+    assert all_pages[0].headers["X-Cache"] == "HIT"
+    assert all_pages[1].headers["X-Cache"] == "HIT"
+    assert "X-Cache" not in all_pages[2].headers
+
+
+def test_client_force_refresh_bypasses_cache(tmp_path):
+    """Verify force_refresh=True ignores cached entry and re-fetches from network."""
+    calls = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls.append(request)
+        return httpx.Response(200, json={"version": len(calls)}, request=request)
+
+    transport = httpx.MockTransport(handler)
+    cache_db = tmp_path / "cache.sqlite"
+
+    with httpx.Client(transport=transport) as mock_httpx:
+        client = GitHubClient(client=mock_httpx, cache_path=cache_db)
+        r1 = client.get("/data")
+        assert r1.json() == {"version": 1}
+        assert len(calls) == 1
+
+        # With force_refresh=True, it must query the API
+        r2 = client.get("/data", force_refresh=True)
+        assert r2.json() == {"version": 2}
+        assert len(calls) == 2
+
+
+def test_client_cache_disabled_with_none_path(tmp_path):
+    """Verify cache_path=None disables caching entirely."""
+    calls = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls.append(request)
+        return httpx.Response(200, json={"ok": True}, request=request)
+
+    transport = httpx.MockTransport(handler)
+
+    with httpx.Client(transport=transport) as mock_httpx:
+        client = GitHubClient(client=mock_httpx, cache_path=None)
+        assert client.cache is None
+        client.get("/endpoint")
+        client.get("/endpoint")
+        assert len(calls) == 2
