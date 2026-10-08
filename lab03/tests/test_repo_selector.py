@@ -1,0 +1,86 @@
+"""Unit tests for repository candidate selection and Actions filtering (Issue #29)."""
+
+from unittest.mock import MagicMock
+
+import httpx
+import pytest
+from pipeline.funnel import FunnelTracker
+from pipeline.http_client import GitHubClient
+from pipeline.repo_selector import (
+    filter_repositories_with_actions,
+    search_candidates_by_stars,
+)
+
+
+class TestRepoSelector:
+    def test_search_candidates_by_stars_and_deduplication(self):
+        client = MagicMock(spec=GitHubClient)
+
+        def mock_get(url: str, params: dict | None = None):
+            query = params.get("q", "") if params else ""
+            if "1000..1500" in query:
+                return httpx.Response(
+                    200,
+                    json={
+                        "items": [
+                            {"full_name": "owner/repo1", "stargazers_count": 1200},
+                            {"full_name": "owner/repo2", "stargazers_count": 1100},
+                        ]
+                    },
+                    request=httpx.Request("GET", "https://api.github.com/search"),
+                )
+            # Second range overlaps repo2 and adds repo3
+            return httpx.Response(
+                200,
+                json={
+                    "items": [
+                        {"full_name": "owner/repo2", "stargazers_count": 1100},
+                        {"full_name": "owner/repo3", "stargazers_count": 2000},
+                    ]
+                },
+                request=httpx.Request("GET", "https://api.github.com/search"),
+            )
+
+        client.get.side_effect = mock_get
+
+        results = search_candidates_by_stars(
+            client=client,
+            star_ranges=["1000..1500", "1501..2500"],
+            max_pages_per_range=1,
+        )
+
+        assert len(results) == 3
+        names = [r["full_name"] for r in results]
+        assert names == ["owner/repo1", "owner/repo2", "owner/repo3"]
+
+    def test_filter_repositories_with_actions(self):
+        client = MagicMock(spec=GitHubClient)
+
+        def mock_get(url: str, params: dict | None = None):
+            if "has-ci" in url:
+                return httpx.Response(
+                    200,
+                    json={"total_count": 3},
+                    request=httpx.Request("GET", "https://api.github.com" + url),
+                )
+            if "no-ci" in url:
+                return httpx.Response(
+                    200,
+                    json={"total_count": 0},
+                    request=httpx.Request("GET", "https://api.github.com" + url),
+                )
+            raise httpx.RequestError("404 error", request=httpx.Request("GET", url))
+
+        client.get.side_effect = mock_get
+        funnel = FunnelTracker()
+
+        repos = [
+            {"full_name": "owner/has-ci"},
+            {"full_name": "owner/no-ci"},
+            {"full_name": "owner/error-repo"},
+        ]
+
+        accepted = filter_repositories_with_actions(client, repos, funnel=funnel)
+        assert len(accepted) == 1
+        assert accepted[0]["full_name"] == "owner/has-ci"
+        assert len(funnel.stages) == 2
