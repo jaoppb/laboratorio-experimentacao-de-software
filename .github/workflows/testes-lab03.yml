@@ -1,0 +1,41 @@
+name: Testes Lab03
+
+on:
+  push:
+    paths:
+      - 'lab03/**'
+      - '.github/workflows/testes-lab03.yml'
+  pull_request:
+    branches:
+      - main
+    paths:
+      - 'lab03/**'
+      - '.github/workflows/testes-lab03.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  testes:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: lab03
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v10.2.0
+        with:
+          enable-cache: true
+          cache-dependency-glob: "lab03/uv.lock"
+
+      - name: Install dependencies
+        run: uv sync --frozen
+
+      - name: Run tests with coverage
+        run: uv run pytest --cov=metricas --cov-fail-under=80
