@@ -133,7 +133,7 @@ def test_parquet_roundtrip(tmp_path: Path):
     assert loaded_runs[2].conclusion == "cancelled"
 
 
-def test_resolve_default_branch_custom_and_fallback():
+async def test_resolve_default_branch_custom_and_fallback():
     """Verify default branch resolution directly or via API."""
 
     def handler(request: httpx.Request) -> httpx.Response:
@@ -146,34 +146,38 @@ def test_resolve_default_branch_custom_and_fallback():
         return httpx.Response(404, request=request)
 
     transport = httpx.MockTransport(handler)
-    with GitHubClient(client=httpx.Client(transport=transport), cache=None) as client:
+    async with GitHubClient(
+        client=httpx.AsyncClient(transport=transport), cache=None
+    ) as client:
         # Explicit branch provided
         assert (
-            _resolve_default_branch(client, "octocat", "hello-world", branch="dev")
+            await _resolve_default_branch(client, "octocat", "hello-world", branch="dev")
             == "dev"
         )
         # Queried from API
         assert (
-            _resolve_default_branch(client, "octocat", "hello-world", branch=None)
+            await _resolve_default_branch(client, "octocat", "hello-world", branch=None)
             == "master"
         )
 
 
-def test_resolve_default_branch_missing_field_fallback():
+async def test_resolve_default_branch_missing_field_fallback():
     """Verify default branch falls back to 'main' if API returns no default_branch."""
 
     def handler(request: httpx.Request) -> httpx.Response:
         return httpx.Response(200, json={}, request=request)
 
     transport = httpx.MockTransport(handler)
-    with GitHubClient(client=httpx.Client(transport=transport), cache=None) as client:
+    async with GitHubClient(
+        client=httpx.AsyncClient(transport=transport), cache=None
+    ) as client:
         assert (
-            _resolve_default_branch(client, "octocat", "empty-repo", branch=None)
+            await _resolve_default_branch(client, "octocat", "empty-repo", branch=None)
             == "main"
         )
 
 
-def test_collect_workflow_runs_paginated_and_t4_pass(tmp_path: Path):
+async def test_collect_workflow_runs_paginated_and_t4_pass(tmp_path: Path):
     """Verify collection of paginated runs and passing the T4 criterion (>= 50 valid runs)."""
     # Create 60 mock runs (55 success, 5 cancelled)
     mock_runs = []
@@ -217,18 +221,19 @@ def test_collect_workflow_runs_paginated_and_t4_pass(tmp_path: Path):
         return httpx.Response(404, request=request)
 
     transport = httpx.MockTransport(handler)
-    client = GitHubClient(client=httpx.Client(transport=transport), cache=None)
-
-    out_dir = tmp_path / "parquet_out"
-    result = collect_workflow_runs(
-        owner="myorg",
-        repo="myrepo",
-        client=client,
-        start_date="2024-01-01T00:00:00Z",
-        end_date="2024-01-31T23:59:59Z",
-        save_to_parquet=True,
-        output_dir=out_dir,
-    )
+    async with GitHubClient(
+        client=httpx.AsyncClient(transport=transport), cache=None
+    ) as client:
+        out_dir = tmp_path / "parquet_out"
+        result = await collect_workflow_runs(
+            owner="myorg",
+            repo="myrepo",
+            client=client,
+            start_date="2024-01-01T00:00:00Z",
+            end_date="2024-01-31T23:59:59Z",
+            save_to_parquet=True,
+            output_dir=out_dir,
+        )
 
     assert result.owner == "myorg"
     assert result.repo == "myrepo"
@@ -241,7 +246,7 @@ def test_collect_workflow_runs_paginated_and_t4_pass(tmp_path: Path):
     assert len(result.bisection_events) == 0
 
 
-def test_collect_workflow_runs_t4_fail():
+async def test_collect_workflow_runs_t4_fail():
     """Verify that fewer than 50 valid runs fails T4."""
     mock_runs = [
         {
@@ -266,24 +271,25 @@ def test_collect_workflow_runs_t4_fail():
         return httpx.Response(404, request=request)
 
     transport = httpx.MockTransport(handler)
-    client = GitHubClient(client=httpx.Client(transport=transport), cache=None)
-
-    result = collect_workflow_runs(
-        owner="test",
-        repo="repo",
-        branch="main",
-        client=client,
-        start_date="2024-02-01T00:00:00Z",
-        end_date="2024-02-28T23:59:59Z",
-        save_to_parquet=False,
-    )
+    async with GitHubClient(
+        client=httpx.AsyncClient(transport=transport), cache=None
+    ) as client:
+        result = await collect_workflow_runs(
+            owner="test",
+            repo="repo",
+            branch="main",
+            client=client,
+            start_date="2024-02-01T00:00:00Z",
+            end_date="2024-02-28T23:59:59Z",
+            save_to_parquet=False,
+        )
 
     assert result.total_runs == 39
     assert result.valid_runs_count == 39
     assert result.passed_t4 is False
 
 
-def test_collect_workflow_runs_bisection_on_ceiling_1000():
+async def test_collect_workflow_runs_bisection_on_ceiling_1000():
     """Verify recursive bisection triggers when a month hits the 1,000 ceiling."""
     # A single month January 2024 hits total_count = 1200.
     # When split into [Jan 1, Jan 16] and [Jan 16, Jan 31],
@@ -350,18 +356,19 @@ def test_collect_workflow_runs_bisection_on_ceiling_1000():
         return httpx.Response(404, request=request)
 
     transport = httpx.MockTransport(handler)
-    client = GitHubClient(client=httpx.Client(transport=transport), cache=None)
-
-    result = collect_workflow_runs(
-        owner="big",
-        repo="repo",
-        branch="main",
-        client=client,
-        start_date="2024-01-01T00:00:00Z",
-        end_date="2024-01-31T23:59:59Z",
-        threshold_ceiling=1000,
-        save_to_parquet=False,
-    )
+    async with GitHubClient(
+        client=httpx.AsyncClient(transport=transport), cache=None
+    ) as client:
+        result = await collect_workflow_runs(
+            owner="big",
+            repo="repo",
+            branch="main",
+            client=client,
+            start_date="2024-01-01T00:00:00Z",
+            end_date="2024-01-31T23:59:59Z",
+            threshold_ceiling=1000,
+            save_to_parquet=False,
+        )
 
     # 1 bisection occurred for the initial interval
     assert len(result.bisection_events) == 1
@@ -373,7 +380,7 @@ def test_collect_workflow_runs_bisection_on_ceiling_1000():
     assert 600 in ids
 
 
-def test_bisection_guard_min_interval_seconds():
+async def test_bisection_guard_min_interval_seconds():
     """Verify that an interval below min_interval_seconds does not recursively split infinitely."""
 
     def handler(request: httpx.Request) -> httpx.Response:
@@ -395,27 +402,28 @@ def test_bisection_guard_min_interval_seconds():
         )
 
     transport = httpx.MockTransport(handler)
-    client = GitHubClient(client=httpx.Client(transport=transport), cache=None)
-
-    # Window of only 30 minutes, below min_interval_seconds=3600
-    result = collect_workflow_runs(
-        owner="fast",
-        repo="repo",
-        branch="main",
-        client=client,
-        start_date="2024-01-01T10:00:00Z",
-        end_date="2024-01-01T10:30:00Z",
-        threshold_ceiling=1000,
-        min_interval_seconds=3600.0,
-        save_to_parquet=False,
-    )
+    async with GitHubClient(
+        client=httpx.AsyncClient(transport=transport), cache=None
+    ) as client:
+        # Window of only 30 minutes, below min_interval_seconds=3600
+        result = await collect_workflow_runs(
+            owner="fast",
+            repo="repo",
+            branch="main",
+            client=client,
+            start_date="2024-01-01T10:00:00Z",
+            end_date="2024-01-01T10:30:00Z",
+            threshold_ceiling=1000,
+            min_interval_seconds=3600.0,
+            save_to_parquet=False,
+        )
 
     # Did not bisect because interval is smaller than min_interval_seconds
     assert len(result.bisection_events) == 0
     assert result.total_runs == 1
 
 
-def test_collect_workflow_runs_empty_repo():
+async def test_collect_workflow_runs_empty_repo():
     """Verify collection handles an empty repository with 0 workflow runs."""
 
     def handler(request: httpx.Request) -> httpx.Response:
@@ -426,17 +434,18 @@ def test_collect_workflow_runs_empty_repo():
         )
 
     transport = httpx.MockTransport(handler)
-    client = GitHubClient(client=httpx.Client(transport=transport), cache=None)
-
-    result = collect_workflow_runs(
-        owner="empty",
-        repo="repo",
-        branch="main",
-        client=client,
-        start_date="2024-01-01T00:00:00Z",
-        end_date="2024-01-31T23:59:59Z",
-        save_to_parquet=False,
-    )
+    async with GitHubClient(
+        client=httpx.AsyncClient(transport=transport), cache=None
+    ) as client:
+        result = await collect_workflow_runs(
+            owner="empty",
+            repo="repo",
+            branch="main",
+            client=client,
+            start_date="2024-01-01T00:00:00Z",
+            end_date="2024-01-31T23:59:59Z",
+            save_to_parquet=False,
+        )
 
     assert result.total_runs == 0
     assert result.valid_runs_count == 0

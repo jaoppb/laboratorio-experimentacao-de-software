@@ -1,4 +1,4 @@
-"""Repository candidate selection and Actions validation.
+"""Repository candidate selection and Actions validation (Async).
 
 Fulfills requirements of Issue #29 and guialab03.md:
 - Slices GitHub search by star ranges (since each search returns max 1000)
@@ -10,6 +10,7 @@ Fulfills requirements of Issue #29 and guialab03.md:
 from __future__ import annotations
 
 import logging
+from collections.abc import AsyncIterator
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
@@ -19,27 +20,23 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 DEFAULT_STAR_RANGES = [
-    "1000..1500",
-    "1501..2500",
-    "2501..5000",
-    "5001..10000",
     ">10000",
+    "5001..10000",
+    "2501..5000",
+    "1501..2500",
+    "1000..1500",
 ]
 
 
-def search_candidates_by_stars(
+async def iter_candidates_by_stars(
     client: GitHubClient,
     star_ranges: list[str] | None = None,
     max_pages_per_range: int = 10,
     per_page: int = 100,
-) -> list[dict[str, Any]]:
-    """Search repositories sliced by star ranges to exceed GitHub's 1000 items limit.
-
-    Deduplicates repositories by full_name ('owner/repo').
-    """
+) -> AsyncIterator[dict[str, Any]]:
+    """Yield repositories sliced by star ranges, deduplicated by full_name."""
     ranges = star_ranges or DEFAULT_STAR_RANGES
     seen_names: set[str] = set()
-    candidates: list[dict[str, Any]] = []
 
     for star_range in ranges:
         query = f"stars:{star_range}"
@@ -55,7 +52,7 @@ def search_candidates_by_stars(
                 "page": page,
             }
             try:
-                response = client.get("/search/repositories", params=params)
+                response = await client.get("/search/repositories", params=params)
                 data = response.json()
             except Exception as e:
                 logger.error("Error searching page %d of query %s: %s", page, query, e)
@@ -69,25 +66,38 @@ def search_candidates_by_stars(
                 full_name = item.get("full_name")
                 if full_name and full_name not in seen_names:
                     seen_names.add(full_name)
-                    candidates.append(item)
+                    yield item
 
             # GitHub search max results is 1000 (page 10 at 100/page)
             if len(items) < per_page or page >= 10:
                 break
             page += 1
 
-    return candidates
+
+async def search_candidates_by_stars(
+    client: GitHubClient,
+    star_ranges: list[str] | None = None,
+    max_pages_per_range: int = 10,
+    per_page: int = 100,
+) -> list[dict[str, Any]]:
+    """Search repositories sliced by star ranges to exceed GitHub's 1000 items limit."""
+    results: list[dict[str, Any]] = []
+    async for item in iter_candidates_by_stars(
+        client=client,
+        star_ranges=star_ranges,
+        max_pages_per_range=max_pages_per_range,
+        per_page=per_page,
+    ):
+        results.append(item)
+    return results
 
 
-def filter_repositories_with_actions(
+async def filter_repositories_with_actions(
     client: GitHubClient,
     repositories: list[dict[str, Any]],
     funnel: FunnelTracker | None = None,
 ) -> list[dict[str, Any]]:
-    """Filter repositories by checking if they have active GitHub Actions workflows.
-
-    Discards repositories where GET /repos/{owner}/{repo}/actions/workflows has total_count == 0.
-    """
+    """Filter repositories by checking if they have active GitHub Actions workflows."""
     accepted: list[dict[str, Any]] = []
     discarded_no_actions = 0
 
@@ -98,7 +108,7 @@ def filter_repositories_with_actions(
 
         endpoint = f"/repos/{full_name}/actions/workflows"
         try:
-            resp = client.get(endpoint)
+            resp = await client.get(endpoint)
             wf_data = resp.json()
             total_count = wf_data.get("total_count", 0)
 

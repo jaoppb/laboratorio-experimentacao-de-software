@@ -1,11 +1,20 @@
 """Tests for GitHub REST API client (pipeline.http_client)."""
 
+import os
+
 import httpx
 import pytest
-from pipeline.http_client import GitHubClient, get, get_paginated
+from pipeline.http_client import (
+    GitHubClient,
+    TokenPool,
+    get,
+    get_paginated,
+    load_env_file,
+    resolve_tokens,
+)
 
 
-def test_client_headers_and_auth(monkeypatch):
+async def test_client_headers_and_auth(monkeypatch):
     """Verify that GitHubClient sets correct headers including Authorization."""
     recorded_requests = []
 
@@ -14,9 +23,10 @@ def test_client_headers_and_auth(monkeypatch):
         return httpx.Response(200, json={"status": "ok"})
 
     transport = httpx.MockTransport(handler)
-    with httpx.Client(transport=transport) as mock_httpx:
+    async with httpx.AsyncClient(transport=transport) as mock_httpx:
         client = GitHubClient(token="secret-token-123", client=mock_httpx)
-        resp = client.get("/user")
+        resp = await client.get("/user")
+        await client.close()
 
     assert resp.status_code == 200
     assert len(recorded_requests) == 1
@@ -27,16 +37,63 @@ def test_client_headers_and_auth(monkeypatch):
     assert str(req.url) == "https://api.github.com/user"
 
 
-def test_client_token_from_env(monkeypatch):
+async def test_client_token_from_env(monkeypatch):
     """Verify token resolution from GITHUB_TOKEN and GITHUB_TOKENS env variables."""
     monkeypatch.setenv("GITHUB_TOKEN", "token-from-env")
     client = GitHubClient()
-    assert client._client.headers["Authorization"] == "Bearer token-from-env"
+    assert client.token_pool.tokens[0].token == "token-from-env"
+    await client.close()
 
     monkeypatch.delenv("GITHUB_TOKEN", raising=False)
     monkeypatch.setenv("GITHUB_TOKENS", "token-a, token-b")
     client2 = GitHubClient()
-    assert client2._client.headers["Authorization"] == "Bearer token-a"
+    assert [t.token for t in client2.token_pool.tokens] == ["token-a", "token-b"]
+    await client2.close()
+
+
+def test_load_env_file(tmp_path, monkeypatch):
+    """Verify loading key=values from .env files."""
+    env_file = tmp_path / ".env"
+    env_file.write_text("FOO=bar\n# comment\nBAZ='qux'\n", encoding="utf-8")
+    monkeypatch.delenv("FOO", raising=False)
+    monkeypatch.delenv("BAZ", raising=False)
+    loaded = load_env_file(env_file)
+    assert loaded["FOO"] == "bar"
+    assert loaded["BAZ"] == "qux"
+    assert os.getenv("FOO") == "bar"
+    assert os.getenv("BAZ") == "qux"
+
+
+def test_resolve_tokens_from_env_file(tmp_path, monkeypatch):
+    """Verify resolve_tokens loads GITHUB_TOKENS from specified env_file."""
+    env_file = tmp_path / "tokens.env"
+    env_file.write_text("GITHUB_TOKENS=t1,t2,t3\n", encoding="utf-8")
+    monkeypatch.delenv("GITHUB_TOKENS", raising=False)
+    tokens = resolve_tokens(env_file=env_file)
+    assert tokens == ["t1", "t2", "t3"]
+
+
+async def test_token_pool_401_disables_token_and_retries():
+    """Verify that a 401 response permanently disables the token and retries with next token."""
+    attempts = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        auth = request.headers.get("Authorization", "")
+        attempts.append(auth)
+        if "bad-tok" in auth:
+            return httpx.Response(401, text="Unauthorized", request=request)
+        return httpx.Response(200, json={"ok": True}, request=request)
+
+    transport = httpx.MockTransport(handler)
+    async with httpx.AsyncClient(transport=transport) as mock_httpx:
+        client = GitHubClient(tokens=["bad-tok", "good-tok"], client=mock_httpx)
+        resp = await client.get("/auth-test")
+        await client.close()
+
+    assert resp.status_code == 200
+    assert resp.json() == {"ok": True}
+    assert attempts == ["Bearer bad-tok", "Bearer good-tok"]
+    assert client.token_pool.tokens[0].cooldown_until == float("inf")
 
 
 def test_resolve_relative_and_absolute_urls():
@@ -56,7 +113,7 @@ def test_resolve_relative_and_absolute_urls():
     )
 
 
-def test_exponential_backoff_on_5xx_eventual_success():
+async def test_exponential_backoff_on_5xx_eventual_success():
     """Verify 5xx responses trigger exponential backoff delays and retry until success."""
     sleep_calls: list[float] = []
     attempt_count = 0
@@ -71,12 +128,13 @@ def test_exponential_backoff_on_5xx_eventual_success():
         return httpx.Response(200, json={"success": True}, request=request)
 
     transport = httpx.MockTransport(handler)
-    with httpx.Client(transport=transport) as mock_httpx:
+    async with httpx.AsyncClient(transport=transport) as mock_httpx:
         client = GitHubClient(
             client=mock_httpx,
             sleep_fn=sleep_calls.append,
         )
-        resp = client.get("/test")
+        resp = await client.get("/test")
+        await client.close()
 
     assert resp.status_code == 200
     assert resp.json() == {"success": True}
@@ -85,7 +143,7 @@ def test_exponential_backoff_on_5xx_eventual_success():
     assert sleep_calls == [1.0, 2.0]
 
 
-def test_exponential_backoff_on_5xx_max_retries_exceeded():
+async def test_exponential_backoff_on_5xx_max_retries_exceeded():
     """Verify persistent 5xx responses exceed max_retries and raise HTTPStatusError."""
     sleep_calls: list[float] = []
 
@@ -93,20 +151,21 @@ def test_exponential_backoff_on_5xx_max_retries_exceeded():
         return httpx.Response(503, request=request)
 
     transport = httpx.MockTransport(handler)
-    with httpx.Client(transport=transport) as mock_httpx:
+    async with httpx.AsyncClient(transport=transport) as mock_httpx:
         client = GitHubClient(
             max_retries=3,
             client=mock_httpx,
             sleep_fn=sleep_calls.append,
         )
         with pytest.raises(httpx.HTTPStatusError) as exc_info:
-            client.get("/test")
+            await client.get("/test")
+        await client.close()
 
     assert exc_info.value.response.status_code == 503
     assert sleep_calls == [1.0, 2.0, 4.0]
 
 
-def test_network_request_error_retry():
+async def test_network_request_error_retry():
     """Verify network drops (RequestError) retry with backoff and succeed."""
     sleep_calls: list[float] = []
     attempts = 0
@@ -119,16 +178,17 @@ def test_network_request_error_retry():
         return httpx.Response(200, json={"ok": True}, request=request)
 
     transport = httpx.MockTransport(handler)
-    with httpx.Client(transport=transport) as mock_httpx:
+    async with httpx.AsyncClient(transport=transport) as mock_httpx:
         client = GitHubClient(client=mock_httpx, sleep_fn=sleep_calls.append)
-        resp = client.get("/network-test")
+        resp = await client.get("/network-test")
+        await client.close()
 
     assert resp.status_code == 200
     assert attempts == 2
     assert sleep_calls == [1.0]
 
 
-def test_rate_limit_403_and_retry():
+async def test_rate_limit_403_and_retry():
     """Verify that a 403 response with remaining=0 calculates sleep until reset + 1s and retries."""
     sleep_calls: list[float] = []
     attempts = 0
@@ -152,13 +212,14 @@ def test_rate_limit_403_and_retry():
         return httpx.Response(200, json={"result": "data"}, request=request)
 
     transport = httpx.MockTransport(handler)
-    with httpx.Client(transport=transport) as mock_httpx:
+    async with httpx.AsyncClient(transport=transport) as mock_httpx:
         client = GitHubClient(
             client=mock_httpx,
             sleep_fn=sleep_calls.append,
             time_fn=lambda: simulated_now,
         )
-        resp = client.get("/rate-limited-endpoint")
+        resp = await client.get("/rate-limited-endpoint")
+        await client.close()
 
     assert resp.status_code == 200
     assert resp.json() == {"result": "data"}
@@ -167,7 +228,7 @@ def test_rate_limit_403_and_retry():
     assert sleep_calls == [51.0]
 
 
-def test_rate_limit_proactive_pause():
+async def test_rate_limit_proactive_pause():
     """Verify proactive rate-limit sleep when client knows quota is exhausted before call."""
     sleep_calls: list[float] = []
     simulated_now = 1000.0
@@ -183,25 +244,26 @@ def test_rate_limit_proactive_pause():
         return httpx.Response(200, json={"second": True}, request=request)
 
     transport = httpx.MockTransport(handler)
-    with httpx.Client(transport=transport) as mock_httpx:
+    async with httpx.AsyncClient(transport=transport) as mock_httpx:
         client = GitHubClient(
             client=mock_httpx,
             sleep_fn=sleep_calls.append,
             time_fn=lambda: simulated_now,
         )
         # First call succeeds and discovers remaining is 0
-        resp1 = client.get("/first")
+        resp1 = await client.get("/first")
         assert resp1.status_code == 200
         assert sleep_calls == []
 
         # Before second call, client detects quota was 0 with reset at 1030
-        resp2 = client.get("/second")
+        resp2 = await client.get("/second")
         assert resp2.status_code == 200
         # Wait until 1030: 1030 - 1000 + 1.0 = 31.0
         assert sleep_calls == [31.0]
+        await client.close()
 
 
-def test_client_error_404_raises_immediately():
+async def test_client_error_404_raises_immediately():
     """Verify 4xx errors like 404 raise HTTPStatusError immediately without retrying or sleeping."""
     sleep_calls: list[float] = []
 
@@ -209,31 +271,33 @@ def test_client_error_404_raises_immediately():
         return httpx.Response(404, request=request)
 
     transport = httpx.MockTransport(handler)
-    with httpx.Client(transport=transport) as mock_httpx:
+    async with httpx.AsyncClient(transport=transport) as mock_httpx:
         client = GitHubClient(client=mock_httpx, sleep_fn=sleep_calls.append)
         with pytest.raises(httpx.HTTPStatusError) as exc_info:
-            client.get("/not-found")
+            await client.get("/not-found")
+        await client.close()
 
     assert exc_info.value.response.status_code == 404
     assert sleep_calls == []
 
 
-def test_pagination_single_page():
+async def test_pagination_single_page():
     """Verify single page responses without Link header yield exactly one page."""
 
     def handler(request: httpx.Request) -> httpx.Response:
         return httpx.Response(200, json=[{"id": 1}], request=request)
 
     transport = httpx.MockTransport(handler)
-    with httpx.Client(transport=transport) as mock_httpx:
+    async with httpx.AsyncClient(transport=transport) as mock_httpx:
         client = GitHubClient(client=mock_httpx)
-        pages = list(client.get_paginated("/items"))
+        pages = [p async for p in client.get_paginated("/items")]
+        await client.close()
 
     assert len(pages) == 1
     assert pages[0].json() == [{"id": 1}]
 
 
-def test_pagination_multi_page_traversal():
+async def test_pagination_multi_page_traversal():
     """Verify multi-page traversal seamlessly follows RFC 5988 Link headers."""
 
     def handler(request: httpx.Request) -> httpx.Response:
@@ -252,50 +316,58 @@ def test_pagination_multi_page_traversal():
         return httpx.Response(200, headers=headers, json=[{"id": 1}], request=request)
 
     transport = httpx.MockTransport(handler)
-    with httpx.Client(transport=transport) as mock_httpx:
+    async with httpx.AsyncClient(transport=transport) as mock_httpx:
         client = GitHubClient(client=mock_httpx)
-        responses = list(client.get_paginated("/items", params={"per_page": 1}))
+        responses = [
+            p
+            async for p in client.get_paginated(
+                "/items", params={"per_page": 1}
+            )
+        ]
+        await client.close()
 
     assert len(responses) == 3
     items = [item for resp in responses for item in resp.json()]
     assert items == [{"id": 1}, {"id": 2}, {"id": 3}]
 
 
-def test_top_level_convenience_helpers(monkeypatch):
+async def test_top_level_convenience_helpers(monkeypatch):
     """Verify module-level get and get_paginated helper functions."""
 
     def handler(request: httpx.Request) -> httpx.Response:
         return httpx.Response(200, json={"ok": True}, request=request)
 
     transport = httpx.MockTransport(handler)
-    mock_client = httpx.Client(transport=transport)
+    async with httpx.AsyncClient(transport=transport) as mock_client:
+        # Test standalone get()
+        resp = await get("/test", client=mock_client)
+        assert resp.status_code == 200
+        assert resp.json() == {"ok": True}
 
-    # Test standalone get()
-    resp = get("/test", client=mock_client)
-    assert resp.status_code == 200
-    assert resp.json() == {"ok": True}
-
-    # Test standalone get_paginated()
-    mock_client2 = httpx.Client(transport=transport)
-    pages = list(get_paginated("/test", client=mock_client2))
-    assert len(pages) == 1
-    assert pages[0].json() == {"ok": True}
+    async with httpx.AsyncClient(transport=transport) as mock_client2:
+        # Test standalone get_paginated()
+        pages = [p async for p in get_paginated("/test", client=mock_client2)]
+        assert len(pages) == 1
+        assert pages[0].json() == {"ok": True}
 
 
-def test_network_request_error_max_retries_exceeded():
+async def test_network_request_error_max_retries_exceeded():
     """Verify persistent network drops exceed max_retries and raise RequestError."""
 
     def handler(request: httpx.Request) -> httpx.Response:
         raise httpx.ConnectError("Network is down", request=request)
 
     transport = httpx.MockTransport(handler)
-    with httpx.Client(transport=transport) as mock_httpx:
-        client = GitHubClient(max_retries=2, client=mock_httpx, sleep_fn=lambda _: None)
+    async with httpx.AsyncClient(transport=transport) as mock_httpx:
+        client = GitHubClient(
+            max_retries=2, client=mock_httpx, sleep_fn=lambda _: None
+        )
         with pytest.raises(httpx.RequestError):
-            client.get("/failing-network")
+            await client.get("/failing-network")
+        await client.close()
 
 
-def test_rate_limit_fallback_wait_when_reset_missing():
+async def test_rate_limit_fallback_wait_when_reset_missing():
     """Verify fallback sleep of 60s when reset timestamp header is missing."""
     sleep_calls: list[float] = []
     attempts = 0
@@ -311,15 +383,17 @@ def test_rate_limit_fallback_wait_when_reset_missing():
         return httpx.Response(200, json={"ok": True}, request=request)
 
     transport = httpx.MockTransport(handler)
-    with httpx.Client(transport=transport) as mock_httpx:
+    async with httpx.AsyncClient(transport=transport) as mock_httpx:
         client = GitHubClient(client=mock_httpx, sleep_fn=sleep_calls.append)
-        resp = client.get("/missing-reset")
+        resp = await client.get("/missing-reset")
+        await client.close()
 
     assert resp.status_code == 200
-    assert sleep_calls == [60.0]
+    assert len(sleep_calls) == 1
+    assert sleep_calls[0] == pytest.approx(60.0, abs=0.1)
 
 
-def test_malformed_rate_limit_headers():
+async def test_malformed_rate_limit_headers():
     """Verify malformed rate limit headers do not crash the client."""
 
     def handler(request: httpx.Request) -> httpx.Response:
@@ -330,16 +404,17 @@ def test_malformed_rate_limit_headers():
         return httpx.Response(200, headers=headers, json={"ok": True}, request=request)
 
     transport = httpx.MockTransport(handler)
-    with httpx.Client(transport=transport) as mock_httpx:
+    async with httpx.AsyncClient(transport=transport) as mock_httpx:
         client = GitHubClient(client=mock_httpx)
-        resp = client.get("/malformed")
+        resp = await client.get("/malformed")
+        await client.close()
 
     assert resp.status_code == 200
     assert client.last_remaining is None
     assert client.last_reset is None
 
 
-def test_client_cache_hit_avoids_repeated_api_call(tmp_path):
+async def test_client_cache_hit_avoids_repeated_api_call(tmp_path):
     """Verify that repeated requests hit disk cache and do not call the API again."""
     calls = []
 
@@ -350,23 +425,24 @@ def test_client_cache_hit_avoids_repeated_api_call(tmp_path):
     transport = httpx.MockTransport(handler)
     cache_db = tmp_path / "cache.sqlite"
 
-    with httpx.Client(transport=transport) as mock_httpx:
+    async with httpx.AsyncClient(transport=transport) as mock_httpx:
         client = GitHubClient(client=mock_httpx, cache_path=cache_db)
         # First request: cache miss, calls API
-        r1 = client.get("/repos/foo/bar")
+        r1 = await client.get("/repos/foo/bar")
         assert r1.status_code == 200
         assert len(calls) == 1
         assert "X-Cache" not in r1.headers
 
         # Second request: cache hit, does not call API
-        r2 = client.get("/repos/foo/bar")
+        r2 = await client.get("/repos/foo/bar")
         assert r2.status_code == 200
         assert len(calls) == 1  # No new API call!
         assert r2.headers["X-Cache"] == "HIT"
         assert r2.json() == {"cached": True}
+        await client.close()
 
 
-def test_client_resumption_after_interrupted_pagination(tmp_path):
+async def test_client_resumption_after_interrupted_pagination(tmp_path):
     """Verify acceptance criterion: interruption (Ctrl+C) and rerun resumes where it left off."""
     api_calls = []
 
@@ -388,16 +464,15 @@ def test_client_resumption_after_interrupted_pagination(tmp_path):
     cache_db = tmp_path / "resumption_cache.sqlite"
 
     # --- Run 1: Interrupted after page 2 (simulating Ctrl+C midway) ---
-    with httpx.Client(transport=transport) as mock_httpx:
+    async with httpx.AsyncClient(transport=transport) as mock_httpx:
         client1 = GitHubClient(client=mock_httpx, cache_path=cache_db)
         gen = client1.get_paginated("/runs")
-        p1 = next(gen)
+        p1 = await anext(gen)
         assert p1.json() == [{"run": 1}]
-        p2 = next(gen)
+        p2 = await anext(gen)
         assert p2.json() == [{"run": 2}]
-        # Simulate Ctrl+C / early exit before page 3 is requested
-        gen.close()
-        client1.close()
+        await gen.aclose()
+        await client1.close()
 
     assert len(api_calls) == 2
     assert api_calls == [
@@ -406,18 +481,15 @@ def test_client_resumption_after_interrupted_pagination(tmp_path):
     ]
 
     # --- Run 2: Restart pipeline with the same cache database ---
-    with httpx.Client(transport=transport) as mock_httpx:
+    async with httpx.AsyncClient(transport=transport) as mock_httpx:
         client2 = GitHubClient(client=mock_httpx, cache_path=cache_db)
-        all_pages = list(client2.get_paginated("/runs"))
-        client2.close()
+        all_pages = [p async for p in client2.get_paginated("/runs")]
+        await client2.close()
 
-    # Total responses yielded is 3
     assert len(all_pages) == 3
     all_runs = [item for page in all_pages for item in page.json()]
     assert all_runs == [{"run": 1}, {"run": 2}, {"run": 3}]
 
-    # Crucial check: pages 1 and 2 were replayed from SQLite cache;
-    # only page 3 was called on the network!
     assert len(api_calls) == 3
     assert api_calls[2] == "https://api.github.com/runs?page=3"
     assert all_pages[0].headers["X-Cache"] == "HIT"
@@ -425,7 +497,7 @@ def test_client_resumption_after_interrupted_pagination(tmp_path):
     assert "X-Cache" not in all_pages[2].headers
 
 
-def test_client_force_refresh_bypasses_cache(tmp_path):
+async def test_client_force_refresh_bypasses_cache(tmp_path):
     """Verify force_refresh=True ignores cached entry and re-fetches from network."""
     calls = []
 
@@ -436,19 +508,20 @@ def test_client_force_refresh_bypasses_cache(tmp_path):
     transport = httpx.MockTransport(handler)
     cache_db = tmp_path / "cache.sqlite"
 
-    with httpx.Client(transport=transport) as mock_httpx:
+    async with httpx.AsyncClient(transport=transport) as mock_httpx:
         client = GitHubClient(client=mock_httpx, cache_path=cache_db)
-        r1 = client.get("/data")
+        r1 = await client.get("/data")
         assert r1.json() == {"version": 1}
         assert len(calls) == 1
 
         # With force_refresh=True, it must query the API
-        r2 = client.get("/data", force_refresh=True)
+        r2 = await client.get("/data", force_refresh=True)
         assert r2.json() == {"version": 2}
         assert len(calls) == 2
+        await client.close()
 
 
-def test_client_cache_disabled_with_none_path(tmp_path):
+async def test_client_cache_disabled_with_none_path():
     """Verify cache_path=None disables caching entirely."""
     calls = []
 
@@ -458,9 +531,47 @@ def test_client_cache_disabled_with_none_path(tmp_path):
 
     transport = httpx.MockTransport(handler)
 
-    with httpx.Client(transport=transport) as mock_httpx:
+    async with httpx.AsyncClient(transport=transport) as mock_httpx:
         client = GitHubClient(client=mock_httpx, cache_path=None)
         assert client.cache is None
-        client.get("/endpoint")
-        client.get("/endpoint")
+        await client.get("/endpoint")
+        await client.get("/endpoint")
         assert len(calls) == 2
+        await client.close()
+
+
+async def test_token_pool_rotation_and_cooldown():
+    """Verify TokenPool round-robin rotation across multiple tokens and cooldown on 403."""
+    recorded_tokens = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        auth = request.headers.get("Authorization", "")
+        token = auth.replace("Bearer ", "")
+        recorded_tokens.append(token)
+        if token == "tok1" and len(recorded_tokens) == 1:
+            return httpx.Response(
+                403,
+                headers={"X-RateLimit-Remaining": "0", "X-RateLimit-Reset": "2000"},
+                text="Rate limit exceeded",
+                request=request,
+            )
+        return httpx.Response(200, json={"ok": True}, request=request)
+
+    transport = httpx.MockTransport(handler)
+    async with httpx.AsyncClient(transport=transport) as mock_httpx:
+        client = GitHubClient(
+            tokens=["tok1", "tok2"],
+            client=mock_httpx,
+            time_fn=lambda: 1000.0,
+        )
+        # First request uses tok1 -> gets 403 -> puts tok1 on cooldown -> retries with tok2 -> succeeds
+        resp1 = await client.get("/test1")
+        assert resp1.status_code == 200
+
+        # Second request: tok1 still cooling down -> uses tok2 directly -> succeeds
+        resp2 = await client.get("/test2")
+        assert resp2.status_code == 200
+
+        await client.close()
+
+    assert recorded_tokens == ["tok1", "tok2", "tok2"]

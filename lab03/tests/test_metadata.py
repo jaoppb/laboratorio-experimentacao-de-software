@@ -1,6 +1,4 @@
-"""Unit tests for metadata collection and contributor counting (Issue #30)."""
-
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock
 
 import httpx
 import pytest
@@ -30,7 +28,7 @@ class TestMetadataAndContributors:
         assert extract_last_page_number({}) is None
         assert extract_last_page_number("invalid string") is None
 
-    def test_count_contributors_with_link_header(self):
+    async def test_count_contributors_with_link_header(self):
         client = MagicMock(spec=GitHubClient)
         resp = httpx.Response(
             200,
@@ -40,30 +38,34 @@ class TestMetadataAndContributors:
             json=[{"id": 1}],
             request=httpx.Request("GET", "https://api.github.com/repos/o/r/contributors"),
         )
-        client.get.return_value = resp
+        client.get = AsyncMock(return_value=resp)
 
-        count = count_contributors(client, "owner", "repo")
+        count = await count_contributors(client, "owner", "repo")
         assert count == 45
 
-    def test_count_contributors_without_pagination(self):
+    async def test_count_contributors_without_pagination(self):
         client = MagicMock(spec=GitHubClient)
         resp = httpx.Response(
             200,
             json=[{"id": 1}],
             request=httpx.Request("GET", "https://api.github.com/repos/o/r/contributors"),
         )
-        client.get.return_value = resp
+        client.get = AsyncMock(return_value=resp)
 
-        count = count_contributors(client, "owner", "repo")
+        count = await count_contributors(client, "owner", "repo")
         assert count == 1
 
-    def test_fetch_repository_metadata(self):
+    async def test_fetch_repository_metadata(self):
         client = MagicMock(spec=GitHubClient)
         # count_contributors mock response
-        client.get.return_value = httpx.Response(
-            200,
-            json=[{"id": 1}],
-            request=httpx.Request("GET", "https://api.github.com/repos/owner/repo/contributors"),
+        client.get = AsyncMock(
+            return_value=httpx.Response(
+                200,
+                json=[{"id": 1}],
+                request=httpx.Request(
+                    "GET", "https://api.github.com/repos/owner/repo/contributors"
+                ),
+            )
         )
 
         cached_info = {
@@ -73,7 +75,9 @@ class TestMetadataAndContributors:
             "created_at": "2020-01-01T00:00:00Z",
         }
 
-        repo = fetch_repository_metadata(client, "owner", "repo", cached_info=cached_info)
+        repo = await fetch_repository_metadata(
+            client, "owner", "repo", cached_info=cached_info
+        )
         assert isinstance(repo, Repo)
         assert repo.owner == "owner"
         assert repo.name == "repo"

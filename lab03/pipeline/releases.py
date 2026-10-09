@@ -1,4 +1,4 @@
-"""Collection of releases and tags (deploy units) from the GitHub REST API."""
+"""Collection of releases and tags (deploy units) from the GitHub REST API (Async)."""
 
 from __future__ import annotations
 
@@ -19,10 +19,7 @@ PER_PAGE = 100
 
 
 def parse_release(payload: dict[str, Any]) -> Release | None:
-    """Convert a release JSON object from the API into a `Release`.
-
-    Drafts are discarded (they are not deploys and have no `published_at`).
-    """
+    """Convert a release JSON object from the API into a `Release`."""
     if payload.get("draft") or not payload.get("published_at"):
         return None
     return Release(
@@ -33,24 +30,17 @@ def parse_release(payload: dict[str, Any]) -> Release | None:
     )
 
 
-def fetch_releases(
+async def fetch_releases(
     client: GitHubClient,
     owner: str,
     repo: str,
     window_start: datetime | str | None = None,
 ) -> list[Release]:
-    """Fetch the published (non-draft) releases of a repository, oldest first.
-
-    The API lists releases newest first. When `window_start` is given, pagination
-    stops after the page that contains the first stable release published before
-    the window: it is the anchor needed to compute the lead time of the first
-    release of the window, and every older release is irrelevant. Without
-    `window_start`, the whole history is fetched.
-    """
+    """Fetch the published (non-draft) releases of a repository, oldest first."""
     start = _parse_datetime(window_start)
     releases: list[Release] = []
 
-    for response in client.get_paginated(
+    async for response in client.get_paginated(
         f"/repos/{owner}/{repo}/releases", params={"per_page": PER_PAGE}
     ):
         reached_anchor = False
@@ -71,20 +61,15 @@ def fetch_releases(
     return sorted(releases, key=lambda r: r.published_at)
 
 
-def fetch_tags(
+async def fetch_tags(
     client: GitHubClient,
     owner: str,
     repo: str,
     max_tags: int | None = None,
 ) -> list[Release]:
-    """Fetch the tags of a repository as deploy units (RQ 07 variant), oldest first.
-
-    Tags carry no date, so each tag is dated by `commit.author.date` of the commit
-    it points to (one extra request per distinct commit, cached on disk). Tags are
-    returned as `Release` objects so the same metric functions apply to them.
-    """
+    """Fetch the tags of a repository as deploy units (RQ 07 variant), oldest first."""
     tags: list[tuple[str, str]] = []
-    for response in client.get_paginated(
+    async for response in client.get_paginated(
         f"/repos/{owner}/{repo}/tags", params={"per_page": PER_PAGE}
     ):
         for item in response.json():
@@ -98,8 +83,9 @@ def fetch_tags(
     result: list[Release] = []
     for name, sha in tags:
         if sha not in dates_by_sha:
-            commit = client.get(f"/repos/{owner}/{repo}/commits/{sha}").json()
-            dates_by_sha[sha] = _parse_datetime(commit["commit"]["author"]["date"])
+            resp = await client.get(f"/repos/{owner}/{repo}/commits/{sha}")
+            commit = resp.json()
+            dates_by_sha[sha] = _parse_datetime(commit["commit"]["author"]["date"])  # type: ignore
         result.append(Release(tag_name=name, published_at=dates_by_sha[sha]))
 
     return sorted(result, key=lambda r: r.published_at)
@@ -108,11 +94,7 @@ def fetch_tags(
 def deploy_units(
     releases: Sequence[Release], include_prerelease: bool = False
 ) -> list[Release]:
-    """Filter releases by the deploy unit definition, oldest first.
-
-    Main definition: published releases only. Variant (RQ 07): releases and
-    pre-releases.
-    """
+    """Filter releases by the deploy unit definition, oldest first."""
     return sorted(
         (
             r
@@ -132,7 +114,7 @@ class WindowReleases:
 
     @property
     def count(self) -> int:
-        """Number of valid deploys in the window (used by the selection funnel)."""
+        """Number of valid deploys in the window."""
         return len(self.in_window)
 
     def with_anchor(self) -> list[Release]:
@@ -146,19 +128,13 @@ def filter_window(
     window_end: datetime | str,
     include_prerelease: bool = False,
 ) -> WindowReleases:
-    """Select the deploy units inside [window_start, window_end].
-
-    The latest deploy unit published before the window is kept as `anchor`,
-    because the lead time of the first release of the window is measured
-    against it. If there is no anchor, the first release of the window is the
-    first release in the repository history.
-    """
+    """Select the deploy units inside [window_start, window_end]."""
     start = _parse_datetime(window_start)
     end = _parse_datetime(window_end)
     units = deploy_units(releases, include_prerelease=include_prerelease)
 
-    before = [r for r in units if r.published_at < start]
-    in_window = [r for r in units if start <= r.published_at <= end]
+    before = [r for r in units if r.published_at < start]  # type: ignore
+    in_window = [r for r in units if start <= r.published_at <= end]  # type: ignore
     return WindowReleases(in_window=in_window, anchor=before[-1] if before else None)
 
 
@@ -167,5 +143,5 @@ def count_valid_releases(
     window_start: datetime | str,
     window_end: datetime | str,
 ) -> int:
-    """Count published, non-prerelease releases inside the window (≥ 5 criterion)."""
+    """Count published, non-prerelease releases inside the window (>= 5 criterion)."""
     return filter_window(releases, window_start, window_end).count

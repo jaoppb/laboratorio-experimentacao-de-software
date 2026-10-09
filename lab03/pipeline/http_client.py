@@ -1,11 +1,13 @@
-"""GitHub REST API client with Link-header pagination, rate limit management, and exponential backoff."""
+"""Async GitHub REST API client with Link-header pagination, Token Rotation pool, and rate limit backoff."""
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import os
 import time
-from collections.abc import Callable, Iterator
+from collections.abc import AsyncIterator, Callable
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Self
 
@@ -16,34 +18,253 @@ from pipeline.cache import HttpCache
 logger = logging.getLogger(__name__)
 
 
+@dataclass
+class TokenState:
+    """Tracks rate limit state and cooldown for a single GitHub API token."""
+
+    token: str
+    remaining: int | None = None
+    reset_ts: float | None = None
+    cooldown_until: float = 0.0
+
+
+class TokenPool:
+    """Manages a pool of GitHub tokens with round-robin rotation and dynamic cooldown."""
+
+    def __init__(self, tokens: list[str]) -> None:
+        self.tokens: list[TokenState] = [
+            TokenState(token=t) for t in tokens if t.strip()
+        ]
+        self._current_index = 0
+        self._lock = asyncio.Lock()
+
+    @property
+    def has_tokens(self) -> bool:
+        return len(self.tokens) > 0
+
+    @property
+    def count(self) -> int:
+        return len(self.tokens)
+
+    async def get_next_token(
+        self,
+        time_fn: Callable[[], float] = time.time,
+        sleep_fn: Callable[[float], Any] = asyncio.sleep,
+    ) -> str | None:
+        """Select next available token via round-robin, skipping tokens in cooldown."""
+        if not self.tokens:
+            return None
+
+        async with self._lock:
+            now = time_fn()
+            # Filter out permanently disabled tokens (e.g. 401 Unauthorized)
+            candidates = [t for t in self.tokens if t.cooldown_until != float("inf")]
+            if not candidates:
+                return None
+
+            num_tokens = len(candidates)
+            for _ in range(num_tokens):
+                candidate = candidates[self._current_index % num_tokens]
+                self._current_index = (self._current_index + 1) % num_tokens
+                if candidate.cooldown_until <= now:
+                    return candidate.token
+
+            # All active tokens currently cooling down: find earliest reset and wait
+            earliest_reset = min(t.cooldown_until for t in candidates)
+            wait_time = max(0.0, earliest_reset - now)
+
+            logger.warning(
+                "All %d tokens in cooldown. Waiting %.1fs until earliest reset.",
+                num_tokens,
+                wait_time,
+            )
+            res = sleep_fn(wait_time)
+            if asyncio.iscoroutine(res):
+                await res
+
+            # Token with earliest reset has now cooled down
+            for t in candidates:
+                if t.cooldown_until <= earliest_reset:
+                    t.cooldown_until = 0.0
+                    return t.token
+
+            return candidates[0].token
+
+    async def update_state(
+        self,
+        token_str: str,
+        response: httpx.Response,
+        time_fn: Callable[[], float] = time.time,
+    ) -> None:
+        """Record rate limit response headers and trigger cooldown if quota exhausted."""
+        async with self._lock:
+            target = next((t for t in self.tokens if t.token == token_str), None)
+            if target is None:
+                return
+
+            if response.status_code == 401:
+                target.cooldown_until = float("inf")
+                logger.error(
+                    "Token %s... returned 401 Unauthorized. Permanently disabled from pool.",
+                    token_str[:8],
+                )
+                return
+
+            remaining_hdr = response.headers.get("X-RateLimit-Remaining")
+            reset_hdr = response.headers.get("X-RateLimit-Reset")
+
+            if remaining_hdr is not None:
+                try:
+                    target.remaining = int(remaining_hdr)
+                except ValueError:
+                    pass
+
+            if reset_hdr is not None:
+                try:
+                    target.reset_ts = float(reset_hdr)
+                except ValueError:
+                    pass
+
+            # Detect rate limit depletion
+            is_limited = (
+                response.status_code in (403, 429)
+                and (target.remaining == 0 or "rate limit" in response.text.lower())
+            ) or (target.remaining is not None and target.remaining <= 0)
+
+            if is_limited:
+                now = time_fn()
+                if target.reset_ts is not None and target.reset_ts > now:
+                    target.cooldown_until = target.reset_ts + 1.0
+                else:
+                    target.cooldown_until = now + 60.0
+                logger.warning(
+                    "Token %s... quota exhausted. Placed in cooldown for %.1fs.",
+                    token_str[:8],
+                    target.cooldown_until - now,
+                )
+
+
+def load_env_file(path: Path | str) -> dict[str, str]:
+    """Parse KEY=VALUE pairs from a .env file and set them in os.environ if unset."""
+    p = Path(path)
+    loaded: dict[str, str] = {}
+    if not p.is_file():
+        return loaded
+    try:
+        content = p.read_text(encoding="utf-8")
+        for line in content.splitlines():
+            line = line.strip()
+            if not line or line.startswith("#"):
+                continue
+            if "=" in line:
+                key, val = line.split("=", 1)
+                key = key.strip()
+                val = val.strip().strip("'\"")
+                if key:
+                    loaded[key] = val
+                    if key not in os.environ:
+                        os.environ[key] = val
+    except Exception:
+        pass
+    return loaded
+
+
+def resolve_tokens(
+    token: str | None = None,
+    tokens: list[str] | str | None = None,
+    env_file: Path | str | None = None,
+) -> list[str]:
+    """Resolve token pool from explicit params, GITHUB_TOKENS, GITHUB_TOKEN, .env files, or gh CLI."""
+    if isinstance(tokens, list) and tokens:
+        return [t.strip() for t in tokens if t.strip()]
+    if isinstance(tokens, str) and tokens.strip():
+        return [t.strip() for t in tokens.split(",") if t.strip()]
+    if token and token.strip():
+        return [token.strip()]
+
+    if env_file:
+        load_env_file(env_file)
+
+    # If environment doesn't have tokens yet, search candidate .env files unless disabled
+    disable_dotenv = os.getenv("DISABLE_DOTENV", "").strip().lower() in (
+        "1",
+        "true",
+        "yes",
+    )
+    if not disable_dotenv and "GITHUB_TOKENS" not in os.environ and "GITHUB_TOKEN" not in os.environ:
+        here = Path(__file__).resolve()
+        candidates = [
+            Path(".env"),
+            Path("lab03/.env"),
+            here.parents[1] / ".env",
+            here.parents[2] / "lab01" / ".env",
+            Path("lab01/.env"),
+        ]
+        for candidate in candidates:
+            if candidate.is_file():
+                load_env_file(candidate)
+                if "GITHUB_TOKENS" in os.environ or "GITHUB_TOKEN" in os.environ:
+                    break
+
+    if env_tokens := os.getenv("GITHUB_TOKENS"):
+        tok_list = [t.strip() for t in env_tokens.split(",") if t.strip()]
+        if tok_list:
+            return tok_list
+    if env_token := os.getenv("GITHUB_TOKEN"):
+        return [env_token.strip()]
+    try:
+        import shutil
+        import subprocess
+
+        if shutil.which("gh"):
+            res = subprocess.run(
+                ["gh", "auth", "token"],
+                capture_output=True,
+                text=True,
+                timeout=2,
+            )
+            if res.returncode == 0 and res.stdout.strip():
+                return [res.stdout.strip()]
+    except Exception:
+        pass
+    return []
+
+
 class GitHubClient:
-    """Client for interacting with the GitHub REST API.
+    """Async client for interacting with the GitHub REST API.
 
     Features:
-    - Automatic authorization with GITHUB_TOKEN or GITHUB_TOKENS.
-    - Automatic pagination via RFC 5988 Link headers (`rel="next"`).
-    - Rate limit pause & retry using `X-RateLimit-Remaining` and `X-RateLimit-Reset`.
-    - Exponential backoff on 5xx server errors and network errors (1s, 2s, 4s, 8s, 16s...).
+    - Multi-token rotation with automatic cooldown on 403 Rate Limit.
+    - Automatic pagination via RFC 5988 Link headers.
+    - Native async I/O via httpx.AsyncClient.
+    - Exponential backoff on 5xx server errors and network drops.
+    - Persistent SQLite disk cache with WAL mode via aiosqlite.
     """
 
     def __init__(
         self,
         token: str | None = None,
+        tokens: list[str] | str | None = None,
         base_url: str = "https://api.github.com",
         max_retries: int = 5,
         backoff_factor: float = 1.0,
         timeout: float = 30.0,
-        client: httpx.Client | None = None,
-        sleep_fn: Callable[[float], None] = time.sleep,
+        client: httpx.AsyncClient | None = None,
+        sleep_fn: Callable[[float], Any] = asyncio.sleep,
         time_fn: Callable[[], float] = time.time,
         cache: HttpCache | None = None,
         cache_path: str | Path | None = "cache/http_cache.sqlite",
+        concurrency: int = 15,
+        env_file: str | Path | None = None,
     ) -> None:
         self.base_url = base_url.rstrip("/")
         self.max_retries = max_retries
         self.backoff_factor = backoff_factor
         self.sleep_fn = sleep_fn
         self.time_fn = time_fn
+
+        resolved = resolve_tokens(token=token, tokens=tokens, env_file=env_file)
+        self.token_pool = TokenPool(resolved)
 
         disable_cache = os.getenv("DISABLE_CACHE", "").strip().lower() in (
             "1",
@@ -61,20 +282,17 @@ class GitHubClient:
             self._cache = HttpCache(cache_path)
             self._owns_cache = True
 
-        resolved_token = token or self._resolve_env_token()
         headers = {
             "Accept": "application/vnd.github+json",
             "X-GitHub-Api-Version": "2022-11-28",
         }
-        if resolved_token:
-            headers["Authorization"] = f"Bearer {resolved_token}"
 
+        self._semaphore = asyncio.Semaphore(concurrency)
         self._default_headers = headers
         if client is not None:
             self._client = client
-            self._client.headers.update(headers)
         else:
-            self._client = httpx.Client(
+            self._client = httpx.AsyncClient(
                 headers=headers,
                 timeout=timeout,
                 follow_redirects=True,
@@ -83,36 +301,20 @@ class GitHubClient:
         self.last_remaining: int | None = None
         self.last_reset: float | None = None
 
-    @staticmethod
-    def _resolve_env_token() -> str | None:
-        """Resolve token from GITHUB_TOKEN or GITHUB_TOKENS environment variables."""
-        if token := os.getenv("GITHUB_TOKEN"):
-            return token.strip()
-        if tokens := os.getenv("GITHUB_TOKENS"):
-            first = tokens.split(",")[0].strip()
-            if first:
-                return first
-        return None
+    @property
+    def cache(self) -> HttpCache | None:
+        return self._cache
 
     def _resolve_url(self, url: str) -> str:
-        """Resolve full URL if a relative path is provided."""
         if url.startswith(("http://", "https://")):
             return url
         endpoint = url.lstrip("/")
         return f"{self.base_url}/{endpoint}"
 
-    def _wait_for_rate_limit(self, reset_ts: float | None) -> None:
-        """Wait until rate limit resets with a safety buffer."""
-        now = self.time_fn()
-        if reset_ts is not None and reset_ts > now:
-            wait_seconds = (reset_ts - now) + 1.0
-        else:
-            wait_seconds = 60.0  # fallback delay
-
-        logger.warning(
-            "Rate limit exhausted. Waiting %.1f seconds until reset.", wait_seconds
-        )
-        self.sleep_fn(wait_seconds)
+    async def _sleep(self, delay: float) -> None:
+        res = self.sleep_fn(delay)
+        if asyncio.iscoroutine(res):
+            await res
 
     def _update_rate_limit_state(self, response: httpx.Response) -> None:
         """Record rate limit headers from the response."""
@@ -131,34 +333,31 @@ class GitHubClient:
             except ValueError:
                 pass
 
-    def _check_proactive_rate_limit(self) -> None:
-        """If known quota is 0 and reset is still in the future, wait proactively."""
+    async def _check_proactive_rate_limit(self) -> None:
+        """If known unauthenticated quota is 0 and reset is still in the future, wait proactively."""
         if (
-            self.last_remaining is not None
+            self.token_pool.count == 0
+            and self.last_remaining is not None
             and self.last_remaining <= 0
             and self.last_reset is not None
             and self.last_reset > self.time_fn()
         ):
-            self._wait_for_rate_limit(self.last_reset)
+            wait_seconds = (self.last_reset - self.time_fn()) + 1.0
+            await self._sleep(wait_seconds)
             self.last_remaining = None
 
-    @property
-    def cache(self) -> HttpCache | None:
-        """Return the active disk cache instance, if configured."""
-        return self._cache
-
-    def get(
+    async def get(
         self,
         url: str,
         params: dict[str, Any] | None = None,
         force_refresh: bool = False,
     ) -> httpx.Response:
-        """Perform a GET request with rate limit handling, exponential backoff, and disk cache."""
+        """Perform an async GET request with token rotation, rate limit retry, and disk cache."""
         full_url = self._resolve_url(url)
         cache_key = HttpCache.compute_key(full_url, params=params)
 
         if self._cache is not None and not force_refresh:
-            cached_response = self._cache.get(cache_key)
+            cached_response = await self._cache.get(cache_key)
             if cached_response is not None:
                 logger.debug("Cache hit for %s", full_url)
                 return cached_response
@@ -166,26 +365,68 @@ class GitHubClient:
         attempt = 0
 
         while True:
-            self._check_proactive_rate_limit()
+            await self._check_proactive_rate_limit()
+
+            current_token = await self.token_pool.get_next_token(
+                self.time_fn, self.sleep_fn
+            )
+            req_headers = dict(self._default_headers)
+            if current_token:
+                req_headers["Authorization"] = f"Bearer {current_token}"
 
             try:
-                response = self._client.get(full_url, params=params)
+                async with self._semaphore:
+                    response = await self._client.get(
+                        full_url, params=params, headers=req_headers
+                    )
                 self._update_rate_limit_state(response)
+                if current_token:
+                    await self.token_pool.update_state(
+                        current_token, response, self.time_fn
+                    )
 
-                # Check for rate limit hit (403/429 with remaining 0 or message)
+                # Check rate limit hit
                 is_rate_limited = (
-                    response.status_code in (403, 429) and self.last_remaining == 0
+                    response.status_code in (403, 429)
+                    and (
+                        self.last_remaining == 0
+                        or "rate limit" in response.text.lower()
+                    )
                 ) or (
-                    response.status_code == 403
-                    and "rate limit" in response.text.lower()
+                    response.status_code in (403, 429)
+                    and response.headers.get("X-RateLimit-Remaining") == "0"
                 )
 
                 if is_rate_limited:
-                    self._wait_for_rate_limit(self.last_reset)
-                    self.last_remaining = None
+                    if current_token:
+                        logger.warning(
+                            "Rate limit encountered on token %s for %s. Token placed in cooldown.",
+                            current_token[:8],
+                            full_url,
+                        )
+                        # Token is already in cooldown; next iteration will pick next token or wait
+                        continue
+                    else:
+                        now = self.time_fn()
+                        if self.last_reset is not None and self.last_reset > now:
+                            wait_seconds = (self.last_reset - now) + 1.0
+                        else:
+                            wait_seconds = 60.0
+                        logger.warning(
+                            "Rate limit hit on unauthenticated request. Waiting %.1fs until reset...",
+                            wait_seconds,
+                        )
+                        await self._sleep(wait_seconds)
+                        self.last_remaining = None
+                if response.status_code == 401 and current_token:
+                    logger.warning(
+                        "Token %s returned 401 Unauthorized for %s. Retrying with next available token...",
+                        current_token[:8],
+                        full_url,
+                    )
                     continue
 
-                # Server error: 5xx retry with exponential backoff
+                # 5xx server error retry with exponential backoff
                 if 500 <= response.status_code < 600:
                     if attempt < self.max_retries:
                         delay = self.backoff_factor * (2**attempt)
@@ -197,17 +438,16 @@ class GitHubClient:
                             attempt + 1,
                             self.max_retries,
                         )
-                        self.sleep_fn(delay)
+                        await self._sleep(delay)
                         attempt += 1
                         continue
                     response.raise_for_status()
 
-                # Raise for 4xx client errors (401, 404, etc.)
                 response.raise_for_status()
 
                 # Cache successful 2xx responses
                 if self._cache is not None:
-                    self._cache.set(cache_key, full_url, response)
+                    await self._cache.set(cache_key, full_url, response)
 
                 return response
 
@@ -222,70 +462,81 @@ class GitHubClient:
                         attempt + 1,
                         self.max_retries,
                     )
-                    self.sleep_fn(delay)
+                    await self._sleep(delay)
                     attempt += 1
                     continue
                 raise
 
-    def get_paginated(
+    async def get_paginated(
         self,
         url: str,
         params: dict[str, Any] | None = None,
         force_refresh: bool = False,
-    ) -> Iterator[httpx.Response]:
-        """Fetch all pages following RFC 5988 Link headers, yielding each Response."""
+    ) -> AsyncIterator[httpx.Response]:
+        """Fetch all pages following RFC 5988 Link headers, yielding each Response asynchronously."""
         current_url: str | None = url
         current_params: dict[str, Any] | None = params
 
         while current_url:
-            response = self.get(
+            response = await self.get(
                 current_url, params=current_params, force_refresh=force_refresh
             )
             yield response
 
-            # Check next link in Link header
             next_link = response.links.get("next")
             if next_link and "url" in next_link:
                 current_url = next_link["url"]
-                current_params = (
-                    None  # URL in Link header already encodes query parameters
-                )
+                current_params = None
             else:
                 current_url = None
 
-    def close(self) -> None:
-        """Close the underlying HTTP client session and disk cache."""
-        self._client.close()
+    async def close(self) -> None:
+        """Close HTTP client session and disk cache."""
+        await self._client.aclose()
         if self._owns_cache and self._cache is not None:
-            self._cache.close()
+            await self._cache.close()
 
-    def __enter__(self) -> Self:
+    async def __aenter__(self) -> Self:
         return self
 
-    def __exit__(self, *args: object) -> None:
-        self.close()
+    async def __aexit__(self, *args: object) -> None:
+        await self.close()
 
 
-def get(
+async def get(
     url: str,
     params: dict[str, Any] | None = None,
     force_refresh: bool = False,
     **kwargs: Any,
 ) -> httpx.Response:
     """Convenience function to perform a single GET request using a temporary GitHubClient."""
-    with GitHubClient(**kwargs) as client:
-        return client.get(url, params=params, force_refresh=force_refresh)
+    async with GitHubClient(**kwargs) as client:
+        return await client.get(url, params=params, force_refresh=force_refresh)
 
 
-def get_paginated(
+async def get_paginated(
     url: str,
     params: dict[str, Any] | None = None,
     force_refresh: bool = False,
     **kwargs: Any,
-) -> Iterator[httpx.Response]:
+) -> AsyncIterator[httpx.Response]:
     """Convenience function to perform a paginated GET request using a temporary GitHubClient."""
     client = GitHubClient(**kwargs)
     try:
-        yield from client.get_paginated(url, params=params, force_refresh=force_refresh)
+        async for item in client.get_paginated(
+            url, params=params, force_refresh=force_refresh
+        ):
+            yield item
     finally:
-        client.close()
+        await client.close()
+
+
+__all__ = [
+    "GitHubClient",
+    "TokenPool",
+    "TokenState",
+    "get",
+    "get_paginated",
+    "load_env_file",
+    "resolve_tokens",
+]

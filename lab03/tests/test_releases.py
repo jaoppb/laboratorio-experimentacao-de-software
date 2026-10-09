@@ -45,7 +45,7 @@ def releases():
 
 
 def _client(handler):
-    return GitHubClient(client=httpx.Client(transport=httpx.MockTransport(handler)))
+    return GitHubClient(client=httpx.AsyncClient(transport=httpx.MockTransport(handler)))
 
 
 def test_parse_release_discards_drafts():
@@ -99,7 +99,7 @@ def test_count_valid_releases(releases):
     assert count_valid_releases(releases, WINDOW_START, WINDOW_END) == 2
 
 
-def test_fetch_releases_paginates_and_stops_after_anchor():
+async def test_fetch_releases_paginates_and_stops_after_anchor():
     """Pagination stops after the page holding the first stable release before the window."""
     requested_pages = []
     pages = {
@@ -126,14 +126,14 @@ def test_fetch_releases_paginates_and_stops_after_anchor():
             )
         return httpx.Response(200, json=pages[page], headers=headers)
 
-    with _client(handler) as client:
-        result = fetch_releases(client, "o", "r", window_start=WINDOW_START)
+    async with _client(handler) as client:
+        result = await fetch_releases(client, "o", "r", window_start=WINDOW_START)
 
     assert requested_pages == ["1", "2"]
     assert [r.tag_name for r in result] == ["v0.9", "v1.0-rc1", "v1.1", "v1.2"]
 
 
-def test_fetch_releases_full_history_without_window():
+async def test_fetch_releases_full_history_without_window():
     def handler(request):
         return httpx.Response(
             200,
@@ -143,12 +143,12 @@ def test_fetch_releases_full_history_without_window():
             ],
         )
 
-    with _client(handler) as client:
-        result = fetch_releases(client, "o", "r")
+    async with _client(handler) as client:
+        result = await fetch_releases(client, "o", "r")
     assert [r.tag_name for r in result] == ["v1", "v2"]
 
 
-def test_fetch_tags_dates_by_commit_author_date():
+async def test_fetch_tags_dates_by_commit_author_date():
     """Tags are dated by the commit they point to; shared commits are fetched once."""
     commit_requests = []
 
@@ -170,15 +170,15 @@ def test_fetch_tags_dates_by_commit_author_date():
             200, json={"sha": sha, "commit": {"author": {"date": dates[sha]}}}
         )
 
-    with _client(handler) as client:
-        tags = fetch_tags(client, "o", "r")
+    async with _client(handler) as client:
+        tags = await fetch_tags(client, "o", "r")
 
     assert [t.tag_name for t in tags] == ["v1", "v2", "v2-alias"]
     assert tags[0].published_at.isoformat() == "2024-01-05T00:00:00+00:00"
     assert sorted(commit_requests) == ["aaa", "bbb"]
 
 
-def test_fetch_tags_respects_max_tags():
+async def test_fetch_tags_respects_max_tags():
     def handler(request):
         if request.url.path == "/repos/o/r/tags":
             return httpx.Response(
@@ -190,6 +190,6 @@ def test_fetch_tags_respects_max_tags():
             200, json={"commit": {"author": {"date": "2024-01-01T00:00:00Z"}}}
         )
 
-    with _client(handler) as client:
-        tags = fetch_tags(client, "o", "r", max_tags=3)
+    async with _client(handler) as client:
+        tags = await fetch_tags(client, "o", "r", max_tags=3)
     assert len(tags) == 3

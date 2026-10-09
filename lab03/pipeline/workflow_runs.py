@@ -1,10 +1,11 @@
-"""Collector for GitHub Actions workflow runs on the default branch with temporal bisection and Parquet storage."""
+"""Collector for GitHub Actions workflow runs on the default branch with adaptive parallel slicing and Parquet storage."""
 
 from __future__ import annotations
 
+import asyncio
 import calendar
 from dataclasses import dataclass, field
-from datetime import datetime, time, timezone
+from datetime import datetime, timezone
 import logging
 from pathlib import Path
 from typing import Any
@@ -36,10 +37,7 @@ def _format_iso(dt: datetime) -> str:
 def split_window_into_months(
     start_date: datetime | str, end_date: datetime | str
 ) -> list[tuple[datetime, datetime]]:
-    """Split an observation window into contiguous calendar-month intervals.
-
-    Each interval spans from start to end (inclusive/contiguous) in UTC.
-    """
+    """Split an observation window into contiguous calendar-month intervals."""
     start = _to_utc_datetime(start_date)
     end = _to_utc_datetime(end_date)
 
@@ -68,7 +66,6 @@ def split_window_into_months(
         if slice_end >= end:
             break
 
-        # Move to the very start of the next month (or next microsecond)
         if current_start.month == 12:
             next_month_start = datetime(
                 current_start.year + 1, 1, 1, 0, 0, 0, 0, tzinfo=timezone.utc
@@ -216,14 +213,14 @@ def load_runs_from_parquet(parquet_path: str | Path) -> list[WorkflowRun]:
     return runs
 
 
-def _resolve_default_branch(
+async def _resolve_default_branch(
     client: GitHubClient, owner: str, repo: str, branch: str | None
 ) -> str:
     """Resolve the default branch, querying the GitHub API if not provided."""
     if branch:
         return branch
 
-    resp = client.get(f"/repos/{owner}/{repo}")
+    resp = await client.get(f"/repos/{owner}/{repo}")
     data = resp.json()
     default_branch = data.get("default_branch")
     if not default_branch:
@@ -236,7 +233,7 @@ def _resolve_default_branch(
     return str(default_branch)
 
 
-def _fetch_runs_for_interval(
+async def _fetch_runs_for_interval(
     client: GitHubClient,
     owner: str,
     repo: str,
@@ -246,8 +243,10 @@ def _fetch_runs_for_interval(
     threshold_ceiling: int,
     min_interval_seconds: float,
     bisection_events: list[dict[str, Any]],
+    depth: int = 0,
+    max_depth: int = 3,
 ) -> list[dict[str, Any]]:
-    """Fetch runs for a time interval with recursive bisection on total_count >= threshold_ceiling."""
+    """Fetch runs for a time interval with adaptive parallel slicing when total_count >= threshold_ceiling."""
     start_str = _format_iso(start_dt)
     end_str = _format_iso(end_dt)
     date_filter = f"{start_str}..{end_str}"
@@ -261,23 +260,26 @@ def _fetch_runs_for_interval(
         "page": 1,
     }
 
-    first_resp = client.get(url, params=params)
+    first_resp = await client.get(url, params=params)
     data = first_resp.json()
     total_count = data.get("total_count", 0)
     page_runs = data.get("workflow_runs", [])
 
     interval_duration = (end_dt - start_dt).total_seconds()
 
-    # If ceiling reached and interval can still be meaningfully divided:
-    if total_count >= threshold_ceiling and interval_duration > min_interval_seconds:
-        logger.warning(
-            "Interval %s to %s for %s/%s hit GitHub Actions limit (total_count=%d >= %d). Bisecting interval.",
+    # If ceiling reached, interval is long enough, and under max_depth:
+    if (
+        total_count >= threshold_ceiling
+        and interval_duration > min_interval_seconds
+        and depth < max_depth
+    ):
+        logger.info(
+            "Interval %s..%s for %s/%s exceeded limit (total_count=%d). Applying parallel adaptive slicing.",
             start_str,
             end_str,
             owner,
             repo,
             total_count,
-            threshold_ceiling,
         )
         bisection_events.append(
             {
@@ -288,59 +290,64 @@ def _fetch_runs_for_interval(
         )
 
         mid_dt = start_dt + (end_dt - start_dt) / 2
+        sub_intervals: list[tuple[datetime, datetime]] = [
+            (start_dt, mid_dt),
+            (mid_dt, end_dt),
+        ]
 
-        left_runs = _fetch_runs_for_interval(
-            client=client,
-            owner=owner,
-            repo=repo,
-            branch=branch,
-            start_dt=start_dt,
-            end_dt=mid_dt,
-            threshold_ceiling=threshold_ceiling,
-            min_interval_seconds=min_interval_seconds,
-            bisection_events=bisection_events,
-        )
+        # Query all sub-intervals in parallel!
+        tasks = [
+            _fetch_runs_for_interval(
+                client=client,
+                owner=owner,
+                repo=repo,
+                branch=branch,
+                start_dt=s,
+                end_dt=e,
+                threshold_ceiling=threshold_ceiling,
+                min_interval_seconds=min_interval_seconds,
+                bisection_events=bisection_events,
+                depth=depth + 1,
+                max_depth=max_depth,
+            )
+            for s, e in sub_intervals
+        ]
 
-        right_runs = _fetch_runs_for_interval(
-            client=client,
-            owner=owner,
-            repo=repo,
-            branch=branch,
-            start_dt=mid_dt,
-            end_dt=end_dt,
-            threshold_ceiling=threshold_ceiling,
-            min_interval_seconds=min_interval_seconds,
-            bisection_events=bisection_events,
-        )
+        sub_results = await asyncio.gather(*tasks)
+        combined: list[dict[str, Any]] = []
+        for res in sub_results:
+            combined.extend(res)
+        return combined
 
-        return left_runs + right_runs
-
-    # Under ceiling, or cannot be divided further: paginate all available pages
+    # Under ceiling or reached max depth: paginate remaining pages in parallel
     all_runs = list(page_runs)
     num_pages = (total_count + 99) // 100
 
-    # Paginate remaining pages if any
-    for page in range(2, num_pages + 1):
-        if page > 10 and total_count >= threshold_ceiling:
-            # GitHub REST Actions runs API caps pagination at 10 pages (1,000 runs)
-            break
-        page_params = {
-            "branch": branch,
-            "event": "push",
-            "created": date_filter,
-            "per_page": 100,
-            "page": page,
-        }
-        resp = client.get(url, params=page_params)
-        runs_on_page = resp.json().get("workflow_runs", [])
-        if not runs_on_page:
-            break
-        all_runs.extend(runs_on_page)
+    if num_pages > 1:
+        max_page = min(num_pages, 10 if total_count >= threshold_ceiling else num_pages)
+        page_tasks = [
+            client.get(
+                url,
+                params={
+                    "branch": branch,
+                    "event": "push",
+                    "created": date_filter,
+                    "per_page": 100,
+                    "page": p,
+                },
+            )
+            for p in range(2, max_page + 1)
+        ]
+        if page_tasks:
+            page_responses = await asyncio.gather(*page_tasks)
+            for resp in page_responses:
+                runs_on_page = resp.json().get("workflow_runs", [])
+                all_runs.extend(runs_on_page)
 
     return all_runs
 
 
-def collect_workflow_runs(
+async def collect_workflow_runs(
     owner: str,
     repo: str,
     client: GitHubClient | None = None,
@@ -350,22 +357,18 @@ def collect_workflow_runs(
     save_to_parquet: bool = True,
     output_dir: str | Path = "dados/runs",
     threshold_ceiling: int = 1000,
-    min_interval_seconds: float = 3600.0,
+    min_interval_seconds: float = 86400.0 * 2,  # 2 days min slice
+    max_depth: int = 3,
 ) -> WorkflowRunsCollectionResult:
-    """Collect all push workflow runs for the default branch across the observation window.
-
-    Applies calendar-month slicing and recursive bisection whenever total_count >= 1000.
-    Deduplicates runs by id, computes valid runs for T4, and optionally writes to Parquet.
-    """
+    """Collect push workflow runs for the default branch across observation window in parallel."""
     owns_client = False
     if client is None:
         client = GitHubClient()
         owns_client = True
 
     try:
-        resolved_branch = _resolve_default_branch(client, owner, repo, branch)
+        resolved_branch = await _resolve_default_branch(client, owner, repo, branch)
 
-        # Default window: 12 months up to now if not provided
         if end_date is None:
             end_dt = datetime.now(timezone.utc)
         else:
@@ -377,12 +380,11 @@ def collect_workflow_runs(
             start_dt = _to_utc_datetime(start_date)
 
         monthly_intervals = split_window_into_months(start_dt, end_dt)
-
         bisection_events: list[dict[str, Any]] = []
-        raw_runs_by_id: dict[int | str, dict[str, Any]] = {}
 
-        for slice_start, slice_end in monthly_intervals:
-            slice_runs = _fetch_runs_for_interval(
+        # Fetch all monthly intervals concurrently!
+        month_tasks = [
+            _fetch_runs_for_interval(
                 client=client,
                 owner=owner,
                 repo=repo,
@@ -392,14 +394,22 @@ def collect_workflow_runs(
                 threshold_ceiling=threshold_ceiling,
                 min_interval_seconds=min_interval_seconds,
                 bisection_events=bisection_events,
+                depth=0,
+                max_depth=max_depth,
             )
+            for slice_start, slice_end in monthly_intervals
+        ]
 
+        monthly_results = await asyncio.gather(*month_tasks)
+
+        # Deduplicate runs by id
+        raw_runs_by_id: dict[int | str, dict[str, Any]] = {}
+        for slice_runs in monthly_results:
             for run_dict in slice_runs:
                 run_id = run_dict.get("id")
                 if run_id is not None:
                     raw_runs_by_id[run_id] = run_dict
 
-        # Convert to WorkflowRun dataclasses and classify validity
         workflow_runs: list[WorkflowRun] = []
         valid_runs_count = 0
 
@@ -447,4 +457,4 @@ def collect_workflow_runs(
 
     finally:
         if owns_client:
-            client.close()
+            await client.close()

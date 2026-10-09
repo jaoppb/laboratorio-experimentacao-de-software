@@ -1,6 +1,4 @@
-"""Unit tests for repository candidate selection and Actions filtering (Issue #29)."""
-
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock
 
 import httpx
 import pytest
@@ -13,10 +11,10 @@ from pipeline.repo_selector import (
 
 
 class TestRepoSelector:
-    def test_search_candidates_by_stars_and_deduplication(self):
+    async def test_search_candidates_by_stars_and_deduplication(self):
         client = MagicMock(spec=GitHubClient)
 
-        def mock_get(url: str, params: dict | None = None):
+        async def mock_get(url: str, params: dict | None = None):
             query = params.get("q", "") if params else ""
             if "1000..1500" in query:
                 return httpx.Response(
@@ -41,9 +39,9 @@ class TestRepoSelector:
                 request=httpx.Request("GET", "https://api.github.com/search"),
             )
 
-        client.get.side_effect = mock_get
+        client.get = AsyncMock(side_effect=mock_get)
 
-        results = search_candidates_by_stars(
+        results = await search_candidates_by_stars(
             client=client,
             star_ranges=["1000..1500", "1501..2500"],
             max_pages_per_range=1,
@@ -53,10 +51,10 @@ class TestRepoSelector:
         names = [r["full_name"] for r in results]
         assert names == ["owner/repo1", "owner/repo2", "owner/repo3"]
 
-    def test_filter_repositories_with_actions(self):
+    async def test_filter_repositories_with_actions(self):
         client = MagicMock(spec=GitHubClient)
 
-        def mock_get(url: str, params: dict | None = None):
+        async def mock_get(url: str, params: dict | None = None):
             if "has-ci" in url:
                 return httpx.Response(
                     200,
@@ -71,7 +69,7 @@ class TestRepoSelector:
                 )
             raise httpx.RequestError("404 error", request=httpx.Request("GET", url))
 
-        client.get.side_effect = mock_get
+        client.get = AsyncMock(side_effect=mock_get)
         funnel = FunnelTracker()
 
         repos = [
@@ -80,7 +78,7 @@ class TestRepoSelector:
             {"full_name": "owner/error-repo"},
         ]
 
-        accepted = filter_repositories_with_actions(client, repos, funnel=funnel)
+        accepted = await filter_repositories_with_actions(client, repos, funnel=funnel)
         assert len(accepted) == 1
         assert accepted[0]["full_name"] == "owner/has-ci"
         assert len(funnel.stages) == 2

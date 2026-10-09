@@ -19,10 +19,10 @@ def _commit(sha, date, message="chore"):
 
 
 def _client(handler):
-    return GitHubClient(client=httpx.Client(transport=httpx.MockTransport(handler)))
+    return GitHubClient(client=httpx.AsyncClient(transport=httpx.MockTransport(handler)))
 
 
-def test_fetch_compare_paginates_beyond_250_commits():
+async def test_fetch_compare_paginates_beyond_250_commits():
     """A compare with 320 commits needs 4 pages of 100."""
     total = 320
     all_commits = [_commit(f"s{i}", "2024-03-01T00:00:00Z") for i in range(total)]
@@ -36,8 +36,8 @@ def test_fetch_compare_paginates_beyond_250_commits():
         chunk = all_commits[(page - 1) * per_page : page * per_page]
         return httpx.Response(200, json={"total_commits": total, "commits": chunk})
 
-    with _client(handler) as client:
-        commits = fetch_compare_commits(client, "o", "r", "v1.0", "v1.1")
+    async with _client(handler) as client:
+        commits = await fetch_compare_commits(client, "o", "r", "v1.0", "v1.1")
 
     assert len(commits) == total
     assert pages_requested == [1, 2, 3, 4]
@@ -45,7 +45,7 @@ def test_fetch_compare_paginates_beyond_250_commits():
     assert commits[-1].sha == "s319"
 
 
-def test_fetch_compare_keeps_message_and_author_date():
+async def test_fetch_compare_keeps_message_and_author_date():
     def handler(request):
         return httpx.Response(
             200,
@@ -59,26 +59,26 @@ def test_fetch_compare_keeps_message_and_author_date():
             },
         )
 
-    with _client(handler) as client:
-        [commit] = fetch_compare_commits(client, "o", "r", "a", "b")
+    async with _client(handler) as client:
+        [commit] = await fetch_compare_commits(client, "o", "r", "a", "b")
     assert commit.sha == "abc"
     assert commit.message == "fix: crash ao abrir arquivo"
     assert commit.committed_at.isoformat() == "2024-03-02T10:00:00+00:00"
 
 
-def test_fetch_compare_encodes_special_characters_in_tags():
+async def test_fetch_compare_encodes_special_characters_in_tags():
     paths = []
 
     def handler(request):
         paths.append(request.url.raw_path.decode())
         return httpx.Response(200, json={"total_commits": 0, "commits": []})
 
-    with _client(handler) as client:
-        assert fetch_compare_commits(client, "o", "r", "pkg/v1.0+b1", "pkg/v1.1") == []
+    async with _client(handler) as client:
+        assert await fetch_compare_commits(client, "o", "r", "pkg/v1.0+b1", "pkg/v1.1") == []
     assert paths[0].startswith("/repos/o/r/compare/pkg/v1.0%2Bb1...pkg/v1.1")
 
 
-def test_fetch_compare_stops_when_total_is_short_page():
+async def test_fetch_compare_stops_when_total_is_short_page():
     """Stops on a short page even if `total_commits` is missing."""
     calls = []
 
@@ -88,8 +88,8 @@ def test_fetch_compare_stops_when_total_is_short_page():
             200, json={"commits": [_commit("a", "2024-01-01T00:00:00Z")]}
         )
 
-    with _client(handler) as client:
-        assert len(fetch_compare_commits(client, "o", "r", "a", "b")) == 1
+    async with _client(handler) as client:
+        assert len(await fetch_compare_commits(client, "o", "r", "a", "b")) == 1
     assert len(calls) == 1
 
 
@@ -121,9 +121,9 @@ def _compare_handler(request):
     raise AssertionError(f"unexpected compare {base_head}")
 
 
-def test_collect_release_commits_uses_anchor_and_handles_404(window):
-    with _client(_compare_handler) as client:
-        results = collect_release_commits(client, "o", "r", window)
+async def test_collect_release_commits_uses_anchor_and_handles_404(window):
+    async with _client(_compare_handler) as client:
+        results = await collect_release_commits(client, "o", "r", window)
 
     assert [r.release.tag_name for r in results] == ["v1.1", "v1.2", "v1.3"]
     assert [r.previous.tag_name for r in results] == ["v1.0", "v1.1", "v1.2"]
@@ -147,7 +147,7 @@ def test_collect_release_commits_uses_anchor_and_handles_404(window):
     assert lead.releases_without_commits == 1
 
 
-def test_first_release_in_history_is_skipped_without_request():
+async def test_first_release_in_history_is_skipped_without_request():
     window = WindowReleases(
         in_window=[
             Release(tag_name="v1.0", published_at="2024-02-01T00:00:00Z"),
@@ -166,8 +166,8 @@ def test_first_release_in_history_is_skipped_without_request():
             },
         )
 
-    with _client(handler) as client:
-        results = collect_release_commits(client, "o", "r", window)
+    async with _client(handler) as client:
+        results = await collect_release_commits(client, "o", "r", window)
 
     assert results[0].status == ComparisonStatus.FIRST_RELEASE
     assert results[0].previous is None
@@ -176,9 +176,10 @@ def test_first_release_in_history_is_skipped_without_request():
     assert requests == ["/repos/o/r/compare/v1.0...v1.1"]
 
 
-def test_non_404_errors_are_raised(window):
+async def test_non_404_errors_are_raised(window):
     def handler(request):
         return httpx.Response(401, json={"message": "Bad credentials"})
 
-    with _client(handler) as client, pytest.raises(httpx.HTTPStatusError):
-        collect_release_commits(client, "o", "r", window)
+    async with _client(handler) as client:
+        with pytest.raises(httpx.HTTPStatusError):
+            await collect_release_commits(client, "o", "r", window)

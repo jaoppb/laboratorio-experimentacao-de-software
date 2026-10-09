@@ -2,6 +2,7 @@
 .env
 .env.*
 !.env.example
+.pipeline_state.json
 
 # Cache
 cache/

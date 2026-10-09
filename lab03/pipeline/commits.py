@@ -1,7 +1,8 @@
-"""Collection of the commits included in each release (compare between releases)."""
+"""Collection of the commits included in each release (Async compare between releases)."""
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from collections.abc import Sequence
 from dataclasses import dataclass, field
@@ -26,8 +27,8 @@ class ComparisonStatus(str, Enum):
     """Outcome of collecting the commits of one release."""
 
     OK = "ok"
-    FIRST_RELEASE = "first_release"  # no previous release in history: skipped
-    NOT_FOUND = "not_found"  # compare returned 404 (tag deleted or rewritten)
+    FIRST_RELEASE = "first_release"
+    NOT_FOUND = "not_found"
 
 
 @dataclass
@@ -55,24 +56,22 @@ def parse_commit(payload: dict[str, Any]) -> Commit:
 
 
 def _ref(tag_name: str) -> str:
-    """URL-encode a tag name for use in the compare path (keeps `/` in tags)."""
+    """URL-encode a tag name for use in the compare path."""
     return quote(tag_name, safe="/")
 
 
-def fetch_compare_commits(
+async def fetch_compare_commits(
     client: GitHubClient, owner: str, repo: str, base: str, head: str
 ) -> list[Commit]:
-    """Fetch all commits in `compare/{base}...{head}`, paginating past 250 commits.
-
-    Raises `httpx.HTTPStatusError` for HTTP errors (e.g. 404).
-    """
+    """Fetch all commits in `compare/{base}...{head}`, paginating past 250 commits."""
     url = f"/repos/{owner}/{repo}/compare/{_ref(base)}...{_ref(head)}"
     commits: list[Commit] = []
     total: int | None = None
     page = 1
 
     while True:
-        data = client.get(url, params={"per_page": PER_PAGE, "page": page}).json()
+        resp = await client.get(url, params={"per_page": PER_PAGE, "page": page})
+        data = resp.json()
         total = data.get("total_commits", total)
         batch = data.get("commits", [])
         commits.extend(parse_commit(c) for c in batch)
@@ -97,27 +96,7 @@ def fetch_compare_commits(
     return commits
 
 
-def collect_release_commits(
-    client: GitHubClient,
-    owner: str,
-    repo: str,
-    window: WindowReleases,
-) -> list[ReleaseCommits]:
-    """Collect the commits of every in-window release against its predecessor.
-
-    The predecessor of the first in-window release is the window anchor. A
-    release with no predecessor (first release in history) is skipped, and a
-    404 on compare is recorded and the release skipped.
-    """
-    ordered = window.with_anchor()
-    offset = 1 if window.anchor is not None else 0
-    return [
-        _compare_one(client, owner, repo, ordered[i - 1] if i > 0 else None, ordered[i])
-        for i in range(offset, len(ordered))
-    ]
-
-
-def _compare_one(
+async def _compare_one(
     client: GitHubClient,
     owner: str,
     repo: str,
@@ -127,7 +106,7 @@ def _compare_one(
     if previous is None:
         return ReleaseCommits(release, None, ComparisonStatus.FIRST_RELEASE)
     try:
-        commits = fetch_compare_commits(
+        commits = await fetch_compare_commits(
             client, owner, repo, previous.tag_name, release.tag_name
         )
     except httpx.HTTPStatusError as exc:
@@ -144,8 +123,35 @@ def _compare_one(
     return ReleaseCommits(release, previous, ComparisonStatus.OK, commits)
 
 
+async def collect_release_commits(
+    client: GitHubClient,
+    owner: str,
+    repo: str,
+    window: WindowReleases,
+) -> list[ReleaseCommits]:
+    """Collect commits of in-window releases against their predecessor in parallel."""
+    ordered = window.with_anchor()
+    offset = 1 if window.anchor is not None else 0
+
+    tasks = [
+        _compare_one(
+            client,
+            owner,
+            repo,
+            ordered[i - 1] if i > 0 else None,
+            ordered[i],
+        )
+        for i in range(offset, len(ordered))
+    ]
+
+    if not tasks:
+        return []
+
+    return await asyncio.gather(*tasks)
+
+
 def count_by_status(results: Sequence[ReleaseCommits]) -> dict[ComparisonStatus, int]:
-    """Count releases per comparison status (e.g. how many were skipped by 404)."""
+    """Count releases per comparison status."""
     counts = dict.fromkeys(ComparisonStatus, 0)
     for result in results:
         counts[result.status] += 1
