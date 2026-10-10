@@ -25,6 +25,43 @@ def _build_mock_http_handler():
     def handler(request: httpx.Request) -> httpx.Response:
         url_str = str(request.url)
 
+        # 0. GraphQL API
+        if "/graphql" in url_str:
+            import json as _json
+            body = _json.loads(request.content.decode("utf-8"))
+            vars_dict = body.get("variables", {})
+            name = vars_dict.get("name", "repo-valid-1")
+            releases_count = 2 if "few-releases" in name else 6
+            releases = [
+                {
+                    "tagName": f"v1.{i}",
+                    "publishedAt": f"2026-0{i+1}-15T12:00:00Z",
+                    "isDraft": False,
+                    "isPrerelease": False,
+                }
+                for i in range(releases_count)
+            ]
+            return httpx.Response(
+                200,
+                json={
+                    "data": {
+                        "repository": {
+                            "name": name,
+                            "stargazerCount": 20000,
+                            "createdAt": "2020-01-01T00:00:00Z",
+                            "primaryLanguage": {"name": "Python"},
+                            "defaultBranchRef": {"name": "main"},
+                            "releases": {
+                                "totalCount": len(releases),
+                                "pageInfo": {"hasNextPage": False, "endCursor": None},
+                                "nodes": releases,
+                            },
+                        }
+                    }
+                },
+                request=request,
+            )
+
         # 1. Search API
         if "/search/repositories" in url_str:
             return httpx.Response(
@@ -197,6 +234,37 @@ def _build_mock_http_handler():
     return handler
 
 
+@pytest.fixture(autouse=True)
+def mock_git_clone_for_integration(monkeypatch):
+    from contextlib import asynccontextmanager
+    from metricas.schemas import Commit
+    from pipeline.commits import ComparisonStatus, ReleaseCommits
+
+    @asynccontextmanager
+    async def fake_temporary_clone(owner, repo, cache_dir, auto_cleanup, token_pool=None):
+        yield Path(cache_dir) / f"{owner}__{repo}.git"
+
+    async def fake_collect_commits(client, owner, repo, window, git_dir=None):
+        ordered = window.with_anchor()
+        offset = 1 if window.anchor is not None else 0
+        res = []
+        for i in range(offset, len(ordered)):
+            prev = ordered[i - 1] if i > 0 else None
+            rel = ordered[i]
+            if prev is None:
+                res.append(ReleaseCommits(rel, None, ComparisonStatus.FIRST_RELEASE))
+            else:
+                commits = [
+                    Commit(sha=f"sha-{j}", committed_at="2026-01-10T10:00:00Z", message=f"commit {j}")
+                    for j in range(2)
+                ]
+                res.append(ReleaseCommits(rel, prev, ComparisonStatus.OK, commits))
+        return res
+
+    monkeypatch.setattr("pipeline.orchestrator.temporary_git_clone", fake_temporary_clone)
+    monkeypatch.setattr("pipeline.orchestrator.collect_release_commits", fake_collect_commits)
+
+
 @pytest.fixture
 def test_config(tmp_path: Path) -> dict[str, Any]:
     dados_dir = tmp_path / "dados"
@@ -273,7 +341,7 @@ async def test_pipeline_e2e_mock_success(test_config: dict[str, Any], tmp_path: 
         funnel_rows = list(csv.DictReader(f))
         assert len(funnel_rows) == 5
         stages = [row["etapa"] for row in funnel_rows]
-        assert "Busca inicial por estrelas (Search API)" in stages[0]
+        assert "Busca inicial refinada por estrelas (Search API)" in stages[0]
         assert "Filtro de uso de CI/CD (GitHub Actions)" in stages[1]
         assert "Filtro de releases na janela" in stages[2]
         assert "Filtro de workflow runs na janela" in stages[3]

@@ -30,13 +30,90 @@ def parse_release(payload: dict[str, Any]) -> Release | None:
     )
 
 
+def parse_graphql_release(node: dict[str, Any]) -> Release | None:
+    """Convert a release node from GraphQL API into a `Release`."""
+    if node.get("isDraft") or not node.get("publishedAt"):
+        return None
+    return Release(
+        tag_name=node["tagName"],
+        published_at=node["publishedAt"],
+        draft=False,
+        prerelease=bool(node.get("isPrerelease", False)),
+    )
+
+
+async def fetch_releases_graphql(
+    client: GitHubClient,
+    owner: str,
+    repo: str,
+    window_start: datetime | str | None = None,
+) -> tuple[dict[str, Any], list[Release]]:
+    """Fetch repository metadata and releases via GraphQL, paginating only if needed."""
+    from pipeline.graphql.loader import load_query
+
+    query = load_query("repo_details.graphql")
+    start = _parse_datetime(window_start)
+    releases: list[Release] = []
+
+    after_cursor: str | None = None
+    repo_data: dict[str, Any] = {}
+
+    while True:
+        variables: dict[str, Any] = {"owner": owner, "name": repo}
+        if after_cursor:
+            variables["after"] = after_cursor
+        resp_data = await client.graphql(query, variables=variables)
+        repo_data = resp_data.get("data", {}).get("repository") or {}
+        if not repo_data:
+            break
+
+        rel_block = repo_data.get("releases") or {}
+        nodes = rel_block.get("nodes") or []
+        page_info = rel_block.get("pageInfo") or {}
+
+        reached_anchor = False
+        for node in nodes:
+            rel = parse_graphql_release(node)
+            if rel is None:
+                continue
+            releases.append(rel)
+            if start is not None and not rel.prerelease and rel.published_at < start:
+                reached_anchor = True
+
+        has_next = page_info.get("hasNextPage", False)
+        end_cursor = page_info.get("endCursor")
+
+        if reached_anchor or not has_next or not end_cursor:
+            break
+
+        after_cursor = end_cursor
+
+    sorted_releases = sorted(releases, key=lambda r: r.published_at)
+    return repo_data, sorted_releases
+
+
 async def fetch_releases(
     client: GitHubClient,
     owner: str,
     repo: str,
     window_start: datetime | str | None = None,
+    use_graphql: bool = False,
 ) -> list[Release]:
     """Fetch the published (non-draft) releases of a repository, oldest first."""
+    if use_graphql:
+        try:
+            _, rels = await fetch_releases_graphql(
+                client=client, owner=owner, repo=repo, window_start=window_start
+            )
+            return rels
+        except Exception as exc:
+            logger.debug(
+                "GraphQL fetch_releases failed for %s/%s (%s), falling back to REST",
+                owner,
+                repo,
+                exc,
+            )
+
     start = _parse_datetime(window_start)
     releases: list[Release] = []
 

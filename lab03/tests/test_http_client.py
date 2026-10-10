@@ -572,6 +572,78 @@ async def test_token_pool_rotation_and_cooldown():
         resp2 = await client.get("/test2")
         assert resp2.status_code == 200
 
+    assert recorded_tokens == ["tok1", "tok2", "tok2"]
+
+
+async def test_client_graphql_success():
+    """Verify GitHubClient.graphql executes POST /graphql with JSON payload and returns data."""
+    recorded_requests = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        recorded_requests.append(request)
+        return httpx.Response(
+            200,
+            json={"data": {"repository": {"name": "test-repo", "stargazerCount": 42}}},
+            request=request,
+        )
+
+    transport = httpx.MockTransport(handler)
+    async with httpx.AsyncClient(transport=transport) as mock_httpx:
+        client = GitHubClient(token="tok-gql", client=mock_httpx)
+        data = await client.graphql("query { repository { name } }", variables={"owner": "foo"})
         await client.close()
 
-    assert recorded_tokens == ["tok1", "tok2", "tok2"]
+    assert data["data"]["repository"]["name"] == "test-repo"
+    assert len(recorded_requests) == 1
+    req = recorded_requests[0]
+    assert req.method == "POST"
+    assert str(req.url) == "https://api.github.com/graphql"
+    assert req.headers["Authorization"] == "Bearer tok-gql"
+    assert req.headers["Content-Type"] == "application/json"
+
+
+async def test_client_graphql_errors_raise():
+    """Verify GitHubClient.graphql raises GraphQLError when errors are present and data is missing."""
+    from pipeline.http_client import GraphQLError
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            json={"errors": [{"message": "Field not found"}]},
+            request=request,
+        )
+
+    transport = httpx.MockTransport(handler)
+    async with httpx.AsyncClient(transport=transport) as mock_httpx:
+        client = GitHubClient(token="tok-gql", client=mock_httpx)
+        with pytest.raises(GraphQLError) as excinfo:
+            await client.graphql("query { badField }")
+        await client.close()
+
+    assert "Field not found" in str(excinfo.value)
+
+
+async def test_client_http2_enforce_fail_loud():
+    """Verify that fail-loud policy raises RuntimeError when HTTP/2 negotiation fails against api.github.com."""
+    def handler(request: httpx.Request) -> httpx.Response:
+        # MockTransport returns HTTP/1.1 response
+        return httpx.Response(200, json={"ok": True}, request=request)
+
+    transport = httpx.MockTransport(handler)
+    async with httpx.AsyncClient(transport=transport) as mock_httpx:
+        # Explicitly enforce HTTP/2
+        client = GitHubClient(client=mock_httpx, enforce_http2=True)
+        with pytest.raises(RuntimeError) as excinfo:
+            await client.get("/zen")
+        await client.close()
+
+    assert "HTTP/2 negotiation failed" in str(excinfo.value)
+
+
+async def test_client_http2_configuration_defaults():
+    """Verify that client initializes with HTTP/2 enabled and expected limits."""
+    client = GitHubClient(token="tok")
+    # Underlying httpx client should have http2 enabled
+    assert client.enforce_http2 is True
+    await client.close()
+

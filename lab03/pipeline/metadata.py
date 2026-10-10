@@ -104,3 +104,36 @@ async def fetch_repository_metadata(
         contributors_count=contributors,
         metadata={"raw_info": info},
     )
+
+
+async def fetch_repository_details_graphql(
+    client: GitHubClient,
+    owner: str,
+    repo: str,
+    window_start: Any | None = None,
+) -> tuple[Repo, list[Any]]:
+    """Fetch repository metadata and releases in 1 single GraphQL roundtrip (plus contributors)."""
+    from pipeline.releases import fetch_releases_graphql
+
+    repo_data, releases = await fetch_releases_graphql(
+        client=client, owner=owner, repo=repo, window_start=window_start
+    )
+
+    stars = repo_data.get("stargazerCount", 0)
+    language = (repo_data.get("primaryLanguage") or {}).get("name")
+    default_branch = (repo_data.get("defaultBranchRef") or {}).get("name", "main")
+    created_at = repo_data.get("createdAt")
+
+    contributors = await count_contributors(client, owner, repo)
+
+    repo_obj = Repo(
+        owner=owner,
+        name=repo,
+        default_branch=default_branch,
+        stars=stars,
+        language=language,
+        created_at=created_at,
+        contributors_count=contributors,
+        metadata={"raw_info": repo_data},
+    )
+    return repo_obj, releases

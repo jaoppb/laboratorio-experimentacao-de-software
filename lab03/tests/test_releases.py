@@ -193,3 +193,111 @@ async def test_fetch_tags_respects_max_tags():
     async with _client(handler) as client:
         tags = await fetch_tags(client, "o", "r", max_tags=3)
     assert len(tags) == 3
+
+
+async def test_fetch_releases_graphql():
+    """Verify fetch_releases_graphql fetches and parses releases from GraphQL in 1 roundtrip."""
+    from pipeline.releases import fetch_releases_graphql
+
+    def handler(request: httpx.Request):
+        assert request.url.path == "/graphql"
+        return httpx.Response(
+            200,
+            json={
+                "data": {
+                    "repository": {
+                        "name": "flask",
+                        "stargazerCount": 70000,
+                        "releases": {
+                            "totalCount": 2,
+                            "pageInfo": {"hasNextPage": False, "endCursor": None},
+                            "nodes": [
+                                {
+                                    "tagName": "v2.0.0",
+                                    "publishedAt": "2024-05-01T12:00:00Z",
+                                    "isPrerelease": False,
+                                    "isDraft": False,
+                                },
+                                {
+                                    "tagName": "v1.9.0",
+                                    "publishedAt": "2024-01-01T12:00:00Z",
+                                    "isPrerelease": False,
+                                    "isDraft": False,
+                                },
+                            ],
+                        },
+                    }
+                }
+            },
+        )
+
+    async with _client(handler) as client:
+        repo_data, rels = await fetch_releases_graphql(client, "pallets", "flask")
+
+    assert repo_data["name"] == "flask"
+    assert len(rels) == 2
+    assert [r.tag_name for r in rels] == ["v1.9.0", "v2.0.0"]
+
+
+async def test_fetch_releases_graphql_pagination():
+    """Verify fetch_releases_graphql paginates using cursor when older releases are within window."""
+    from pipeline.releases import fetch_releases_graphql
+    call_count = 0
+
+    def handler(request: httpx.Request):
+        nonlocal call_count
+        call_count += 1
+        if call_count == 1:
+            return httpx.Response(
+                200,
+                json={
+                    "data": {
+                        "repository": {
+                            "releases": {
+                                "totalCount": 2,
+                                "pageInfo": {"hasNextPage": True, "endCursor": "cursor-p1"},
+                                "nodes": [
+                                    {
+                                        "tagName": "v2.0.0",
+                                        "publishedAt": "2024-06-01T12:00:00Z",
+                                        "isPrerelease": False,
+                                        "isDraft": False,
+                                    }
+                                ],
+                            }
+                        }
+                    }
+                },
+            )
+        return httpx.Response(
+            200,
+            json={
+                "data": {
+                    "repository": {
+                        "releases": {
+                            "totalCount": 2,
+                            "pageInfo": {"hasNextPage": False, "endCursor": None},
+                            "nodes": [
+                                {
+                                    "tagName": "v1.0.0",
+                                    "publishedAt": "2023-01-01T12:00:00Z",
+                                    "isPrerelease": False,
+                                    "isDraft": False,
+                                }
+                            ],
+                        }
+                    }
+                }
+            },
+        )
+
+    async with _client(handler) as client:
+        # window_start is 2024-01-01; page 1 release is 2024-06-01 (inside window) so it requests page 2
+        _, rels = await fetch_releases_graphql(
+            client, "pallets", "flask", window_start="2024-01-01T00:00:00Z"
+        )
+
+    assert call_count == 2
+    assert len(rels) == 2
+    assert [r.tag_name for r in rels] == ["v1.0.0", "v2.0.0"]
+

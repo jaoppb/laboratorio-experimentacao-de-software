@@ -128,8 +128,14 @@ async def collect_release_commits(
     owner: str,
     repo: str,
     window: WindowReleases,
+    git_dir: Path | str | None = None,
 ) -> list[ReleaseCommits]:
-    """Collect commits of in-window releases against their predecessor in parallel."""
+    """Collect commits of in-window releases against their predecessor in parallel or via git."""
+    if git_dir is not None:
+        from pipeline.git_clone import collect_release_commits_from_git
+
+        return await collect_release_commits_from_git(git_dir=git_dir, window=window)
+
     ordered = window.with_anchor()
     offset = 1 if window.anchor is not None else 0
 

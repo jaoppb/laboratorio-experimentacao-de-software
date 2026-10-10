@@ -84,3 +84,53 @@ class TestMetadataAndContributors:
         assert repo.stars == 5000
         assert repo.language == "Python"
         assert repo.contributors_count == 1
+
+    async def test_fetch_repository_details_graphql(self):
+        from pipeline.metadata import fetch_repository_details_graphql
+
+        client = MagicMock(spec=GitHubClient)
+        # Mock contributor count GET
+        client.get = AsyncMock(
+            return_value=httpx.Response(
+                200,
+                headers={"Link": '<https://api.github.com/repos/pallets/flask/contributors?page=120>; rel="last"'},
+                json=[{"id": 1}],
+                request=httpx.Request("GET", "https://api.github.com/repos/pallets/flask/contributors"),
+            )
+        )
+        # Mock GraphQL response
+        client.graphql = AsyncMock(
+            return_value={
+                "data": {
+                    "repository": {
+                        "name": "flask",
+                        "stargazerCount": 75000,
+                        "createdAt": "2010-04-06T11:11:59Z",
+                        "primaryLanguage": {"name": "Python"},
+                        "defaultBranchRef": {"name": "main"},
+                        "releases": {
+                            "totalCount": 1,
+                            "pageInfo": {"hasNextPage": False, "endCursor": None},
+                            "nodes": [
+                                {
+                                    "tagName": "3.1.3",
+                                    "publishedAt": "2026-02-19T05:01:30Z",
+                                    "isPrerelease": False,
+                                    "isDraft": False,
+                                }
+                            ],
+                        },
+                    }
+                }
+            }
+        )
+
+        repo, rels = await fetch_repository_details_graphql(client, "pallets", "flask")
+        assert repo.name == "flask"
+        assert repo.stars == 75000
+        assert repo.language == "Python"
+        assert repo.default_branch == "main"
+        assert repo.contributors_count == 120
+        assert len(rels) == 1
+        assert rels[0].tag_name == "3.1.3"
+

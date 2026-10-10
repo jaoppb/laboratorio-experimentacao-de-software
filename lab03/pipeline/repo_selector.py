@@ -27,19 +27,28 @@ DEFAULT_STAR_RANGES = [
     "1000..1500",
 ]
 
+DEFAULT_QUALIFIERS = [
+    "archived:false",
+    "mirror:false",
+    "size:>1000",
+]
+
 
 async def iter_candidates_by_stars(
     client: GitHubClient,
     star_ranges: list[str] | None = None,
+    qualifiers: list[str] | None = None,
     max_pages_per_range: int = 10,
     per_page: int = 100,
 ) -> AsyncIterator[dict[str, Any]]:
-    """Yield repositories sliced by star ranges, deduplicated by full_name."""
+    """Yield repositories sliced by star ranges and search qualifiers, deduplicated by full_name."""
     ranges = star_ranges or DEFAULT_STAR_RANGES
+    quals = DEFAULT_QUALIFIERS if qualifiers is None else qualifiers
+    qual_suffix = (" " + " ".join(quals)) if quals else ""
     seen_names: set[str] = set()
 
     for star_range in ranges:
-        query = f"stars:{star_range}"
+        query = f"stars:{star_range}{qual_suffix}"
         logger.info("Searching repositories with query: %s", query)
         page = 1
 
@@ -77,6 +86,7 @@ async def iter_candidates_by_stars(
 async def search_candidates_by_stars(
     client: GitHubClient,
     star_ranges: list[str] | None = None,
+    qualifiers: list[str] | None = None,
     max_pages_per_range: int = 10,
     per_page: int = 100,
 ) -> list[dict[str, Any]]:
@@ -85,6 +95,7 @@ async def search_candidates_by_stars(
     async for item in iter_candidates_by_stars(
         client=client,
         star_ranges=star_ranges,
+        qualifiers=qualifiers,
         max_pages_per_range=max_pages_per_range,
         per_page=per_page,
     ):
@@ -123,7 +134,7 @@ async def filter_repositories_with_actions(
 
     if funnel is not None:
         funnel.record_stage(
-            etapa="Repositórios candidatos da busca por estrelas",
+            etapa="Busca inicial refinada por estrelas (Search API)",
             quantidade_restante=len(repositories),
             descartados=0,
             motivo_descarte="-",

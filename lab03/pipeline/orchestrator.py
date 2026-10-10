@@ -30,8 +30,12 @@ from metricas.stability import (
 )
 from pipeline.commits import collect_release_commits
 from pipeline.funnel import FunnelTracker
+from pipeline.git_clone import temporary_git_clone
 from pipeline.http_client import GitHubClient
-from pipeline.metadata import fetch_repository_metadata
+from pipeline.metadata import (
+    fetch_repository_details_graphql,
+    fetch_repository_metadata,
+)
 from pipeline.releases import fetch_releases, filter_window
 from pipeline.repo_selector import iter_candidates_by_stars
 from pipeline.workflow_runs import collect_workflow_runs, save_runs_to_parquet
@@ -132,6 +136,7 @@ def export_funnel_summary(
     discarded_low_releases: int,
     discarded_low_runs: int,
     accepted_count: int,
+    discarded_git_errors: int = 0,
     min_releases: int = 5,
     min_workflow_runs: int = 50,
 ) -> Path:
@@ -139,7 +144,7 @@ def export_funnel_summary(
     funnel = FunnelTracker()
     remaining = total_evaluated
     funnel.record_stage(
-        etapa="Busca inicial por estrelas (Search API)",
+        etapa="Busca inicial refinada por estrelas (Search API)",
         quantidade_restante=remaining,
         descartados=0,
         motivo_descarte="-",
@@ -165,6 +170,14 @@ def export_funnel_summary(
         descartados=discarded_low_runs,
         motivo_descarte=f"Menos de {min_workflow_runs} runs válidos no default branch",
     )
+    if discarded_git_errors > 0:
+        remaining = max(0, remaining - discarded_git_errors)
+        funnel.record_stage(
+            etapa="Filtro de integridade de clone local (Git Blobless)",
+            quantidade_restante=remaining,
+            descartados=discarded_git_errors,
+            motivo_descarte="Falha irrecuperável no git clone local",
+        )
     funnel.record_stage(
         etapa="Amostra final selecionada",
         quantidade_restante=accepted_count,
@@ -209,10 +222,16 @@ class PipelineOrchestrator:
             "star_ranges",
             [">10000", "5001..10000", "2501..5000", "1501..2500", "1000..1500"],
         )
+        self.qualifiers: list[str] = busca.get(
+            "qualificadores",
+            ["archived:false", "mirror:false", "size:>1000"],
+        )
 
         self.dados_dir = Path(dirs.get("dados", "dados"))
         self.runs_dir = self.dados_dir / "runs"
         self.cache_dir = Path(dirs.get("cache", "cache"))
+        self.git_cache_dir = Path(dirs.get("git_cache", "cache/git_repos"))
+        self.limpeza_git_cache: bool = config.get("limpeza_git_cache", True)
 
         self.dataset_parquet = self.dados_dir / "repositorios.parquet"
         self.dataset_csv = self.dados_dir / "repositorios.csv"
@@ -225,6 +244,7 @@ class PipelineOrchestrator:
         self.dados_dir.mkdir(parents=True, exist_ok=True)
         self.runs_dir.mkdir(parents=True, exist_ok=True)
         self.cache_dir.mkdir(parents=True, exist_ok=True)
+        self.git_cache_dir.mkdir(parents=True, exist_ok=True)
 
     def _load_state(self) -> dict[str, Any]:
         if self.state_file.is_file():
@@ -238,6 +258,7 @@ class PipelineOrchestrator:
             "discarded_no_actions": 0,
             "discarded_low_releases": 0,
             "discarded_low_runs": 0,
+            "discarded_git_errors": 0,
             "evaluated_names": [],
         }
 
@@ -270,14 +291,15 @@ class PipelineOrchestrator:
             logger.warning("Error querying workflows for %s: %s", full_name, exc)
             return None, "no_actions"
 
-        # Stage 2: Fetch and filter releases in observation window
+        # Stage 2: Fetch metadata and releases via unified GraphQL query
         try:
-            releases = await fetch_releases(
+            meta, releases = await fetch_repository_details_graphql(
                 client=client,
                 owner=owner,
                 repo=repo,
                 window_start=self.window_start,
             )
+            default_branch = meta.default_branch or "main"
             window_releases = filter_window(
                 releases=releases,
                 window_start=self.window_start,
@@ -292,21 +314,36 @@ class PipelineOrchestrator:
                 )
                 return None, "low_releases"
         except Exception as exc:
-            logger.warning("Error fetching releases for %s: %s", full_name, exc)
-            return None, "low_releases"
-
-        # Fetch metadata for default branch and repo attributes
-        try:
-            meta = await fetch_repository_metadata(
-                client=client,
-                owner=owner,
-                repo=repo,
-                cached_info=candidate,
+            logger.debug(
+                "GraphQL details query failed for %s (%s); trying fallback REST",
+                full_name,
+                exc,
             )
-            default_branch = meta.default_branch or "main"
-        except Exception as exc:
-            logger.warning("Error fetching metadata for %s: %s", full_name, exc)
-            return None, "metadata_error"
+            try:
+                releases = await fetch_releases(
+                    client=client,
+                    owner=owner,
+                    repo=repo,
+                    window_start=self.window_start,
+                    use_graphql=False,
+                )
+                window_releases = filter_window(
+                    releases=releases,
+                    window_start=self.window_start,
+                    window_end=self.window_end,
+                )
+                if window_releases.count < self.min_releases:
+                    return None, "low_releases"
+                meta = await fetch_repository_metadata(
+                    client=client,
+                    owner=owner,
+                    repo=repo,
+                    cached_info=candidate,
+                )
+                default_branch = meta.default_branch or "main"
+            except Exception as fallback_exc:
+                logger.warning("Error fetching candidate info for %s: %s", full_name, fallback_exc)
+                return None, "low_releases"
 
         # Stage 3: Collect workflow runs on default branch (parallel monthly queries)
         try:
@@ -337,20 +374,28 @@ class PipelineOrchestrator:
             runs_result.runs, owner=owner, repo=repo, output_path=runs_path
         )
 
-        # Collect commits between releases in parallel
+        # Stage 4: Collect commits between releases via local git blobless clone
         try:
-            release_commits = await collect_release_commits(
-                client=client,
+            async with temporary_git_clone(
                 owner=owner,
                 repo=repo,
-                window=window_releases,
-            )
+                cache_dir=self.git_cache_dir,
+                auto_cleanup=self.limpeza_git_cache,
+                token_pool=client.token_pool,
+            ) as git_dir:
+                release_commits = await collect_release_commits(
+                    client=client,
+                    owner=owner,
+                    repo=repo,
+                    window=window_releases,
+                    git_dir=git_dir,
+                )
             lead_time_result = calculate_lead_time(
                 [(rc.release, rc.commits_or_none) for rc in release_commits]
             )
         except Exception as exc:
-            logger.warning("Error calculating lead time for %s: %s", full_name, exc)
-            lead_time_result = calculate_lead_time([])
+            logger.warning("Error calculating lead time via git clone for %s: %s", full_name, exc)
+            return None, "git_clone_error"
 
         # Calculate DORA Metrics
         dep_freq = calculate_deployment_frequency(
@@ -431,6 +476,7 @@ class PipelineOrchestrator:
                 "discarded_no_actions": state.get("discarded_no_actions", 0),
                 "discarded_low_releases": state.get("discarded_low_releases", 0),
                 "discarded_low_runs": state.get("discarded_low_runs", 0),
+                "discarded_git_errors": state.get("discarded_git_errors", 0),
             }
 
             logger.info(
@@ -453,6 +499,7 @@ class PipelineOrchestrator:
                     discarded_low_releases=stats["discarded_low_releases"],
                     discarded_low_runs=stats["discarded_low_runs"],
                     accepted_count=len(accepted_records),
+                    discarded_git_errors=stats["discarded_git_errors"],
                     min_releases=self.min_releases,
                     min_workflow_runs=self.min_workflow_runs,
                 )
@@ -538,6 +585,8 @@ class PipelineOrchestrator:
                                 stats["discarded_low_releases"] += 1
                             elif reason == "low_runs":
                                 stats["discarded_low_runs"] += 1
+                            elif reason == "git_clone_error":
+                                stats["discarded_git_errors"] += 1
 
                         # Save state & funnel atomically
                         self._save_state({
@@ -551,6 +600,7 @@ class PipelineOrchestrator:
                             discarded_low_releases=stats["discarded_low_releases"],
                             discarded_low_runs=stats["discarded_low_runs"],
                             accepted_count=len(accepted_records),
+                            discarded_git_errors=stats.get("discarded_git_errors", 0),
                             min_releases=self.min_releases,
                             min_workflow_runs=self.min_workflow_runs,
                         )
@@ -563,7 +613,9 @@ class PipelineOrchestrator:
             # Producer: stream candidate repos
             try:
                 async for cand in iter_candidates_by_stars(
-                    client=client, star_ranges=self.star_ranges
+                    client=client,
+                    star_ranges=self.star_ranges,
+                    qualifiers=self.qualifiers,
                 ):
                     if stop_event.is_set():
                         break
@@ -586,6 +638,7 @@ class PipelineOrchestrator:
                 discarded_low_releases=stats["discarded_low_releases"],
                 discarded_low_runs=stats["discarded_low_runs"],
                 accepted_count=len(accepted_records),
+                discarded_git_errors=stats.get("discarded_git_errors", 0),
                 min_releases=self.min_releases,
                 min_workflow_runs=self.min_workflow_runs,
             )

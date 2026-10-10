@@ -34,11 +34,14 @@ class HttpCache:
 
     async def connect(self) -> None:
         """Connect to SQLite database asynchronously and configure PRAGMAs."""
-        if self._conn is None:
-            self._conn = await aiosqlite.connect(str(self.db_path), timeout=30.0)
-            await self._conn.execute("PRAGMA journal_mode=WAL;")
-            await self._conn.execute("PRAGMA synchronous=NORMAL;")
-            await self._init_schema()
+        if self._conn is not None:
+            return
+        async with self._lock:
+            if self._conn is None:
+                self._conn = await aiosqlite.connect(str(self.db_path), timeout=30.0)
+                await self._conn.execute("PRAGMA journal_mode=WAL;")
+                await self._conn.execute("PRAGMA synchronous=NORMAL;")
+                await self._init_schema()
 
     async def _init_schema(self) -> None:
         """Initialize database schema if not present."""

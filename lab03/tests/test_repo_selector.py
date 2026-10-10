@@ -82,3 +82,29 @@ class TestRepoSelector:
         assert len(accepted) == 1
         assert accepted[0]["full_name"] == "owner/has-ci"
         assert len(funnel.stages) == 2
+
+    async def test_search_candidates_with_qualifiers(self):
+        client = MagicMock(spec=GitHubClient)
+        recorded_queries = []
+
+        async def mock_get(url: str, params: dict | None = None):
+            query = params.get("q", "") if params else ""
+            recorded_queries.append(query)
+            return httpx.Response(
+                200,
+                json={"items": []},
+                request=httpx.Request("GET", "https://api.github.com/search"),
+            )
+
+        client.get = AsyncMock(side_effect=mock_get)
+
+        await search_candidates_by_stars(
+            client=client,
+            star_ranges=[">10000"],
+            qualifiers=["archived:false", "mirror:false", "size:>1000"],
+            max_pages_per_range=1,
+        )
+
+        assert len(recorded_queries) == 1
+        assert recorded_queries[0] == "stars:>10000 archived:false mirror:false size:>1000"
+

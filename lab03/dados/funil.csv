@@ -1,6 +1,7 @@
 etapa,quantidade_restante,descartados,motivo_descarte
-Busca inicial por estrelas (Search API),127,0,-
-Filtro de uso de CI/CD (GitHub Actions),111,16,total_count de workflows == 0 ou erro de acesso
-Filtro de releases na janela (>= 5),47,64,Menos de 5 releases publicadas na janela
-Filtro de workflow runs na janela (>= 50),41,6,Menos de 50 runs válidos no default branch
-Amostra final selecionada,41,0,-
+Busca inicial refinada por estrelas (Search API),227,0,-
+Filtro de uso de CI/CD (GitHub Actions),212,15,total_count de workflows == 0 ou erro de acesso
+Filtro de releases na janela (>= 5),114,98,Menos de 5 releases publicadas na janela
+Filtro de workflow runs na janela (>= 50),103,11,Menos de 50 runs válidos no default branch
+Filtro de integridade de clone local (Git Blobless),100,3,Falha irrecuperável no git clone local
+Amostra final selecionada,100,0,-

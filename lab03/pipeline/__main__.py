@@ -51,6 +51,12 @@ def main() -> int:
         default=None,
         help="Limite de repositórios aceitos (sobrescreve tamanho_final do config.yaml)",
     )
+    parser.add_argument(
+        "--clean",
+        "--fresh",
+        action="store_true",
+        help="Realiza uma execução limpa (apaga repositórios e estado anteriores)",
+    )
     args = parser.parse_args()
 
     print("=" * 60)
@@ -62,6 +68,14 @@ def main() -> int:
     except Exception as exc:
         logger.error("Erro ao carregar configuração: %s", exc)
         return 1
+
+    if args.clean:
+        dados_dir = Path(config.get("diretorios", {}).get("dados", "dados"))
+        for fname in ["repositorios.parquet", "repositorios.csv", "funil.csv", ".pipeline_state.json"]:
+            fpath = dados_dir / fname
+            if fpath.exists():
+                fpath.unlink(missing_ok=True)
+        print("[*] Estado anterior e datasets limpos para execução homogênea (--clean).")
 
     janela = config.get("janela", {})
     amostra = config.get("amostra", {})

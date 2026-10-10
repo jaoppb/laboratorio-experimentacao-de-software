@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import os
 import time
@@ -16,6 +17,14 @@ import httpx
 from pipeline.cache import HttpCache
 
 logger = logging.getLogger(__name__)
+
+
+class GraphQLError(Exception):
+    """Raised when GitHub GraphQL returns errors."""
+
+    def __init__(self, errors: list[dict[str, Any]]) -> None:
+        super().__init__(f"GraphQL error: {errors}")
+        self.errors = errors
 
 
 @dataclass
@@ -256,12 +265,22 @@ class GitHubClient:
         cache_path: str | Path | None = "cache/http_cache.sqlite",
         concurrency: int = 15,
         env_file: str | Path | None = None,
+        http2: bool = True,
+        enforce_http2: bool | None = None,
+        max_connections: int = 100,
+        max_keepalive_connections: int = 50,
     ) -> None:
         self.base_url = base_url.rstrip("/")
         self.max_retries = max_retries
         self.backoff_factor = backoff_factor
         self.sleep_fn = sleep_fn
         self.time_fn = time_fn
+
+        # When client is injected (e.g. tests with MockTransport), do not strictly enforce HTTP/2 unless requested
+        if enforce_http2 is None:
+            self.enforce_http2 = client is None
+        else:
+            self.enforce_http2 = enforce_http2
 
         resolved = resolve_tokens(token=token, tokens=tokens, env_file=env_file)
         self.token_pool = TokenPool(resolved)
@@ -292,10 +311,16 @@ class GitHubClient:
         if client is not None:
             self._client = client
         else:
+            limits = httpx.Limits(
+                max_connections=max_connections,
+                max_keepalive_connections=max_keepalive_connections,
+            )
             self._client = httpx.AsyncClient(
                 headers=headers,
                 timeout=timeout,
                 follow_redirects=True,
+                http2=http2,
+                limits=limits,
             )
 
         self.last_remaining: int | None = None
@@ -332,6 +357,14 @@ class GitHubClient:
                 self.last_reset = float(reset_hdr)
             except ValueError:
                 pass
+
+    def _validate_response_protocol(self, response: httpx.Response) -> None:
+        """Ensure HTTP/2 was negotiated in production against api.github.com."""
+        if self.enforce_http2 and "api.github.com" in str(response.url):
+            if response.http_version != "HTTP/2":
+                raise RuntimeError(
+                    f"HTTP/2 negotiation failed for {response.url}: received {response.http_version} instead of HTTP/2"
+                )
 
     async def _check_proactive_rate_limit(self) -> None:
         """If known unauthenticated quota is 0 and reset is still in the future, wait proactively."""
@@ -379,6 +412,7 @@ class GitHubClient:
                     response = await self._client.get(
                         full_url, params=params, headers=req_headers
                     )
+                self._validate_response_protocol(response)
                 self._update_rate_limit_state(response)
                 if current_token:
                     await self.token_pool.update_state(
@@ -467,6 +501,144 @@ class GitHubClient:
                     continue
                 raise
 
+    async def graphql(
+        self,
+        query: str,
+        variables: dict[str, Any] | None = None,
+        force_refresh: bool = False,
+    ) -> dict[str, Any]:
+        """Perform an async GraphQL POST request with token rotation, rate limit retry, and disk cache."""
+        full_url = f"{self.base_url}/graphql"
+        clean_vars = variables or {}
+        var_str = json.dumps(clean_vars, sort_keys=True)
+        cache_key = HttpCache.compute_key(
+            full_url, params={"query": query.strip(), "variables": var_str}
+        )
+
+        if self._cache is not None and not force_refresh:
+            cached_response = await self._cache.get(cache_key)
+            if cached_response is not None:
+                logger.debug("Cache hit for GraphQL query")
+                return cached_response.json()
+
+        attempt = 0
+        payload = {"query": query, "variables": clean_vars}
+
+        while True:
+            await self._check_proactive_rate_limit()
+
+            current_token = await self.token_pool.get_next_token(
+                self.time_fn, self.sleep_fn
+            )
+            req_headers = dict(self._default_headers)
+            req_headers["Content-Type"] = "application/json"
+            if current_token:
+                req_headers["Authorization"] = f"Bearer {current_token}"
+
+            try:
+                async with self._semaphore:
+                    response = await self._client.post(
+                        full_url, json=payload, headers=req_headers
+                    )
+                self._validate_response_protocol(response)
+                self._update_rate_limit_state(response)
+                if current_token:
+                    await self.token_pool.update_state(
+                        current_token, response, self.time_fn
+                    )
+
+                # Check rate limit hit
+                is_rate_limited = (
+                    response.status_code in (403, 429)
+                    and (
+                        self.last_remaining == 0
+                        or "rate limit" in response.text.lower()
+                    )
+                ) or (
+                    response.status_code in (403, 429)
+                    and response.headers.get("X-RateLimit-Remaining") == "0"
+                )
+
+                if is_rate_limited:
+                    if current_token:
+                        logger.warning(
+                            "Rate limit encountered on token %s for GraphQL. Token placed in cooldown.",
+                            current_token[:8],
+                        )
+                        continue
+                    else:
+                        now = self.time_fn()
+                        if self.last_reset is not None and self.last_reset > now:
+                            wait_seconds = (self.last_reset - now) + 1.0
+                        else:
+                            wait_seconds = 60.0
+                        logger.warning(
+                            "Rate limit hit on unauthenticated GraphQL request. Waiting %.1fs until reset...",
+                            wait_seconds,
+                        )
+                        await self._sleep(wait_seconds)
+                        self.last_remaining = None
+                        continue
+
+                if response.status_code == 401 and current_token:
+                    logger.warning(
+                        "Token %s returned 401 Unauthorized for GraphQL. Retrying with next available token...",
+                        current_token[:8],
+                    )
+                    continue
+
+                if 500 <= response.status_code < 600:
+                    if attempt < self.max_retries:
+                        delay = self.backoff_factor * (2**attempt)
+                        logger.warning(
+                            "Server error %d on GraphQL. Retrying in %.1fs (attempt %d/%d)...",
+                            response.status_code,
+                            delay,
+                            attempt + 1,
+                            self.max_retries,
+                        )
+                        await self._sleep(delay)
+                        attempt += 1
+                        continue
+                    response.raise_for_status()
+
+                response.raise_for_status()
+                data = response.json()
+
+                if "errors" in data and not data.get("data"):
+                    errors = data["errors"]
+                    is_gql_rate_limit = any(
+                        "rate limit" in str(err.get("message", "")).lower()
+                        for err in errors
+                    )
+                    if is_gql_rate_limit and current_token:
+                        logger.warning(
+                            "GraphQL body reported rate limit for token %s. Cooldown triggered.",
+                            current_token[:8],
+                        )
+                        continue
+                    raise GraphQLError(errors)
+
+                if self._cache is not None:
+                    await self._cache.set(cache_key, full_url, response)
+
+                return data
+
+            except httpx.RequestError as exc:
+                if attempt < self.max_retries:
+                    delay = self.backoff_factor * (2**attempt)
+                    logger.warning(
+                        "Network error %s on GraphQL. Retrying in %.1fs (attempt %d/%d)...",
+                        exc,
+                        delay,
+                        attempt + 1,
+                        self.max_retries,
+                    )
+                    await self._sleep(delay)
+                    attempt += 1
+                    continue
+                raise
+
     async def get_paginated(
         self,
         url: str,
@@ -533,6 +705,7 @@ async def get_paginated(
 
 __all__ = [
     "GitHubClient",
+    "GraphQLError",
     "TokenPool",
     "TokenState",
     "get",
