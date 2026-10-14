@@ -452,6 +452,7 @@ class GitHubClient:
                         )
                         await self._sleep(wait_seconds)
                         self.last_remaining = None
+                        continue
                 if response.status_code == 401 and current_token:
                     logger.warning(
                         "Token %s returned 401 Unauthorized for %s. Retrying with next available token...",
