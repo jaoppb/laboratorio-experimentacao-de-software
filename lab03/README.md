@@ -145,4 +145,4 @@ lab03/
     └── test_http_client.py
 ```
 
-Para mais detalhes sobre as colunas e fórmulas das métricas DORA, consulte o [Dicionário de Dados](file:///home/jao/facul/Experimenta%C3%A7%C3%A3o/laboratorio-experimentacao-de-software/lab03/dados/README.md).
+Para mais detalhes sobre as colunas e fórmulas das métricas DORA, consulte o [Dicionário de Dados](./dados/README.md).
