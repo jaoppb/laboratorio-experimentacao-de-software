@@ -13,7 +13,7 @@ import pyarrow as pa
 import pyarrow.parquet as pq
 
 from metricas.schemas import Release, _parse_datetime
-from pipeline.commits import ReleaseCommits
+from pipeline.commits import ComparisonStatus, ReleaseCommits
 
 if TYPE_CHECKING:
     from pipeline.http_client import GitHubClient
@@ -244,7 +244,8 @@ def save_releases_to_parquet(
     published_ats: list[datetime] = []
     prereleases: list[bool] = []
     previous_releases: list[str | None] = []
-    commits_counts: list[int] = []
+    statuses: list[str] = []
+    commits_counts: list[int | None] = []
     commits_lists: list[list[dict[str, str]]] = []
 
     for rc in release_commits:
@@ -253,7 +254,8 @@ def save_releases_to_parquet(
         published_ats.append(rel.published_at)
         prereleases.append(rel.prerelease)
         previous_releases.append(rc.previous.tag_name if rc.previous else None)
-        commits_counts.append(len(rc.commits))
+        statuses.append(rc.status.value)
+        commits_counts.append(len(rc.commits) if rc.status == ComparisonStatus.OK else None)
         commits_lists.append(
             [
                 {
@@ -275,6 +277,7 @@ def save_releases_to_parquet(
             ("published_at", pa.timestamp("us", tz="UTC")),
             ("prerelease", pa.bool_()),
             ("previous_release", pa.string()),
+            ("status", pa.string()),
             ("commits_count", pa.int64()),
             (
                 "commits",
@@ -297,6 +300,7 @@ def save_releases_to_parquet(
             pa.array(published_ats, type=pa.timestamp("us", tz="UTC")),
             pa.array(prereleases, type=pa.bool_()),
             pa.array(previous_releases, type=pa.string()),
+            pa.array(statuses, type=pa.string()),
             pa.array(commits_counts, type=pa.int64()),
             pa.array(
                 commits_lists,

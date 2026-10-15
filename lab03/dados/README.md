@@ -12,7 +12,8 @@ Este diretório contém os artefatos de dados gerados pelo pipeline de mineraç�
 | `repositorios.csv` | CSV (UTF-8) | Cópia tabular para replicação cruzada e análises estatísticas. |
 | `funil.csv` | CSV (UTF-8) | Registro das etapas de filtragem do funil de seleção com contagens e descartes. |
 | `runs/{owner}__{repo}.parquet` | Apache Parquet (Snappy) | Execuções brutas de workflow do default branch (evento `push`) de cada repositório aceito. |
-| `releases/{owner}__{repo}.parquet` | Apache Parquet (Snappy) | Releases oficiais e pré-releases avaliadas na janela (+ âncora) com mensagens de commits (Issue #58). |
+| `releases/{owner}__{repo}.parquet` | Apache Parquet (Snappy) | Releases da definição principal (C1: publicadas, sem pré-releases) da janela, com a release anterior, o status da comparação e os commits com mensagens (Issue #58). Base do lead time, do CFR (b) e da amostra-ouro. |
+| `releases_c2/{owner}__{repo}.parquet` | Apache Parquet (Snappy) | Mesmo esquema de `releases/`, para a combinação C2 da RQ 07 (releases + pré-releases). |
 | `tags/{owner}__{repo}.parquet` | Apache Parquet (Snappy) | Tags Git avaliadas na janela (+ âncora) com datas de autor, commits e SHAs (Issue #54). |
 
 ---
@@ -84,18 +85,24 @@ Este diretório contém os artefatos de dados gerados pelo pipeline de mineraç�
 
 ---
 
-## 5. Dicionário de Dados: `releases/{owner}__{repo}.parquet`
+## 5. Dicionário de Dados: `releases/{owner}__{repo}.parquet` e `releases_c2/{owner}__{repo}.parquet`
 
-Armazena as releases oficiais e pré-releases publicadas dentro da janela de observação (mais a âncora anterior), com os commits intermediários e mensagens coletados via clone Git local.
+Uma linha por release publicada **dentro** da janela de observação, em ordem cronológica. A release âncora (última antes da janela) não vira linha: ela só aparece como `previous_release` da primeira release da janela. Os commits vêm de `git log {previous_release}..{tag_name}` no clone local *blobless* (equivalente ao `compare/{base}...{head}` da API).
 
-| Coluna | Tipo PyArrow | Descrição |
-|---|---|---|
-| `tag_name` | `string` | Nome da tag associada à release no GitHub. |
-| `published_at` | `timestamp[us, UTC]` | Data e hora de publicação oficial da release. |
-| `prerelease` | `bool` | Indicador se a release é uma pré-release (`True`) ou release estável (`False`). |
-| `previous_release` | `string` | Nome da tag da release anterior comparada na cadeia de deploy (nulo para a primeira). |
-| `commits_count` | `int64` | Quantidade de commits incluídos entre a release anterior e a atual. |
-| `commits` | `list<struct<sha: string, committed_at: string, message: string>>` | Lista estruturada de commits contendo SHA, data do autor e mensagem completa. |
+- `releases/` usa a definição principal (C1): releases publicadas, `prerelease = false`.
+- `releases_c2/` usa a combinação C2 da RQ 07: releases publicadas e pré-releases.
+
+Os dois diretórios são gravados pelo orquestrador para cada repositório aceito. Para gerar `releases/` de uma amostra coletada antes desse arquivo existir, rode `uv run python -m pipeline.persist_releases --config config.yaml` (pula os repositórios que já têm arquivo).
+
+| Coluna | Tipo PyArrow | Unidade | Descrição |
+|---|---|---|---|
+| `tag_name` | `string` | - | Nome da tag associada à release no GitHub (`tag_name`). |
+| `published_at` | `timestamp[us, UTC]` | timestamp | Data de publicação da release (`published_at`). |
+| `prerelease` | `bool` | - | `True` se a release é pré-release (só ocorre em `releases_c2/`). |
+| `previous_release` | `string` | - | Tag da release anterior na ordem cronológica (pode ser a âncora, fora da janela). Nulo quando a release é a primeira da história do repositório. |
+| `status` | `string` | - | Resultado da comparação com a release anterior: `ok` (commits coletados), `first_release` (não há release anterior; ignorada no lead time) ou `not_found` (tag inexistente no clone, equivalente ao 404 do `compare`; ignorada no lead time). |
+| `commits_count` | `int64` | commits | Número de commits em `previous_release..tag_name`. `0` significa release sem commits novos; nulo quando `status ≠ ok`. |
+| `commits` | `list<struct<sha: string, committed_at: string, message: string>>` | - | Commits incluídos na release: SHA, data do autor (`commit.author.date`, ISO 8601) e **assunto** da mensagem (primeira linha, `git log --format=%s`). Lista vazia quando `status ≠ ok`. |
 
 ---
 

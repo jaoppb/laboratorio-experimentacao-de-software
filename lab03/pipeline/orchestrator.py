@@ -251,6 +251,7 @@ class PipelineOrchestrator:
         self.runs_dir = self.dados_dir / "runs"
         self.tags_dir = self.dados_dir / "tags"
         self.releases_dir = self.dados_dir / "releases"
+        self.releases_c2_dir = self.dados_dir / "releases_c2"
         self.cache_dir = Path(dirs.get("cache", "cache"))
         self.git_cache_dir = Path(dirs.get("git_cache", "cache/git_repos"))
         self.limpeza_git_cache: bool = config.get("limpeza_git_cache", True)
@@ -267,6 +268,7 @@ class PipelineOrchestrator:
         self.runs_dir.mkdir(parents=True, exist_ok=True)
         self.tags_dir.mkdir(parents=True, exist_ok=True)
         self.releases_dir.mkdir(parents=True, exist_ok=True)
+        self.releases_c2_dir.mkdir(parents=True, exist_ok=True)
         self.cache_dir.mkdir(parents=True, exist_ok=True)
         self.git_cache_dir.mkdir(parents=True, exist_ok=True)
 
@@ -442,13 +444,19 @@ class PipelineOrchestrator:
                     window=window_tags_c3,
                 )
 
-            # Persist C2 releases and C3 tags to Parquet
-            releases_path = self.releases_dir / f"{owner}__{repo}.parquet"
+            # Persist C1 releases (main definition: lead time, CFR b and gold
+            # sample), C2 releases + pre-releases and C3 tags to Parquet
+            save_releases_to_parquet(
+                release_commits=release_commits_c1,
+                owner=owner,
+                repo=repo,
+                output_path=self.releases_dir / f"{owner}__{repo}.parquet",
+            )
             save_releases_to_parquet(
                 release_commits=release_commits_c2,
                 owner=owner,
                 repo=repo,
-                output_path=releases_path,
+                output_path=self.releases_c2_dir / f"{owner}__{repo}.parquet",
             )
             tags_path = self.tags_dir / f"{owner}__{repo}.parquet"
             save_tags_to_parquet(

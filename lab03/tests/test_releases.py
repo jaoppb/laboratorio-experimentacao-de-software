@@ -327,9 +327,24 @@ def test_save_releases_to_parquet_roundtrip(tmp_path):
     assert pydict["tag_name"] == ["v1.0", "v1.1-rc1"]
     assert pydict["prerelease"] == [False, True]
     assert pydict["previous_release"] == [None, "v1.0"]
-    assert pydict["commits_count"] == [0, 1]
+    assert pydict["status"] == ["first_release", "ok"]
+    # Unknown commits (first release / tag not found) are null, not zero
+    assert pydict["commits_count"] == [None, 1]
     assert pydict["commits"][1][0]["sha"] == "sha1"
     assert pydict["commits"][1][0]["message"] == "feat: add thing"
+
+
+def test_save_releases_to_parquet_marks_not_found(tmp_path):
+    rel1 = Release(tag_name="v1.0", published_at="2024-01-01T00:00:00Z")
+    rel2 = Release(tag_name="v1.1", published_at="2024-02-01T00:00:00Z")
+    commits_data = [
+        ReleaseCommits(release=rel2, previous=rel1, status=ComparisonStatus.NOT_FOUND),
+    ]
+    out_file = save_releases_to_parquet(commits_data, "owner", "repo", tmp_path / "r.parquet")
+    pydict = pq.read_table(out_file).to_pydict()
+    assert pydict["status"] == ["not_found"]
+    assert pydict["commits_count"] == [None]
+    assert pydict["commits"] == [[]]
 
 
 def test_save_tags_to_parquet_roundtrip(tmp_path):

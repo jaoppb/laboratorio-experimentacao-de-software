@@ -385,6 +385,7 @@ async def test_pipeline_e2e_mock_success(test_config: dict[str, Any], tmp_path: 
     tags_dir = dados_path / "tags"
     assert (releases_dir / "org__repo-valid-1.parquet").is_file()
     assert (releases_dir / "org__repo-valid-2.parquet").is_file()
+    assert (dados_path / "releases_c2" / "org__repo-valid-1.parquet").is_file()
     assert (tags_dir / "org__repo-valid-1.parquet").is_file()
     assert (tags_dir / "org__repo-valid-2.parquet").is_file()
     assert not (releases_dir / "org__repo-no-actions.parquet").exists()
