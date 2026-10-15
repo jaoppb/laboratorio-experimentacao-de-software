@@ -7,7 +7,9 @@
 
 ## 1. Etapas do Funil de Seleção
 
-Para construir uma amostra reprodutível de 100 repositórios open-source populares que utilizam esteiras de CI/CD, o pipeline aplica cinco filtros sequenciais:
+Para construir uma amostra reprodutível de 330 repositórios open-source populares que utilizam esteiras de CI/CD (`amostra.tamanho_final` em `config.yaml`), o pipeline aplica os filtros sequenciais abaixo.
+
+> **O que a primeira linha do funil conta.** O pipeline avalia os candidatos da busca em ordem decrescente de estrelas e **para ao atingir a meta** de repositórios aceitos. Por isso a primeira linha de `funil.csv` (653 na amostra atual) conta os candidatos *avaliados*, e não todos os resultados que a Search API retornaria. Os repositórios que ficaram abaixo do corte de estrelas, depois da meta, não entram na contagem. O rótulo da etapa no CSV traz essa ressalva: "candidatos avaliados até atingir a meta".
 
 1. **Busca Fatiada por Faixas de Estrelas (Search API):**
    - Como a API de busca do GitHub impõe um teto de no máximo 1.000 resultados por consulta, a busca foi fatiada em intervalos de estrelas (`1000..1500`, `1501..2500`, `2501..5000`, `5001..10000`, `>10000`).
@@ -26,8 +28,11 @@ Para construir uma amostra reprodutível de 100 repositórios open-source popula
    - Execuções com conclusão `cancelled`, `skipped` ou em andamento são ignoradas.
    - Repositórios com menos de 50 runs válidos na janela são descartados.
 
-5. **Critério de Seleção dos 100 Finais:**
-   - Dentre todos os repositórios candidatos que atendem a todos os critérios (Actions ativas + ≥ 5 releases + ≥ 50 runs), os **100 repositórios finais são selecionados ordenando-se por maior número de estrelas (popularidade decrescente)**.
+5. **Integridade do Clone Local (Git Blobless):**
+   - Os commits de cada release vêm de um clone local *blobless*. Repositórios cujo `git clone` falha de forma irrecuperável são descartados (2 na amostra atual).
+
+6. **Critério de Seleção dos 330 Finais:**
+   - Dentre todos os repositórios candidatos que atendem a todos os critérios (Actions ativas + ≥ 5 releases + ≥ 50 runs), os **330 repositórios finais são selecionados ordenando-se por maior número de estrelas (popularidade decrescente)**.
    - *Justificativa:* Priorizar os repositórios mais populares garante maior relevância empírica e alinhamento com a Questão de Pesquisa 01 (*"Qual a frequência de deploys dos repositórios populares que usam CI/CD?"*).
 
 ---

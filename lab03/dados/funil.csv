@@ -1,5 +1,5 @@
 etapa,quantidade_restante,descartados,motivo_descarte
-Busca inicial refinada por estrelas (Search API),653,0,-
+Busca inicial refinada por estrelas (Search API); candidatos avaliados até atingir a meta,653,0,-
 Filtro de uso de CI/CD (GitHub Actions),597,56,total_count de workflows == 0 ou erro de acesso
 Filtro de releases na janela (>= 5),282,315,Menos de 5 releases publicadas na janela
 Filtro de workflow runs na janela (>= 50),232,50,Menos de 50 runs válidos no default branch

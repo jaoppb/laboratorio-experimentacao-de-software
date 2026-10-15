@@ -134,7 +134,10 @@ async def filter_repositories_with_actions(
 
     if funnel is not None:
         funnel.record_stage(
-            etapa="Busca inicial refinada por estrelas (Search API)",
+            etapa=(
+                "Busca inicial refinada por estrelas (Search API); "
+                "candidatos avaliados até atingir a meta"
+            ),
             quantidade_restante=len(repositories),
             descartados=0,
             motivo_descarte="-",

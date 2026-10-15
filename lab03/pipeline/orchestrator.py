@@ -149,6 +149,14 @@ def load_repositories_dataset(parquet_path: str | Path) -> list[dict[str, Any]]:
         return []
 
 
+# A coleta para ao atingir a meta de repositórios aceitos; por isso a primeira
+# linha do funil conta os candidatos *avaliados*, não todos os da busca.
+FUNNEL_FIRST_STAGE_LABEL = (
+    "Busca inicial refinada por estrelas (Search API); "
+    "candidatos avaliados até atingir a meta"
+)
+
+
 def export_funnel_summary(
     funnel_path: str | Path,
     total_evaluated: int,
@@ -164,7 +172,7 @@ def export_funnel_summary(
     funnel = FunnelTracker()
     remaining = total_evaluated
     funnel.record_stage(
-        etapa="Busca inicial refinada por estrelas (Search API)",
+        etapa=FUNNEL_FIRST_STAGE_LABEL,
         quantidade_restante=remaining,
         descartados=0,
         motivo_descarte="-",
