@@ -1,0 +1,677 @@
+{
+  "timestamp_utc": "2026-10-15T20:47:29.559204",
+  "seed": 42,
+  "num_repos": 60,
+  "releases_per_repo": 5,
+  "window_start": "2025-10-01",
+  "window_end": "2026-09-30",
+  "dataset_origem": "dados\\repositorios.parquet",
+  "total_linhas_planilha": 300,
+  "avaliadores": [
+    "Marcela Campos",
+    "Gabriel Assis",
+    "João Pedro Peres"
+  ],
+  "repositorios": [
+    {
+      "idx": 1,
+      "full_name": "Significant-Gravitas/AutoGPT",
+      "stars": 187499,
+      "language": "Python",
+      "total_releases_window": 47,
+      "releases_sorteadas": [
+        "autogpt-platform-beta-v0.6.36",
+        "autogpt-platform-beta-v0.6.51",
+        "autogpt-platform-beta-v0.6.53",
+        "autogpt-platform-beta-v0.6.57",
+        "autogpt-platform-beta-v0.7.4"
+      ]
+    },
+    {
+      "idx": 2,
+      "full_name": "pmndrs/zustand",
+      "stars": 58821,
+      "language": "TypeScript",
+      "total_releases_window": 7,
+      "releases_sorteadas": [
+        "v5.0.9",
+        "v5.0.10",
+        "v5.0.11",
+        "v5.0.14",
+        "v5.0.15"
+      ]
+    },
+    {
+      "idx": 3,
+      "full_name": "commaai/openpilot",
+      "stars": 63904,
+      "language": "Python",
+      "total_releases_window": 5,
+      "releases_sorteadas": [
+        "v0.10.1",
+        "v0.10.2",
+        "v0.10.3",
+        "v0.11.0",
+        "v0.11.1"
+      ]
+    },
+    {
+      "idx": 4,
+      "full_name": "google-gemini/gemini-cli",
+      "stars": 107263,
+      "language": "TypeScript",
+      "total_releases_window": 218,
+      "releases_sorteadas": [
+        "v0.12.0-preview.6",
+        "v0.15.0-preview.1",
+        "v0.18.4",
+        "v0.20.0-nightly.20251202.29920b16d",
+        "v0.45.2"
+      ]
+    },
+    {
+      "idx": 5,
+      "full_name": "pbakaus/impeccable",
+      "stars": 79013,
+      "language": "JavaScript",
+      "total_releases_window": 72,
+      "releases_sorteadas": [
+        "cli-v2.2.0",
+        "skill-v3.5.0",
+        "cli-v2.3.2",
+        "cli-v3.0.3",
+        "engine-v0.1.1"
+      ]
+    },
+    {
+      "idx": 6,
+      "full_name": "rust-lang/rust",
+      "stars": 120036,
+      "language": "Rust",
+      "total_releases_window": 14,
+      "releases_sorteadas": []
+    },
+    {
+      "idx": 7,
+      "full_name": "vitejs/vite",
+      "stars": 83265,
+      "language": "TypeScript",
+      "total_releases_window": 80,
+      "releases_sorteadas": [
+        "v7.3.2",
+        "v8.0.15",
+        "v7.3.5",
+        "plugin-legacy@8.1.0",
+        "plugin-legacy@8.2.3"
+      ]
+    },
+    {
+      "idx": 8,
+      "full_name": "PostHog/posthog",
+      "stars": 40287,
+      "language": "Python",
+      "total_releases_window": 2576,
+      "releases_sorteadas": []
+    },
+    {
+      "idx": 9,
+      "full_name": "Yeachan-Heo/oh-my-claudecode",
+      "stars": 39917,
+      "language": "TypeScript",
+      "total_releases_window": 248,
+      "releases_sorteadas": [
+        "v3.9.9",
+        "v4.11.5",
+        "v4.14.6",
+        "v4.15.5",
+        "v4.15.8"
+      ]
+    },
+    {
+      "idx": 10,
+      "full_name": "pixijs/pixijs",
+      "stars": 48379,
+      "language": "TypeScript",
+      "total_releases_window": 14,
+      "releases_sorteadas": [
+        "v8.14.0",
+        "v8.14.2",
+        "v8.15.0",
+        "v8.19.0",
+        "v8.20.1"
+      ]
+    },
+    {
+      "idx": 11,
+      "full_name": "remix-run/react-router",
+      "stars": 56610,
+      "language": "TypeScript",
+      "total_releases_window": 33,
+      "releases_sorteadas": [
+        "react-router@7.14.0",
+        "react-router@7.15.1",
+        "react-router@8.2.0",
+        "react-router@7.18.2",
+        "react-router@8.4.0"
+      ]
+    },
+    {
+      "idx": 12,
+      "full_name": "umami-software/umami",
+      "stars": 39378,
+      "language": "TypeScript",
+      "total_releases_window": 12,
+      "releases_sorteadas": [
+        "v3.0.0",
+        "v3.0.2",
+        "v2.20.0",
+        "v3.2.0",
+        "v3.3.0"
+      ]
+    },
+    {
+      "idx": 13,
+      "full_name": "OpenHands/OpenHands",
+      "stars": 90411,
+      "language": "TypeScript",
+      "total_releases_window": 63,
+      "releases_sorteadas": [
+        "1.0.1-cli",
+        "1.0.5-cli",
+        "0.61.0",
+        "v1.12.0",
+        "v1.20.0"
+      ]
+    },
+    {
+      "idx": 14,
+      "full_name": "paperclipai/paperclip",
+      "stars": 99221,
+      "language": "TypeScript",
+      "total_releases_window": 26,
+      "releases_sorteadas": [
+        "v0.3.0",
+        "v2026.513.0",
+        "v2026.626.0",
+        "v2026.722.0",
+        "v2026.824.0"
+      ]
+    },
+    {
+      "idx": 15,
+      "full_name": "danielmiessler/Fabric",
+      "stars": 44269,
+      "language": "Go",
+      "total_releases_window": 174,
+      "releases_sorteadas": [
+        "v1.4.320",
+        "v1.4.450",
+        "v1.4.456",
+        "v1.4.476",
+        "v1.4.491"
+      ]
+    },
+    {
+      "idx": 16,
+      "full_name": "ChrisTitusTech/winutil",
+      "stars": 64203,
+      "language": "PowerShell",
+      "total_releases_window": 23,
+      "releases_sorteadas": [
+        "25.12.18",
+        "26.01.08",
+        "26.04.02",
+        "26.04.21",
+        "26.06.23"
+      ]
+    },
+    {
+      "idx": 17,
+      "full_name": "openinterpreter/openinterpreter",
+      "stars": 68580,
+      "language": "Rust",
+      "total_releases_window": 22,
+      "releases_sorteadas": [
+        "rust-v0.0.20",
+        "rust-v0.0.24",
+        "rust-v0.0.30",
+        "rust-v0.0.39",
+        "rust-v0.0.43"
+      ]
+    },
+    {
+      "idx": 18,
+      "full_name": "hyprwm/Hyprland",
+      "stars": 38879,
+      "language": "C++",
+      "total_releases_window": 19,
+      "releases_sorteadas": [
+        "v0.53.0",
+        "v0.54.2",
+        "v0.55.0",
+        "v0.55.1",
+        "v0.56.0"
+      ]
+    },
+    {
+      "idx": 19,
+      "full_name": "laravel/laravel",
+      "stars": 85057,
+      "language": "Blade",
+      "total_releases_window": 28,
+      "releases_sorteadas": [
+        "v12.7.0",
+        "v12.9.1",
+        "v12.12.0",
+        "v12.12.1",
+        "v12.12.2"
+      ]
+    },
+    {
+      "idx": 20,
+      "full_name": "TryGhost/Ghost",
+      "stars": 55538,
+      "language": "TypeScript",
+      "total_releases_window": 98,
+      "releases_sorteadas": [
+        "v6.18.2",
+        "v6.19.0",
+        "v6.21.2",
+        "v6.37.0",
+        "v6.44.1"
+      ]
+    },
+    {
+      "idx": 21,
+      "full_name": "yt-dlp/yt-dlp",
+      "stars": 196451,
+      "language": "Python",
+      "total_releases_window": 14,
+      "releases_sorteadas": [
+        "2025.10.22",
+        "2025.11.12",
+        "2026.03.03",
+        "2026.03.13",
+        "2026.06.09"
+      ]
+    },
+    {
+      "idx": 22,
+      "full_name": "fatedier/frp",
+      "stars": 109795,
+      "language": "Go",
+      "total_releases_window": 9,
+      "releases_sorteadas": [
+        "v0.66.0",
+        "v0.68.1",
+        "v0.69.0",
+        "v0.69.1",
+        "v0.70.1"
+      ]
+    },
+    {
+      "idx": 23,
+      "full_name": "cline/cline",
+      "stars": 70336,
+      "language": "TypeScript",
+      "total_releases_window": 252,
+      "releases_sorteadas": [
+        "v3.56.1",
+        "v3.57.0",
+        "v3.81.0",
+        "v4.1.7",
+        "sdk/sdk/v0.0.84"
+      ]
+    },
+    {
+      "idx": 24,
+      "full_name": "aseprite/aseprite",
+      "stars": 40119,
+      "language": "C++",
+      "total_releases_window": 11,
+      "releases_sorteadas": [
+        "v1.3.16",
+        "v1.3.18",
+        "v1.3.18.1",
+        "v1.3.18.3",
+        "v1.3.18.4"
+      ]
+    },
+    {
+      "idx": 25,
+      "full_name": "openai/codex",
+      "stars": 128388,
+      "language": "Rust",
+      "total_releases_window": 130,
+      "releases_sorteadas": [
+        "rust-v0.138.0",
+        "rust-v0.142.4",
+        "rust-v0.147.0",
+        "rust-v0.148.0",
+        "rust-v0.149.0"
+      ]
+    },
+    {
+      "idx": 26,
+      "full_name": "openbq-org/OpenBB",
+      "stars": 74239,
+      "language": "Python",
+      "total_releases_window": 6,
+      "releases_sorteadas": [
+        "v4.5.0",
+        "Open-Data-Platform-v1.0.0",
+        "Open-Data-Platform-v1.0.1",
+        "v4.7.0",
+        "Open-Data-Platform-v1.0.2"
+      ]
+    },
+    {
+      "idx": 27,
+      "full_name": "appsmithorg/appsmith",
+      "stars": 41066,
+      "language": "TypeScript",
+      "total_releases_window": 19,
+      "releases_sorteadas": [
+        "v1.90",
+        "v1.93",
+        "v1.94",
+        "v1.99",
+        "v2.2"
+      ]
+    },
+    {
+      "idx": 28,
+      "full_name": "juanfont/headscale",
+      "stars": 44638,
+      "language": "Go",
+      "total_releases_window": 8,
+      "releases_sorteadas": [
+        "v0.27.0",
+        "v0.27.1",
+        "v0.28.0",
+        "v0.29.1",
+        "v0.29.2"
+      ]
+    },
+    {
+      "idx": 29,
+      "full_name": "XTLS/Xray-core",
+      "stars": 42108,
+      "language": "Go",
+      "total_releases_window": 5,
+      "releases_sorteadas": [
+        "v25.10.15",
+        "v25.12.8",
+        "v26.1.23",
+        "v26.2.6",
+        "v26.3.27"
+      ]
+    },
+    {
+      "idx": 30,
+      "full_name": "DeusData/codebase-memory-mcp",
+      "stars": 46602,
+      "language": "C",
+      "total_releases_window": 45,
+      "releases_sorteadas": [
+        "v0.1.4",
+        "v0.4.8",
+        "v0.10.0",
+        "v0.10.3",
+        "v0.10.4"
+      ]
+    },
+    {
+      "idx": 31,
+      "full_name": "herdrdev/herdr",
+      "stars": 44060,
+      "language": "Rust",
+      "total_releases_window": 59,
+      "releases_sorteadas": [
+        "v0.2.0",
+        "v0.2.4",
+        "v0.4.7",
+        "v0.5.0",
+        "v0.6.1"
+      ]
+    },
+    {
+      "idx": 32,
+      "full_name": "nushell/nushell",
+      "stars": 40659,
+      "language": "Rust",
+      "total_releases_window": 14,
+      "releases_sorteadas": [
+        "0.108.0",
+        "0.111.0",
+        "0.113.1",
+        "0.115.0",
+        "0.116.0"
+      ]
+    },
+    {
+      "idx": 33,
+      "full_name": "vectorize-io/hindsight",
+      "stars": 49705,
+      "language": "Python",
+      "total_releases_window": 71,
+      "releases_sorteadas": []
+    },
+    {
+      "idx": 34,
+      "full_name": "microsoft/monaco-editor",
+      "stars": 46867,
+      "language": "JavaScript",
+      "total_releases_window": 5,
+      "releases_sorteadas": []
+    },
+    {
+      "idx": 35,
+      "full_name": "sxyazi/yazi",
+      "stars": 42821,
+      "language": "Rust",
+      "total_releases_window": 6,
+      "releases_sorteadas": []
+    },
+    {
+      "idx": 36,
+      "full_name": "evanw/esbuild",
+      "stars": 40086,
+      "language": "Go",
+      "total_releases_window": 13,
+      "releases_sorteadas": []
+    },
+    {
+      "idx": 37,
+      "full_name": "psf/requests",
+      "stars": 54460,
+      "language": "Python",
+      "total_releases_window": 5,
+      "releases_sorteadas": []
+    },
+    {
+      "idx": 38,
+      "full_name": "tailwindlabs/tailwindcss",
+      "stars": 97844,
+      "language": "TypeScript",
+      "total_releases_window": 16,
+      "releases_sorteadas": []
+    },
+    {
+      "idx": 39,
+      "full_name": "electron/electron",
+      "stars": 123251,
+      "language": "C++",
+      "total_releases_window": 181,
+      "releases_sorteadas": []
+    },
+    {
+      "idx": 40,
+      "full_name": "oven-sh/bun",
+      "stars": 96165,
+      "language": "Rust",
+      "total_releases_window": 18,
+      "releases_sorteadas": []
+    },
+    {
+      "idx": 41,
+      "full_name": "jellyfin/jellyfin",
+      "stars": 58100,
+      "language": "C#",
+      "total_releases_window": 14,
+      "releases_sorteadas": []
+    },
+    {
+      "idx": 42,
+      "full_name": "schollz/croc",
+      "stars": 40592,
+      "language": "Go",
+      "total_releases_window": 49,
+      "releases_sorteadas": []
+    },
+    {
+      "idx": 43,
+      "full_name": "PowerShell/PowerShell",
+      "stars": 55728,
+      "language": "C#",
+      "total_releases_window": 23,
+      "releases_sorteadas": []
+    },
+    {
+      "idx": 44,
+      "full_name": "career-ops-hq/career-ops",
+      "stars": 74581,
+      "language": "JavaScript",
+      "total_releases_window": 48,
+      "releases_sorteadas": []
+    },
+    {
+      "idx": 45,
+      "full_name": "gkd-kit/gkd",
+      "stars": 42843,
+      "language": "Kotlin",
+      "total_releases_window": 8,
+      "releases_sorteadas": []
+    },
+    {
+      "idx": 46,
+      "full_name": "microsoft/terminal",
+      "stars": 105115,
+      "language": "C++",
+      "total_releases_window": 7,
+      "releases_sorteadas": []
+    },
+    {
+      "idx": 47,
+      "full_name": "MHSanaei/3x-ui",
+      "stars": 48015,
+      "language": "Go",
+      "total_releases_window": 31,
+      "releases_sorteadas": []
+    },
+    {
+      "idx": 48,
+      "full_name": "vadimdemedes/ink",
+      "stars": 40102,
+      "language": "TypeScript",
+      "total_releases_window": 15,
+      "releases_sorteadas": []
+    },
+    {
+      "idx": 49,
+      "full_name": "usememos/memos",
+      "stars": 63796,
+      "language": "Go",
+      "total_releases_window": 12,
+      "releases_sorteadas": []
+    },
+    {
+      "idx": 50,
+      "full_name": "coollabsio/coolify",
+      "stars": 62986,
+      "language": "PHP",
+      "total_releases_window": 70,
+      "releases_sorteadas": []
+    },
+    {
+      "idx": 51,
+      "full_name": "opendatalab/MinerU",
+      "stars": 81341,
+      "language": "Python",
+      "total_releases_window": 62,
+      "releases_sorteadas": []
+    },
+    {
+      "idx": 52,
+      "full_name": "farion1231/cc-switch",
+      "stars": 141901,
+      "language": "Rust",
+      "total_releases_window": 44,
+      "releases_sorteadas": []
+    },
+    {
+      "idx": 53,
+      "full_name": "bitcoin/bitcoin",
+      "stars": 90327,
+      "language": "C++",
+      "total_releases_window": 11,
+      "releases_sorteadas": []
+    },
+    {
+      "idx": 54,
+      "full_name": "heygen-com/hyperframes",
+      "stars": 63723,
+      "language": "TypeScript",
+      "total_releases_window": 400,
+      "releases_sorteadas": []
+    },
+    {
+      "idx": 55,
+      "full_name": "n8n-io/n8n",
+      "stars": 206837,
+      "language": "TypeScript",
+      "total_releases_window": 255,
+      "releases_sorteadas": []
+    },
+    {
+      "idx": 56,
+      "full_name": "sveltejs/svelte",
+      "stars": 88398,
+      "language": "JavaScript",
+      "total_releases_window": 113,
+      "releases_sorteadas": []
+    },
+    {
+      "idx": 57,
+      "full_name": "upstash/context7",
+      "stars": 63052,
+      "language": "TypeScript",
+      "total_releases_window": 111,
+      "releases_sorteadas": []
+    },
+    {
+      "idx": 58,
+      "full_name": "THU-MAIC/OpenMAIC",
+      "stars": 40746,
+      "language": "TypeScript",
+      "total_releases_window": 15,
+      "releases_sorteadas": []
+    },
+    {
+      "idx": 59,
+      "full_name": "codewhale-hq/Codewhale",
+      "stars": 41089,
+      "language": "Rust",
+      "total_releases_window": 138,
+      "releases_sorteadas": []
+    },
+    {
+      "idx": 60,
+      "full_name": "meilisearch/meilisearch",
+      "stars": 59569,
+      "language": "Rust",
+      "total_releases_window": 61,
+      "releases_sorteadas": []
+    }
+  ]
+}
