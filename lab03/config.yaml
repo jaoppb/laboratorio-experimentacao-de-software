@@ -35,3 +35,10 @@ diretorios:
 # Política de limpeza do cache de clones Git superficiais
 limpeza_git_cache: true
 
+# Configurações de coleta de tags e deploys
+coleta:
+  # max_tags serve como salvaguarda da API REST em pipeline/releases.py (fetch_tags).
+  # No pipeline principal (Stage 4), 100% das tags são extraídas diretamente do clone Git
+  # bare local (git for-each-ref) com zero consumo de cota de API do GitHub.
+  max_tags: 100
+

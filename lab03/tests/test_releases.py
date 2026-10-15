@@ -1,8 +1,10 @@
 """Tests for release and tag collection (pipeline.releases)."""
 
 import httpx
+import pyarrow.parquet as pq
 import pytest
-from metricas.schemas import Release
+from metricas.schemas import Commit, Release
+from pipeline.commits import ComparisonStatus, ReleaseCommits
 from pipeline.http_client import GitHubClient
 from pipeline.releases import (
     count_valid_releases,
@@ -11,6 +13,8 @@ from pipeline.releases import (
     fetch_tags,
     filter_window,
     parse_release,
+    save_releases_to_parquet,
+    save_tags_to_parquet,
 )
 
 WINDOW_START = "2024-01-01T00:00:00Z"
@@ -300,4 +304,57 @@ async def test_fetch_releases_graphql_pagination():
     assert call_count == 2
     assert len(rels) == 2
     assert [r.tag_name for r in rels] == ["v1.0.0", "v2.0.0"]
+
+
+def test_save_releases_to_parquet_roundtrip(tmp_path):
+    rel1 = Release(tag_name="v1.0", published_at="2024-01-01T00:00:00Z", prerelease=False)
+    rel2 = Release(tag_name="v1.1-rc1", published_at="2024-02-01T00:00:00Z", prerelease=True)
+    c1 = Commit(sha="sha1", committed_at="2024-01-15T10:00:00Z", message="feat: add thing")
+
+    commits_data = [
+        ReleaseCommits(release=rel1, previous=None, status=ComparisonStatus.FIRST_RELEASE, commits=[]),
+        ReleaseCommits(release=rel2, previous=rel1, status=ComparisonStatus.OK, commits=[c1]),
+    ]
+
+    out_file = tmp_path / "releases.parquet"
+    res_path = save_releases_to_parquet(commits_data, "owner", "repo", out_file)
+    assert res_path == out_file
+    assert out_file.is_file()
+
+    table = pq.read_table(out_file)
+    assert table.num_rows == 2
+    pydict = table.to_pydict()
+    assert pydict["tag_name"] == ["v1.0", "v1.1-rc1"]
+    assert pydict["prerelease"] == [False, True]
+    assert pydict["previous_release"] == [None, "v1.0"]
+    assert pydict["commits_count"] == [0, 1]
+    assert pydict["commits"][1][0]["sha"] == "sha1"
+    assert pydict["commits"][1][0]["message"] == "feat: add thing"
+
+
+def test_save_tags_to_parquet_roundtrip(tmp_path):
+    t1 = Release(tag_name="v1.0", published_at="2024-01-01T00:00:00Z", commit_sha="commit_sha_1")
+    t2 = Release(tag_name="v2.0", published_at="2024-06-01T00:00:00Z", commit_sha="commit_sha_2")
+    c1 = Commit(sha="commit_sha_2", committed_at="2024-05-20T10:00:00Z", message="major rewrite")
+
+    tags_data = [
+        ReleaseCommits(release=t1, previous=None, status=ComparisonStatus.FIRST_RELEASE, commits=[]),
+        ReleaseCommits(release=t2, previous=t1, status=ComparisonStatus.OK, commits=[c1]),
+    ]
+
+    out_file = tmp_path / "tags.parquet"
+    res_path = save_tags_to_parquet(tags_data, "owner", "repo", out_file)
+    assert res_path == out_file
+    assert out_file.is_file()
+
+    table = pq.read_table(out_file)
+    assert table.num_rows == 2
+    pydict = table.to_pydict()
+    assert pydict["tag_name"] == ["v1.0", "v2.0"]
+    assert pydict["commit_sha"] == ["commit_sha_1", "commit_sha_2"]
+    assert pydict["previous_tag"] == [None, "v1.0"]
+    assert pydict["commits_count"] == [0, 1]
+    assert pydict["commits"][1][0]["sha"] == "commit_sha_2"
+    assert pydict["commits"][1][0]["message"] == "major rewrite"
+
 

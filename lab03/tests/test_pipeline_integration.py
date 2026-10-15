@@ -237,14 +237,20 @@ def _build_mock_http_handler():
 @pytest.fixture(autouse=True)
 def mock_git_clone_for_integration(monkeypatch):
     from contextlib import asynccontextmanager
-    from metricas.schemas import Commit
+    from metricas.schemas import Commit, Release
     from pipeline.commits import ComparisonStatus, ReleaseCommits
 
     @asynccontextmanager
     async def fake_temporary_clone(owner, repo, cache_dir, auto_cleanup, token_pool=None):
         yield Path(cache_dir) / f"{owner}__{repo}.git"
 
-    async def fake_collect_commits(client, owner, repo, window, git_dir=None):
+    async def fake_extract_tags(git_dir):
+        return [
+            Release(tag_name="v1.0", published_at="2026-01-15T12:00:00Z", commit_sha="sha-t0"),
+            Release(tag_name="v1.1", published_at="2026-02-15T12:00:00Z", commit_sha="sha-t1"),
+        ]
+
+    async def fake_collect_from_git(git_dir, window):
         ordered = window.with_anchor()
         offset = 1 if window.anchor is not None else 0
         res = []
@@ -261,8 +267,13 @@ def mock_git_clone_for_integration(monkeypatch):
                 res.append(ReleaseCommits(rel, prev, ComparisonStatus.OK, commits))
         return res
 
+    async def fake_collect_commits(client, owner, repo, window, git_dir=None):
+        return await fake_collect_from_git(git_dir, window)
+
     monkeypatch.setattr("pipeline.orchestrator.temporary_git_clone", fake_temporary_clone)
     monkeypatch.setattr("pipeline.orchestrator.collect_release_commits", fake_collect_commits)
+    monkeypatch.setattr("pipeline.orchestrator.collect_release_commits_from_git", fake_collect_from_git)
+    monkeypatch.setattr("pipeline.orchestrator.extract_tags_from_git", fake_extract_tags)
 
 
 @pytest.fixture
@@ -352,13 +363,32 @@ async def test_pipeline_e2e_mock_success(test_config: dict[str, Any], tmp_path: 
         assert int(funnel_rows[2]["descartados"]) == 1  # repo-few-releases
         assert int(funnel_rows[4]["quantidade_restante"]) == 2
 
+    # Verify C2 and C3 columns and metrics
+    assert rec["c2_deployment_frequency"] is not None
+    assert rec["c2_lead_time_b_hours"] is not None
+    assert rec["c3_deployment_frequency"] is not None
+    assert rec["c3_lead_time_b_hours"] is not None
+    assert rec["tags_count_window"] == 2
+    assert rec["total_tags"] == 2
+
     # Verify workflow runs parquet files
-    runs_dir = Path(test_config["diretorios"]["dados"]) / "runs"
+    dados_path = Path(test_config["diretorios"]["dados"])
+    runs_dir = dados_path / "runs"
     assert (runs_dir / "org__repo-valid-1.parquet").is_file()
     assert (runs_dir / "org__repo-valid-2.parquet").is_file()
     # Discarded repos must not have runs parquet files
     assert not (runs_dir / "org__repo-no-actions.parquet").exists()
     assert not (runs_dir / "org__repo-few-releases.parquet").exists()
+
+    # Verify releases and tags parquet files
+    releases_dir = dados_path / "releases"
+    tags_dir = dados_path / "tags"
+    assert (releases_dir / "org__repo-valid-1.parquet").is_file()
+    assert (releases_dir / "org__repo-valid-2.parquet").is_file()
+    assert (tags_dir / "org__repo-valid-1.parquet").is_file()
+    assert (tags_dir / "org__repo-valid-2.parquet").is_file()
+    assert not (releases_dir / "org__repo-no-actions.parquet").exists()
+    assert not (tags_dir / "org__repo-no-actions.parquet").exists()
 
 
 async def test_pipeline_resumption_after_interruption(test_config: dict[str, Any], tmp_path: Path):

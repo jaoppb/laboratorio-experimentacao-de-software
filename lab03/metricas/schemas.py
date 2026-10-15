@@ -73,6 +73,7 @@ class Release:
     published_at: datetime | str
     draft: bool = False
     prerelease: bool = False
+    commit_sha: str | None = None
 
     def __post_init__(self) -> None:
         parsed = _parse_datetime(self.published_at)

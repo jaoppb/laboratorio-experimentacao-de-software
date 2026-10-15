@@ -30,13 +30,22 @@ from metricas.stability import (
 )
 from pipeline.commits import collect_release_commits
 from pipeline.funnel import FunnelTracker
-from pipeline.git_clone import temporary_git_clone
+from pipeline.git_clone import (
+    collect_release_commits_from_git,
+    extract_tags_from_git,
+    temporary_git_clone,
+)
 from pipeline.http_client import GitHubClient
 from pipeline.metadata import (
     fetch_repository_details_graphql,
     fetch_repository_metadata,
 )
-from pipeline.releases import fetch_releases, filter_window
+from pipeline.releases import (
+    fetch_releases,
+    filter_window,
+    save_releases_to_parquet,
+    save_tags_to_parquet,
+)
 from pipeline.repo_selector import iter_candidates_by_stars
 from pipeline.workflow_runs import collect_workflow_runs, save_runs_to_parquet
 
@@ -68,6 +77,14 @@ SCHEMA_REPOSITORIOS = pa.schema(
         ("censored_episodes_ratio", pa.float64()),
         ("overall_dora_score", pa.int64()),
         ("overall_dora_tier", pa.string()),
+        ("prereleases_count_window", pa.int64()),
+        ("total_prereleases", pa.int64()),
+        ("tags_count_window", pa.int64()),
+        ("total_tags", pa.int64()),
+        ("c2_deployment_frequency", pa.float64()),
+        ("c2_lead_time_b_hours", pa.float64()),
+        ("c3_deployment_frequency", pa.float64()),
+        ("c3_lead_time_b_hours", pa.float64()),
     ]
 )
 
@@ -121,7 +138,10 @@ def load_repositories_dataset(parquet_path: str | Path) -> list[dict[str, Any]]:
         records: list[dict[str, Any]] = []
         fieldnames = [f.name for f in SCHEMA_REPOSITORIOS]
         for i in range(total):
-            rec = {name: pydict[name][i] for name in fieldnames}
+            rec = {
+                name: pydict[name][i] if name in pydict else None
+                for name in fieldnames
+            }
             records.append(rec)
         return records
     except Exception as exc:
@@ -229,6 +249,8 @@ class PipelineOrchestrator:
 
         self.dados_dir = Path(dirs.get("dados", "dados"))
         self.runs_dir = self.dados_dir / "runs"
+        self.tags_dir = self.dados_dir / "tags"
+        self.releases_dir = self.dados_dir / "releases"
         self.cache_dir = Path(dirs.get("cache", "cache"))
         self.git_cache_dir = Path(dirs.get("git_cache", "cache/git_repos"))
         self.limpeza_git_cache: bool = config.get("limpeza_git_cache", True)
@@ -243,6 +265,8 @@ class PipelineOrchestrator:
     def _ensure_directories(self) -> None:
         self.dados_dir.mkdir(parents=True, exist_ok=True)
         self.runs_dir.mkdir(parents=True, exist_ok=True)
+        self.tags_dir.mkdir(parents=True, exist_ok=True)
+        self.releases_dir.mkdir(parents=True, exist_ok=True)
         self.cache_dir.mkdir(parents=True, exist_ok=True)
         self.git_cache_dir.mkdir(parents=True, exist_ok=True)
 
@@ -374,7 +398,7 @@ class PipelineOrchestrator:
             runs_result.runs, owner=owner, repo=repo, output_path=runs_path
         )
 
-        # Stage 4: Collect commits between releases via local git blobless clone
+        # Stage 4: Collect commits between releases & tags via local git blobless clone
         try:
             async with temporary_git_clone(
                 owner=owner,
@@ -383,21 +407,72 @@ class PipelineOrchestrator:
                 auto_cleanup=self.limpeza_git_cache,
                 token_pool=client.token_pool,
             ) as git_dir:
-                release_commits = await collect_release_commits(
+                # 1. Extract all tags from git clone
+                all_tags = await extract_tags_from_git(git_dir)
+
+                # 2. Window filters
+                window_releases_c1 = window_releases
+                window_releases_c2 = filter_window(
+                    releases=releases,
+                    window_start=self.window_start,
+                    window_end=self.window_end,
+                    include_prerelease=True,
+                )
+                window_tags_c3 = filter_window(
+                    releases=all_tags,
+                    window_start=self.window_start,
+                    window_end=self.window_end,
+                    include_prerelease=False,
+                )
+
+                # 3. Collect commits between consecutive deploy units from git
+                release_commits_c1 = await collect_release_commits(
                     client=client,
                     owner=owner,
                     repo=repo,
-                    window=window_releases,
+                    window=window_releases_c1,
                     git_dir=git_dir,
                 )
-            lead_time_result = calculate_lead_time(
-                [(rc.release, rc.commits_or_none) for rc in release_commits]
+                release_commits_c2 = await collect_release_commits_from_git(
+                    git_dir=git_dir,
+                    window=window_releases_c2,
+                )
+                tag_commits_c3 = await collect_release_commits_from_git(
+                    git_dir=git_dir,
+                    window=window_tags_c3,
+                )
+
+            # Persist C2 releases and C3 tags to Parquet
+            releases_path = self.releases_dir / f"{owner}__{repo}.parquet"
+            save_releases_to_parquet(
+                release_commits=release_commits_c2,
+                owner=owner,
+                repo=repo,
+                output_path=releases_path,
+            )
+            tags_path = self.tags_dir / f"{owner}__{repo}.parquet"
+            save_tags_to_parquet(
+                tag_commits=tag_commits_c3,
+                owner=owner,
+                repo=repo,
+                output_path=tags_path,
+            )
+
+            # Lead time results
+            lead_time_result_c1 = calculate_lead_time(
+                [(rc.release, rc.commits_or_none) for rc in release_commits_c1]
+            )
+            lead_time_result_c2 = calculate_lead_time(
+                [(rc.release, rc.commits_or_none) for rc in release_commits_c2]
+            )
+            lead_time_result_c3 = calculate_lead_time(
+                [(rc.release, rc.commits_or_none) for rc in tag_commits_c3]
             )
         except Exception as exc:
-            logger.warning("Error calculating lead time via git clone for %s: %s", full_name, exc)
+            logger.warning("Error calculating lead time or tags via git clone for %s: %s", full_name, exc)
             return None, "git_clone_error"
 
-        # Calculate DORA Metrics
+        # Calculate DORA Metrics (C1 Reference)
         dep_freq = calculate_deployment_frequency(
             releases=releases,
             window_weeks=52.1,
@@ -407,8 +482,8 @@ class PipelineOrchestrator:
         cfr_a = calculate_cfr_a(runs_result.runs)
         recovery_result = calculate_recovery_time(runs_result.runs)
 
-        lead_time_a = lead_time_result.median_a_hours
-        lead_time_b = lead_time_result.median_b_hours
+        lead_time_a = lead_time_result_c1.median_a_hours
+        lead_time_b = lead_time_result_c1.median_b_hours
         lead_time_days = (lead_time_a / 24.0) if lead_time_a is not None else None
 
         dora_eval = evaluate_repository_dora(
@@ -417,6 +492,20 @@ class PipelineOrchestrator:
             cfr=cfr_a,
             recovery_hours=recovery_result.median_hours,
         )
+
+        # C2 Metrics (Official Releases + Pre-releases)
+        c2_dep_freq = window_releases_c2.count / 52.1
+        c2_lead_time_b = lead_time_result_c2.median_b_hours
+
+        # C3 Metrics (Git Tags)
+        c3_dep_freq = window_tags_c3.count / 52.1
+        c3_lead_time_b = lead_time_result_c3.median_b_hours
+
+        # Additional counts
+        prereleases_count_window = len([r for r in window_releases_c2.in_window if r.prerelease])
+        total_prereleases = len([r for r in releases if r.prerelease])
+        tags_count_window = window_tags_c3.count
+        total_tags = len(all_tags)
 
         record = {
             "owner": owner,
@@ -449,6 +538,14 @@ class PipelineOrchestrator:
             "censored_episodes_ratio": recovery_result.censored_ratio,
             "overall_dora_score": dora_eval.overall_score,
             "overall_dora_tier": dora_eval.overall_tier.value,
+            "prereleases_count_window": prereleases_count_window,
+            "total_prereleases": total_prereleases,
+            "tags_count_window": tags_count_window,
+            "total_tags": total_tags,
+            "c2_deployment_frequency": c2_dep_freq,
+            "c2_lead_time_b_hours": c2_lead_time_b,
+            "c3_deployment_frequency": c3_dep_freq,
+            "c3_lead_time_b_hours": c3_lead_time_b,
         }
 
         return record, None

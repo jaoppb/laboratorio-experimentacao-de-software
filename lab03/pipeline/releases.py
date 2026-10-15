@@ -6,9 +6,14 @@ import logging
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 from datetime import datetime
+from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+import pyarrow as pa
+import pyarrow.parquet as pq
+
 from metricas.schemas import Release, _parse_datetime
+from pipeline.commits import ReleaseCommits
 
 if TYPE_CHECKING:
     from pipeline.http_client import GitHubClient
@@ -222,3 +227,184 @@ def count_valid_releases(
 ) -> int:
     """Count published, non-prerelease releases inside the window (>= 5 criterion)."""
     return filter_window(releases, window_start, window_end).count
+
+
+def save_releases_to_parquet(
+    release_commits: Sequence[ReleaseCommits],
+    owner: str,
+    repo: str,
+    output_path: str | Path,
+) -> Path:
+    """Serialize evaluated window releases and commits to a columnar Parquet file."""
+    path = Path(output_path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp_path = path.with_suffix(".parquet.tmp")
+
+    tag_names: list[str] = []
+    published_ats: list[datetime] = []
+    prereleases: list[bool] = []
+    previous_releases: list[str | None] = []
+    commits_counts: list[int] = []
+    commits_lists: list[list[dict[str, str]]] = []
+
+    for rc in release_commits:
+        rel = rc.release
+        tag_names.append(rel.tag_name)
+        published_ats.append(rel.published_at)
+        prereleases.append(rel.prerelease)
+        previous_releases.append(rc.previous.tag_name if rc.previous else None)
+        commits_counts.append(len(rc.commits))
+        commits_lists.append(
+            [
+                {
+                    "sha": c.sha,
+                    "committed_at": (
+                        c.committed_at.isoformat()
+                        if hasattr(c.committed_at, "isoformat")
+                        else str(c.committed_at)
+                    ),
+                    "message": c.message or "",
+                }
+                for c in rc.commits
+            ]
+        )
+
+    schema = pa.schema(
+        [
+            ("tag_name", pa.string()),
+            ("published_at", pa.timestamp("us", tz="UTC")),
+            ("prerelease", pa.bool_()),
+            ("previous_release", pa.string()),
+            ("commits_count", pa.int64()),
+            (
+                "commits",
+                pa.list_(
+                    pa.struct(
+                        [
+                            ("sha", pa.string()),
+                            ("committed_at", pa.string()),
+                            ("message", pa.string()),
+                        ]
+                    )
+                ),
+            ),
+        ]
+    )
+
+    table = pa.Table.from_arrays(
+        [
+            pa.array(tag_names, type=pa.string()),
+            pa.array(published_ats, type=pa.timestamp("us", tz="UTC")),
+            pa.array(prereleases, type=pa.bool_()),
+            pa.array(previous_releases, type=pa.string()),
+            pa.array(commits_counts, type=pa.int64()),
+            pa.array(
+                commits_lists,
+                type=pa.list_(
+                    pa.struct(
+                        [
+                            ("sha", pa.string()),
+                            ("committed_at", pa.string()),
+                            ("message", pa.string()),
+                        ]
+                    )
+                ),
+            ),
+        ],
+        schema=schema,
+    )
+
+    pq.write_table(table, tmp_path, compression="snappy")
+    tmp_path.replace(path)
+    return path
+
+
+def save_tags_to_parquet(
+    tag_commits: Sequence[ReleaseCommits],
+    owner: str,
+    repo: str,
+    output_path: str | Path,
+) -> Path:
+    """Serialize evaluated window tags and commits to a columnar Parquet file."""
+    path = Path(output_path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp_path = path.with_suffix(".parquet.tmp")
+
+    tag_names: list[str] = []
+    published_ats: list[datetime] = []
+    commit_shas: list[str | None] = []
+    previous_tags: list[str | None] = []
+    commits_counts: list[int] = []
+    commits_lists: list[list[dict[str, str]]] = []
+
+    for tc in tag_commits:
+        tag = tc.release
+        tag_names.append(tag.tag_name)
+        published_ats.append(tag.published_at)
+        commit_shas.append(getattr(tag, "commit_sha", None))
+        previous_tags.append(tc.previous.tag_name if tc.previous else None)
+        commits_counts.append(len(tc.commits))
+        commits_lists.append(
+            [
+                {
+                    "sha": c.sha,
+                    "committed_at": (
+                        c.committed_at.isoformat()
+                        if hasattr(c.committed_at, "isoformat")
+                        else str(c.committed_at)
+                    ),
+                    "message": c.message or "",
+                }
+                for c in tc.commits
+            ]
+        )
+
+    schema = pa.schema(
+        [
+            ("tag_name", pa.string()),
+            ("published_at", pa.timestamp("us", tz="UTC")),
+            ("commit_sha", pa.string()),
+            ("previous_tag", pa.string()),
+            ("commits_count", pa.int64()),
+            (
+                "commits",
+                pa.list_(
+                    pa.struct(
+                        [
+                            ("sha", pa.string()),
+                            ("committed_at", pa.string()),
+                            ("message", pa.string()),
+                        ]
+                    )
+                ),
+            ),
+        ]
+    )
+
+    table = pa.Table.from_arrays(
+        [
+            pa.array(tag_names, type=pa.string()),
+            pa.array(published_ats, type=pa.timestamp("us", tz="UTC")),
+            pa.array(commit_shas, type=pa.string()),
+            pa.array(previous_tags, type=pa.string()),
+            pa.array(commits_counts, type=pa.int64()),
+            pa.array(
+                commits_lists,
+                type=pa.list_(
+                    pa.struct(
+                        [
+                            ("sha", pa.string()),
+                            ("committed_at", pa.string()),
+                            ("message", pa.string()),
+                        ]
+                    )
+                ),
+            ),
+        ],
+        schema=schema,
+    )
+
+    pq.write_table(table, tmp_path, compression="snappy")
+    tmp_path.replace(path)
+    return path
+

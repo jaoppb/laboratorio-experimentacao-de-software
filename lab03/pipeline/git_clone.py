@@ -166,10 +166,11 @@ async def get_commits_between_tags(
 ) -> list[Commit]:
     """Retrieve commits between base_tag and head_tag using git log in bare repository."""
     git_path = Path(git_dir)
+    target_git_dir = git_path / ".git" if (git_path / ".git").is_dir() else git_path
     sep = "\x1f"
     fmt = f"%H{sep}%aI{sep}%s"
     args = [
-        f"--git-dir={git_path}",
+        f"--git-dir={target_git_dir}",
         "log",
         f"{base_tag}..{head_tag}",
         f"--format={fmt}",
@@ -241,6 +242,56 @@ async def collect_release_commits_from_git(
             results.append(ReleaseCommits(release, previous, ComparisonStatus.NOT_FOUND))
 
     return results
+
+
+async def extract_tags_from_git(git_dir: Path | str) -> list[Release]:
+    """Extract all git tags from a bare clone, dated by commit author date (oldest first)."""
+    git_path = Path(git_dir)
+    if not git_path.exists():
+        raise GitCloneError(f"Git directory not found: {git_path}")
+
+    target_git_dir = git_path / ".git" if (git_path / ".git").is_dir() else git_path
+
+    sep = "\t"
+    fmt = (
+        f"%(refname:short){sep}"
+        f"%(if)%(*authordate:iso-strict)%(then)%(*authordate:iso-strict)%(else)%(authordate:iso-strict)%(end){sep}"
+        f"%(if)%(*objectname)%(then)%(*objectname)%(else)%(objectname)%(end)"
+    )
+    args = [
+        f"--git-dir={target_git_dir}",
+        "for-each-ref",
+        f"--format={fmt}",
+        "refs/tags",
+    ]
+
+    retcode, stdout, stderr = await run_git_command(args)
+    if retcode != 0:
+        raise GitCloneError(f"git for-each-ref failed in {git_path}: {stderr.strip()}")
+
+    tags: list[Release] = []
+    for line in stdout.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        parts = line.split(sep, 2)
+        if len(parts) >= 2:
+            tag_name = parts[0]
+            date_str = parts[1].strip()
+            sha = parts[2].strip() if len(parts) > 2 else None
+            if not date_str:
+                continue
+            tags.append(
+                Release(
+                    tag_name=tag_name,
+                    published_at=date_str,
+                    draft=False,
+                    prerelease=False,
+                    commit_sha=sha or None,
+                )
+            )
+
+    return sorted(tags, key=lambda t: t.published_at)
 
 
 @asynccontextmanager

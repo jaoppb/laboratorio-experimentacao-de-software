@@ -12,6 +12,8 @@ Este diretório contém os artefatos de dados gerados pelo pipeline de mineraç�
 | `repositorios.csv` | CSV (UTF-8) | Cópia tabular para replicação cruzada e análises estatísticas. |
 | `funil.csv` | CSV (UTF-8) | Registro das etapas de filtragem do funil de seleção com contagens e descartes. |
 | `runs/{owner}__{repo}.parquet` | Apache Parquet (Snappy) | Execuções brutas de workflow do default branch (evento `push`) de cada repositório aceito. |
+| `releases/{owner}__{repo}.parquet` | Apache Parquet (Snappy) | Releases oficiais e pré-releases avaliadas na janela (+ âncora) com mensagens de commits (Issue #58). |
+| `tags/{owner}__{repo}.parquet` | Apache Parquet (Snappy) | Tags Git avaliadas na janela (+ âncora) com datas de autor, commits e SHAs (Issue #54). |
 
 ---
 
@@ -43,6 +45,14 @@ Este diretório contém os artefatos de dados gerados pelo pipeline de mineraç�
 | `censored_episodes_ratio` | Float | proporção (0.0 a 1.0) | Proporção de episódios de falha que não obtiveram sucesso de recuperação antes do fim da janela (dados censurados). |
 | `overall_dora_score` | Inteiro | pontos (1 a 4) | Nota consolidada DORA (Elite=4, High=3, Medium=2, Low=1): mediana das notas das 4 métricas, arredondada para baixo. |
 | `overall_dora_tier` | String | faixa | Classificação geral consolidada do repositório (`Elite`, `High`, `Medium`, `Low`). |
+| `prereleases_count_window` | Inteiro | releases | Total de pré-releases (`prerelease = true`) dentro da janela de 12 meses. |
+| `total_prereleases` | Inteiro | releases | Total de pré-releases coletadas no histórico do repositório. |
+| `tags_count_window` | Inteiro | tags | Total de Git tags apontando para commits dentro da janela de 12 meses. |
+| `total_tags` | Inteiro | tags | Total de Git tags encontradas no repositório. |
+| `c2_deployment_frequency` | Float | deploys/semana | Frequência de deploy sob a combinação C2: `(releases + pré-releases na janela) / 52.1 semanas`. |
+| `c2_lead_time_b_hours` | Float | horas | Mediana do lead time por commit (variante b) para todos os commits entregues em releases e pré-releases da janela. |
+| `c3_deployment_frequency` | Float | tags/semana | Frequência de deploy sob a combinação C3: `tags na janela / 52.1 semanas`. |
+| `c3_lead_time_b_hours` | Float | horas | Mediana do lead time por commit (variante b) para commits entregues entre tags consecutivas da janela. |
 
 ---
 
@@ -71,3 +81,34 @@ Este diretório contém os artefatos de dados gerados pelo pipeline de mineraç�
 | `run_started_at` | `timestamp[us, UTC]` | Data e hora de início da execução. |
 | `updated_at` | `timestamp[us, UTC]` | Data e hora de encerramento da execução. |
 | `is_valid` | `bool` | Indicador se a execução é válida para cálculo de CFR e tempo de recuperação (`True` para `success` ou `failure`). |
+
+---
+
+## 5. Dicionário de Dados: `releases/{owner}__{repo}.parquet`
+
+Armazena as releases oficiais e pré-releases publicadas dentro da janela de observação (mais a âncora anterior), com os commits intermediários e mensagens coletados via clone Git local.
+
+| Coluna | Tipo PyArrow | Descrição |
+|---|---|---|
+| `tag_name` | `string` | Nome da tag associada à release no GitHub. |
+| `published_at` | `timestamp[us, UTC]` | Data e hora de publicação oficial da release. |
+| `prerelease` | `bool` | Indicador se a release é uma pré-release (`True`) ou release estável (`False`). |
+| `previous_release` | `string` | Nome da tag da release anterior comparada na cadeia de deploy (nulo para a primeira). |
+| `commits_count` | `int64` | Quantidade de commits incluídos entre a release anterior e a atual. |
+| `commits` | `list<struct<sha: string, committed_at: string, message: string>>` | Lista estruturada de commits contendo SHA, data do autor e mensagem completa. |
+
+---
+
+## 6. Dicionário de Dados: `tags/{owner}__{repo}.parquet`
+
+Armazena as tags Git do repositório mapeadas na janela de observação (mais a âncora anterior), com datação direta pelo commit apontado e commits intermediários.
+
+| Coluna | Tipo PyArrow | Descrição |
+|---|---|---|
+| `tag_name` | `string` | Identificador da tag no Git (`refs/tags/{tag_name}`). |
+| `published_at` | `timestamp[us, UTC]` | Data e hora de autoria do commit para o qual a tag aponta (`commit.author.date`). |
+| `commit_sha` | `string` | SHA-1 completo do commit apontado pela tag. |
+| `previous_tag` | `string` | Nome da tag anterior na ordem cronológica de deploy (nulo para a primeira). |
+| `commits_count` | `int64` | Quantidade de commits entre a tag anterior e a atual. |
+| `commits` | `list<struct<sha: string, committed_at: string, message: string>>` | Lista estruturada de commits entre as tags consecutivas com SHA, data e mensagem. |
+
