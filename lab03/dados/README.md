@@ -14,6 +14,7 @@ Este diretório contém os artefatos de dados gerados pelo pipeline de mineraç�
 | `runs/{owner}__{repo}.parquet` | Apache Parquet (Snappy) | Execuções brutas de workflow do default branch (evento `push`) de cada repositório aceito. |
 | `releases/{owner}__{repo}.parquet` | Apache Parquet (Snappy) | Releases da definição principal (C1: publicadas, sem pré-releases) da janela, com a release anterior, o status da comparação e os commits com mensagens (Issue #58). Base do lead time, do CFR (b) e da amostra-ouro. |
 | `releases_c2/{owner}__{repo}.parquet` | Apache Parquet (Snappy) | Mesmo esquema de `releases/`, para a combinação C2 da RQ 07 (releases + pré-releases). |
+| `analises/lead_time_diagnostico.csv` | CSV (UTF-8) | Diagnóstico por repositório dos motivos de lead time nulo e dos casos LT(b) > LT(a), gerado por `analises/investigar_lead_time.py` (Issue #60; ver `docs/investigacao_lead_time.md`). |
 | `tags/{owner}__{repo}.parquet` | Apache Parquet (Snappy) | Tags Git avaliadas na janela (+ âncora) com datas de autor, commits e SHAs (Issue #54). |
 
 ---
@@ -92,7 +93,7 @@ Uma linha por release publicada **dentro** da janela de observação, em ordem c
 - `releases/` usa a definição principal (C1): releases publicadas, `prerelease = false`.
 - `releases_c2/` usa a combinação C2 da RQ 07: releases publicadas e pré-releases.
 
-Os dois diretórios são gravados pelo orquestrador para cada repositório aceito. Para gerar `releases/` de uma amostra coletada antes desse arquivo existir, rode `uv run python -m pipeline.persist_releases --config config.yaml` (pula os repositórios que já têm arquivo).
+Os dois diretórios são gravados pelo orquestrador para cada repositório aceito. Para gerar `releases/` de uma amostra coletada antes desse arquivo existir, rode `uv run python -m pipeline.persist_releases --config config.yaml` (pula os repositórios que já têm arquivo). Os dois diretórios **não são versionados** (cerca de 320 MB na amostra de 330 repositórios, com um arquivo acima do limite de 100 MB do GitHub): regenere-os com esse comando, que leva cerca de 10 minutos e usa uma consulta GraphQL por repositório.
 
 | Coluna | Tipo PyArrow | Unidade | Descrição |
 |---|---|---|---|
