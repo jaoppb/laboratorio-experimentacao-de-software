@@ -85,6 +85,31 @@ async def run_git_command(
         raise TimeoutError(f"Git command timed out after {timeout}s: git {' '.join(args)}")
 
 
+async def fetch_all_tags(git_dir: Path | str, auth_args: list[str] | None = None) -> bool:
+    """Fetch every tag into a single-branch clone, keeping the partial-clone filter.
+
+    `--single-branch` only brings tags reachable from the default branch, so
+    releases tagged on maintenance branches (e.g. `v19.0.x` backports) would be
+    missing and their lead time would be skipped as not found. Fetching
+    `refs/tags/*` adds the commits of those branches without trees or blobs.
+    Returns False (and keeps the clone usable) if the fetch fails.
+    """
+    args = [
+        *(auth_args or []),
+        f"--git-dir={git_dir}",
+        "fetch",
+        "--quiet",
+        "--filter=tree:0",
+        "origin",
+        "+refs/tags/*:refs/tags/*",
+    ]
+    retcode, _, stderr = await run_git_command(args, timeout=600.0)
+    if retcode != 0:
+        logger.warning("git fetch of all tags failed in %s: %s", git_dir, stderr.strip())
+        return False
+    return True
+
+
 async def clone_repository(
     owner: str,
     repo: str,
@@ -120,6 +145,7 @@ async def clone_repository(
 
     if retcode == 0:
         logger.info("Successfully cloned %s/%s anonymously.", owner, repo)
+        await fetch_all_tags(target)
         return target
 
     # Check for authentication / rate-limit failures
@@ -138,9 +164,9 @@ async def clone_repository(
             )
             if target.exists():
                 safe_rmtree(target)
+            auth_header = ["-c", f"http.extraHeader=Authorization: Bearer {token}"]
             auth_args = [
-                "-c",
-                f"http.extraHeader=Authorization: Bearer {token}",
+                *auth_header,
                 "clone",
                 "--bare",
                 "--filter=tree:0",
@@ -151,6 +177,7 @@ async def clone_repository(
             retcode, stdout, stderr = await run_git_command(auth_args)
             if retcode == 0:
                 logger.info("Successfully cloned %s/%s with token.", owner, repo)
+                await fetch_all_tags(target, auth_header)
                 return target
 
     # Clean up incomplete clone

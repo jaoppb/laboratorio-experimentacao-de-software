@@ -11,6 +11,7 @@ from pipeline.commits import ComparisonStatus
 from pipeline.git_clone import (
     GitCloneError,
     clone_repository,
+    fetch_all_tags,
     collect_release_commits_from_git,
     get_commits_between_tags,
     run_git_command,
@@ -115,8 +116,31 @@ async def test_clone_repository_retry_with_token(tmp_path):
         res = await clone_repository("owner", "repo", target, token_pool=token_pool)
         assert res == target
 
-    assert len(calls) == 2
+    assert len(calls) == 3
     assert "Authorization: Bearer secret-token" in " ".join(calls[1])
+    # Tag fetch after the clone reuses the token
+    assert "+refs/tags/*:refs/tags/*" in calls[2]
+    assert "Authorization: Bearer secret-token" in " ".join(calls[2])
+
+
+async def test_clone_repository_fetches_tags_of_other_branches(tmp_path):
+    """Single-branch clone misses tags of maintenance branches; they are fetched after."""
+    target = tmp_path / "test.git"
+    with patch("pipeline.git_clone.run_git_command", new_callable=AsyncMock) as mock_cmd:
+        mock_cmd.return_value = (0, "", "")
+        await clone_repository("owner", "repo", target)
+
+    fetch_args = mock_cmd.call_args_list[1].args[0]
+    assert "fetch" in fetch_args
+    assert "--filter=tree:0" in fetch_args
+    assert "+refs/tags/*:refs/tags/*" in fetch_args
+
+
+async def test_fetch_all_tags_failure_keeps_clone(tmp_path):
+    """A failed tag fetch is logged and does not abort the clone."""
+    with patch("pipeline.git_clone.run_git_command", new_callable=AsyncMock) as mock_cmd:
+        mock_cmd.return_value = (128, "", "fatal: timeout")
+        assert await fetch_all_tags(tmp_path) is False
 
 
 async def test_clone_repository_failure_raises(tmp_path):
