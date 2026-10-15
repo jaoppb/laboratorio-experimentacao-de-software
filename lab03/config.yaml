@@ -8,7 +8,7 @@ janela:
 
 # Critérios de inclusão mínima e tamanho da amostra
 amostra:
-  tamanho_final: 100
+  tamanho_final: 330
   min_releases: 5
   min_workflow_runs: 50
 
