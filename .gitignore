@@ -48,3 +48,5 @@ Thumbs.db
 # Releases persistidas (regeneradas por python -m pipeline.persist_releases; ClickHouse > 100 MB)
 lab03/dados/releases/
 lab03/dados/releases_c2/
+lab03/dados/tags/
+lab03/dados/c2_c3_meta/
