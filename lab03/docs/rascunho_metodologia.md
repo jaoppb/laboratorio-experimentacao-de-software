@@ -69,11 +69,14 @@ assíncrono sobre `httpx`), sem bibliotecas prontas de acesso à API do GitHub.
 
 **Janela.** A janela de observação tem 12 meses, de **01/10/2025 a 30/09/2026** (`janela.inicio` e
 `janela.fim` em `config.yaml`). Entram nos cálculos apenas releases publicadas e *workflow runs*
-criados dentro da janela. Para a frequência de deploy, a janela equivale a **52,1 semanas**.
-`[VERIFICAR: o config.yaml diz que as datas são "ajustáveis caso o professor defina janela específica"; confirmar que 01/10/2025-30/09/2026 é a janela oficial da turma.]`
-`[VERIFICAR: "2026-09-30" é lido como 2026-09-30T00:00:00Z (metricas/schemas.py::_parse_datetime), então releases e runs de 30/09 depois de 00:00 UTC ficam de fora do limite superior; decidir se isso é aceitável ou se o limite deve ser o fim do dia.]`
+criados dentro da janela. Para a frequência de deploy, divide-se a contagem de releases por **52,1
+semanas** (≈ 365/7, constante `DEFAULT_WINDOW_WEEKS` em `metricas/dora.py`, valor indicado pelo guia
+para 12 meses). Como o limite superior é lido como 30/09/2026 às 00:00 UTC (ver abaixo), o intervalo
+efetivo tem 364 dias (52,0 semanas); a diferença no denominador é de cerca de 0,2%.
+`[VERIFICAR: o config.yaml diz que as datas foram "fixadas para a Sprint 01 conforme o enunciado" e são "ajustáveis caso o professor defina janela específica", e o guialab03.md só diz que o professor fixa as datas na abertura do Lab03S01, sem trazê-las; confirmar com o professor/enunciado que 01/10/2025-30/09/2026 é a janela oficial da turma.]`
+`[VERIFICAR: "2026-09-30" é lido como 2026-09-30T00:00:00Z (metricas/schemas.py::_parse_datetime). Verificado no código que isso vale para as duas pontas: releases entram se start <= published_at <= end (pipeline/releases.py::filter_window) e o último intervalo mensal de runs termina em 2026-09-30T00:00:00Z (pipeline/workflow_runs.py::split_window_into_months), então releases e runs de 30/09 depois de 00:00 UTC ficam de fora do limite superior; decidir se isso é aceitável ou se o limite deve ser o fim do dia.]`
 
-**Data da coleta.** `[PENDENTE: data(s) exata(s) da coleta e da regeneração final do dataset, a registrar na consolidação do dataset (#56). Indício: o commit da amostra de 330 repositórios (#53) é de 14/10/2026.]`
+**Data da coleta.** `[PENDENTE: data(s) exata(s) da coleta e da regeneração final do dataset, a registrar na consolidação do dataset (#56). Indício (histórico do git): as 100 primeiras linhas de repositorios.csv vêm do commit da refatoração #47, de 10/10/2026, e o commit da amostra de 330 repositórios (#53) é de 14/10/2026.]`
 Como a Search API e as contagens (estrelas, releases, runs) refletem o estado do GitHub no momento
 da coleta, uma nova execução pode produzir uma amostra ligeiramente diferente.
 
