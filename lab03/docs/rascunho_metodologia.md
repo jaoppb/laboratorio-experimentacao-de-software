@@ -260,6 +260,11 @@ tabela de faixas (3.5.5).
 
 $$\text{DF} = \frac{\text{releases publicadas na janela (draft = false, prerelease = false)}}{52{,}1\ \text{semanas}}$$
 
+O numerador conta as releases com `janela.inicio ≤ published_at ≤ janela.fim` (limites inclusivos).
+O divisor 52,1 é o valor fixo do guia (≈ 365 ÷ 7) e não é recalculado a partir das datas
+configuradas: a janela de `config.yaml` (01/10/2025 a 30/09/2026 às 00:00 UTC) tem 364 dias, ou
+52,0 semanas, o que subestima a frequência em cerca de 0,2%.
+
 #### 3.5.2 Lead time (RQ 02)
 
 Para cada release $R$ da janela com predecessora disponível, sejam $C_R$ os commits incluídos em $R$
@@ -282,7 +287,8 @@ número de commits (`docs/investigacao_lead_time.md`, seção 4).
 $$\text{CFR}_a = \frac{\#\text{falhas}}{\#\text{falhas} + \#\text{sucessos}}$$
 
 calculada sobre todos os *workflow runs* do default branch com `event = push`, **todos os workflows
-juntos**. A classificação da conclusão segue o guia:
+juntos**. Cada run conta uma vez, sem ponderar por workflow nem por commit: um mesmo `push` pode
+gerar vários runs, um por workflow. A classificação da conclusão segue o guia:
 
 | `conclusion` | Tratamento |
 |---|---|
@@ -290,24 +296,31 @@ juntos**. A classificação da conclusão segue o guia:
 | `failure`, `timed_out`, `startup_failure` | falha |
 | `cancelled`, `skipped`, `neutral`, `action_required`, `stale`, vazio (em andamento) | ignorado: fora do numerador e do denominador |
 
-O $\text{CFR}_a$ é nulo se o repositório não tem nenhum run de sucesso ou falha. Esta variante mede
-falha de **pipeline**, e não falha em produção.
+Nos `runs/` versionados (2.289.119 runs dos 330 repositórios) aparecem apenas `success`,
+`failure`, `startup_failure`, `cancelled`, `skipped` e conclusão vazia; as demais linhas da tabela
+estão previstas no código, mas não ocorreram. O $\text{CFR}_a$ é nulo se o repositório não tem nenhum
+run de sucesso ou falha, o que não ocorre na amostra (todos têm pelo menos 51 runs válidos). Esta
+variante mede falha de **pipeline**, e não falha em produção.
 
 #### 3.5.4 Tempo de recuperação e censura (RQ 04)
 
-Os runs são agrupados por workflow e ordenados por `run_started_at`. Dentro de cada workflow,
-conclusões ignoradas não iniciam, interrompem nem encerram episódios. Um **episódio de falha** começa
-na primeira falha (após um sucesso, ou no início do histórico) e inclui as falhas consecutivas; ele
-termina no próximo sucesso do mesmo workflow. A duração é
+Os runs são agrupados por workflow (`workflow_id`) e ordenados por `run_started_at`. Dentro de cada
+workflow, conclusões ignoradas não iniciam, interrompem nem encerram episódios. Um **episódio de
+falha** começa na primeira falha (a primeira depois de um sucesso ou, se o workflow não tem sucesso
+anterior, a primeira falha do histórico coletado) e inclui as falhas consecutivas; ele termina no
+próximo sucesso do mesmo workflow. Quando o histórico coletado começa por uma falha, a falha pode ter
+começado antes da janela, e a duração é medida a partir do primeiro run visto (censura à esquerda,
+não tratada). A duração é
 
 $$\text{recuperação} = \text{updated\_at}_{\text{sucesso}} - \text{run\_started\_at}_{\text{primeira falha}}$$
 
-(truncada em 0). O valor do repositório é a **mediana** das durações dos episódios resolvidos, de
-todos os workflows. Um episódio que não termina até o fim do histórico coletado é **censurado**, e
-o pipeline registra a proporção `censored_episodes_ratio = censurados ÷ (resolvidos + censurados)`
-(0 se não há episódios). Os episódios censurados **não são descartados da contagem**, mas também
-**não entram na mediana**, que usa apenas os episódios resolvidos (ver ameaça na seção 3.9). O valor
-é nulo se nenhum episódio foi resolvido.
+(em horas, truncada em 0). O valor do repositório é a **mediana** das durações dos episódios
+resolvidos, de todos os workflows. Um episódio que não termina até o fim do histórico coletado é
+**censurado**, e o pipeline registra a proporção
+`censored_episodes_ratio = censurados ÷ (resolvidos + censurados)` (0 se não há episódios). Os
+episódios censurados **não são descartados da contagem**, mas também **não entram na mediana**, que
+usa apenas os episódios resolvidos (ver ameaça na seção 3.9). O valor é nulo se nenhum episódio foi
+resolvido, seja porque não houve falha, seja porque todos os episódios ficaram censurados.
 
 #### 3.5.5 Classificação DORA (faixas fixas da disciplina)
 
@@ -334,6 +347,11 @@ Em todas as RQs, reportamos **mediana e intervalo interquartil (IQR)**, e não m
 por causa da assimetria das distribuições, como pede o guia.
 
 #### 3.5.6 Combinações de definições para a análise de sensibilidade (RQ 07)
+
+O pipeline grava só as frequências de deploy e os lead times (b) de C2 e C3, e não as faixas nem a
+nota geral dessas combinações: a análise da RQ 07 precisa classificá-las com as mesmas funções de
+`metricas/dora.py`. O CFR (a) é o mesmo nas três combinações (`cfr_a`). As colunas de C2 e C3 ainda
+não existem no `repositorios.csv` versionado, que tem 24 colunas (ver 3.10).
 
 | Combinação | Unidade de deploy | Lead time | CFR |
 |---|---|---|---|
