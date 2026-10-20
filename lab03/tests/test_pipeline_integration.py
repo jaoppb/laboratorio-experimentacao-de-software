@@ -427,3 +427,183 @@ async def test_pipeline_resumption_after_interruption(test_config: dict[str, Any
     assert len(dataset2) == 2
     names = [r["full_name"] for r in dataset2]
     assert names == ["org/repo-valid-1", "org/repo-valid-2"]
+
+
+CFR_B_COLUMNS = [
+    "cfr_b",
+    "cfr_b_tier",
+    "cfr_b_failed_releases",
+    "cfr_b_evaluated_releases",
+    "cfr_b_censored_releases",
+    "cfr_b_skipped_releases",
+]
+
+
+def _synthetic_release_commits(fix_message: str = "fix: crash on open"):
+    """C1 releases: v2.0.0 -> v2.0.1 (patch + fix, 2 days later) -> v2.1.0 (months later)."""
+    from metricas.schemas import Commit, Release
+    from pipeline.commits import ComparisonStatus, ReleaseCommits
+
+    r0 = Release(tag_name="v2.0.0", published_at="2026-01-10T12:00:00Z", commit_sha="s0")
+    r1 = Release(tag_name="v2.0.1", published_at="2026-01-12T12:00:00Z", commit_sha="s1")
+    r2 = Release(tag_name="v2.1.0", published_at="2026-06-01T12:00:00Z", commit_sha="s2")
+    fix = Commit(sha="c1", committed_at="2026-01-11T10:00:00Z", message=fix_message)
+    feat = Commit(sha="c2", committed_at="2026-05-20T10:00:00Z", message="feat: new thing")
+    return [
+        ReleaseCommits(r0, None, ComparisonStatus.FIRST_RELEASE),
+        ReleaseCommits(r1, r0, ComparisonStatus.OK, [fix]),
+        ReleaseCommits(r2, r1, ComparisonStatus.OK, [feat]),
+    ]
+
+
+def test_compute_cfr_b_columns_failed_release():
+    from pipeline.orchestrator import compute_cfr_b_columns
+
+    cols = compute_cfr_b_columns(_synthetic_release_commits(), "2026-09-30")
+
+    assert set(cols) == set(CFR_B_COLUMNS)
+    assert cols["cfr_b_failed_releases"] == 1  # v2.0.0 followed by corrective v2.0.1
+    assert cols["cfr_b_evaluated_releases"] == 3
+    assert cols["cfr_b_censored_releases"] == 0
+    assert cols["cfr_b_skipped_releases"] == 0
+    assert cols["cfr_b"] == pytest.approx(1 / 3)
+    assert cols["cfr_b_tier"] == "Medium"
+
+
+def test_compute_cfr_b_columns_censored_and_skipped():
+    from metricas.schemas import Release
+    from pipeline.commits import ComparisonStatus, ReleaseCommits
+    from pipeline.orchestrator import compute_cfr_b_columns
+
+    r0 = Release(tag_name="v1.0.0", published_at="2026-01-10T12:00:00Z", commit_sha="s0")
+    r1 = Release(tag_name="v1.0.1", published_at="2026-01-11T12:00:00Z", commit_sha="s1")
+    r2 = Release(tag_name="v1.1.0", published_at="2026-09-28T12:00:00Z", commit_sha="s2")
+    rcs = [
+        ReleaseCommits(r0, None, ComparisonStatus.FIRST_RELEASE),
+        # compare 404: commits unknown -> v1.0.0 cannot be judged
+        ReleaseCommits(r1, r0, ComparisonStatus.NOT_FOUND),
+        ReleaseCommits(r2, r1, ComparisonStatus.OK, []),
+    ]
+
+    cols = compute_cfr_b_columns(rcs, "2026-09-30")
+
+    assert cols["cfr_b_skipped_releases"] == 1
+    assert cols["cfr_b_censored_releases"] == 1
+    assert cols["cfr_b_evaluated_releases"] == 1
+    assert cols["cfr_b_failed_releases"] == 0
+    assert cols["cfr_b"] == 0.0
+    assert cols["cfr_b_tier"] == "Elite"
+
+
+def test_compute_cfr_b_columns_nothing_evaluated():
+    from metricas.schemas import Release
+    from pipeline.commits import ComparisonStatus, ReleaseCommits
+    from pipeline.orchestrator import compute_cfr_b_columns
+
+    r0 = Release(tag_name="v1.0.0", published_at="2026-09-28T12:00:00Z", commit_sha="s0")
+    cols = compute_cfr_b_columns(
+        [ReleaseCommits(r0, None, ComparisonStatus.FIRST_RELEASE)], "2026-09-30"
+    )
+
+    assert cols["cfr_b"] is None
+    assert cols["cfr_b_tier"] is None
+    assert cols["cfr_b_evaluated_releases"] == 0
+    assert cols["cfr_b_censored_releases"] == 1
+
+
+def test_compute_cfr_b_columns_unknown_heuristic():
+    from pipeline.orchestrator import compute_cfr_b_columns
+
+    with pytest.raises(KeyError):
+        compute_cfr_b_columns(_synthetic_release_commits(), "2026-09-30", heuristic="v999")
+
+
+def test_orchestrator_rejects_unknown_cfr_b_heuristic(test_config: dict[str, Any]):
+    test_config["cfr_b"] = {"heuristica": "v999"}
+    with pytest.raises(ValueError, match="v999"):
+        PipelineOrchestrator(config=test_config)
+
+
+def test_orchestrator_cfr_b_heuristic_defaults_and_config(test_config: dict[str, Any]):
+    assert PipelineOrchestrator(config=test_config).cfr_b_heuristic == "v1"
+    test_config["cfr_b"] = {"heuristica": "v1"}
+    assert PipelineOrchestrator(config=test_config).cfr_b_heuristic == "v1"
+
+
+async def test_pipeline_exports_cfr_b_columns(
+    test_config: dict[str, Any], tmp_path: Path, monkeypatch
+):
+    """E2E: orchestrator computes CFR (b) on C1 releases and persists the columns."""
+
+    async def fake_collect_commits(client, owner, repo, window, git_dir=None):
+        return _synthetic_release_commits()
+
+    monkeypatch.setattr("pipeline.orchestrator.collect_release_commits", fake_collect_commits)
+
+    transport = httpx.MockTransport(_build_mock_http_handler())
+    async with httpx.AsyncClient(transport=transport) as mock_httpx:
+        async with GitHubClient(
+            client=mock_httpx,
+            cache_path=tmp_path / "cache" / "http_cache.sqlite",
+        ) as client:
+            orchestrator = PipelineOrchestrator(config=test_config, client=client, limit=2)
+            result = await orchestrator.run_async()
+
+    records = load_repositories_dataset(result["parquet_path"])
+    assert len(records) == 2
+    for rec in records:
+        assert rec["cfr_b"] == pytest.approx(1 / 3)
+        assert rec["cfr_b_tier"] == "Medium"
+        assert rec["cfr_b_failed_releases"] == 1
+        assert rec["cfr_b_evaluated_releases"] == 3
+        assert rec["cfr_b_censored_releases"] == 0
+        assert rec["cfr_b_skipped_releases"] == 0
+
+    with open(result["csv_path"], "r", encoding="utf-8") as f:
+        rows = list(csv.DictReader(f))
+    assert all(col in rows[0] for col in CFR_B_COLUMNS)
+    assert float(rows[0]["cfr_b"]) == pytest.approx(1 / 3)
+    assert rows[0]["cfr_b_tier"] == "Medium"
+
+
+async def test_pipeline_cfr_b_default_fixture_has_no_failures(
+    test_config: dict[str, Any], tmp_path: Path
+):
+    """With monthly releases and no fix commits nothing fails; the last-week release is censored."""
+    test_config["janela"]["fim"] = "2026-06-20"  # last mock release (06-15) falls in the censored week
+    transport = httpx.MockTransport(_build_mock_http_handler())
+    async with httpx.AsyncClient(transport=transport) as mock_httpx:
+        async with GitHubClient(
+            client=mock_httpx,
+            cache_path=tmp_path / "cache" / "http_cache.sqlite",
+        ) as client:
+            orchestrator = PipelineOrchestrator(config=test_config, client=client, limit=1)
+            result = await orchestrator.run_async()
+
+    rec = load_repositories_dataset(result["parquet_path"])[0]
+    assert rec["cfr_b"] == 0.0
+    assert rec["cfr_b_tier"] == "Elite"
+    assert rec["cfr_b_failed_releases"] == 0
+    assert rec["cfr_b_censored_releases"] == 1
+    assert rec["cfr_b_evaluated_releases"] + rec["cfr_b_skipped_releases"] == 5
+
+
+def test_load_repositories_dataset_old_file_without_cfr_b_columns(tmp_path: Path):
+    """Datasets written before CFR (b) existed load with None in the new columns."""
+    import pyarrow as pa
+
+    path = tmp_path / "old.parquet"
+    pq.write_table(
+        pa.table({"full_name": ["org/old"], "stars": [1234]}),
+        path,
+    )
+
+    rec = load_repositories_dataset(path)[0]
+    assert rec["full_name"] == "org/old"
+    for col in CFR_B_COLUMNS:
+        assert rec[col] is None
+
+    # Re-saving an old record keeps working and writes nulls
+    out = tmp_path / "new.parquet"
+    save_repositories_dataset([rec], out, tmp_path / "new.csv")
+    assert load_repositories_dataset(out)[0]["cfr_b"] is None
