@@ -213,8 +213,8 @@ testes automatizados com *fixtures* sintéticas (pytest) e cobertura mínima de 
 ### 3.5 Definições operacionais e métricas
 
 Todas as fórmulas abaixo estão implementadas em `metricas/` e documentadas coluna a coluna em
-`dados/README.md`. Os tempos são calculados em horas e, para classificar, convertidos conforme a
-tabela de faixas (3.5.5).
+`dados/README.md`. Os tempos são calculados em horas; para classificar, o lead time (variante (a))
+é convertido em dias (÷ 24) e o tempo de recuperação permanece em horas (3.5.5).
 
 #### 3.5.1 Frequência de deploy (RQ 01)
 
@@ -223,7 +223,9 @@ $$\text{DF} = \frac{\text{releases publicadas na janela (draft = false, prerelea
 #### 3.5.2 Lead time (RQ 02)
 
 Para cada release $R$ da janela com predecessora disponível, sejam $C_R$ os commits incluídos em $R$
-(`git log anterior..R`) e $t_R$ a data de publicação de $R$.
+(`git log anterior..R`, isto é, os alcançáveis por $R$ e não pela predecessora, o que inclui commits de
+*merge* e de ramos mesclados), $\text{autor}(c)$ a data do autor do commit $c$ (`commit.author.date`)
+e $t_R$ a data de publicação de $R$ (`published_at`).
 
 * **(a) por release:** $LT_a(R) = t_R - \min_{c \in C_R} \text{autor}(c)$. O valor do repositório é a
   **mediana** de $LT_a$ entre as releases.
@@ -233,9 +235,17 @@ Para cada release $R$ da janela com predecessora disponível, sejam $C_R$ os com
 Regras: (i) release `first_release` ou `not_found` é ignorada e contada; (ii) release **sem commits
 novos** (lista vazia) não contribui para nenhuma das duas variantes, pois não há "commit mais
 antigo"; (iii) se a data do commit é posterior à da release (relógio adiantado, *rebase*), o lead
-time é truncado em 0. Dentro de uma mesma release, $LT_b \le LT_a$ sempre; entre releases, a mediana de
-(b) pode superar a de (a), porque (a) dá peso 1 a cada release e (b) dá a cada release o peso do seu
-número de commits (`docs/investigacao_lead_time.md`, seção 4).
+time é truncado em 0. Dentro de uma mesma release, $LT_b \le LT_a$ sempre (o commit mais antigo define
+$LT_a$; o truncamento em 0 preserva a desigualdade); entre releases, a mediana de (b) pode superar a de
+(a), porque (a) dá peso 1 a cada release e (b) dá a cada release o peso do seu número de commits
+(`docs/investigacao_lead_time.md`, seção 4). Na base de 330 repositórios, 138 têm mediana (b) maior que
+a (a) (`dados/analises/lead_time_diagnostico.csv`); nos quatro casos de maior concentração, conferidos
+à mão, a causa foi uma release *major* grande e antiga cercada de *patches* pequenos e rápidos. A
+verificação automática do invariante por release não encontrou nenhuma violação.
+
+Como só SHAs, datas de autor e assuntos são lidos, o clone sem árvores nem arquivos (`tree:0`) não
+altera o lead time. O que o alterou foi o `--single-branch`, que omitia tags de ramos de manutenção
+(seção 3.9).
 
 #### 3.5.3 Taxa de falha de mudanças, variante (a): proxy de CI (RQ 03 e RQ 05)
 
@@ -287,8 +297,9 @@ exemplo, notas 4, 3, 3 e 1 dão mediana 3, logo High). No dataset atual, a faixa
 variante (a), a de CFR usa a variante (a) e o CFR (b) **não** entra na nota geral.
 
 Tratamento de valores ausentes: se lead time, CFR ou tempo de recuperação são nulos, o código
-atribui a faixa **Low** (nota 1) àquela métrica; só `cfr_b_tier` é deixado nulo.
-`[VERIFICAR: esse tratamento penaliza repositórios sem episódios de falha resolvidos (um repositório sem nenhuma falha vira Low em recuperação). Decidir se o artigo mantém a regra, declara a limitação ou analisa os nulos à parte. Na versão versionada do dataset há 18 repositórios com recovery_hours nulo.]`
+(`metricas/dora.py::classify_*`) atribui a faixa **Low** (nota 1) àquela métrica; só `cfr_b_tier` é
+deixado nulo. A frequência de deploy nunca é nula.
+`[VERIFICAR: esse tratamento penaliza repositórios sem episódios de falha resolvidos. No dataset versionado, os 18 repositórios com recovery_hours nulo se dividem em 15 sem nenhum episódio de falha (todos com cfr_a = 0) e 3 só com episódios censurados; todos ficam com recovery_tier = Low. Como cálculo de verificação, tratar como Elite os 15 sem episódios mudaria a classificação geral de 14 deles. Também no dataset versionado, os 61 repositórios com lead_time_a_hours nulo ficam Low em lead time; com o lead time corrigido (docs/investigacao_lead_time.md) resta 1 nulo (expo/expo). Decidir se o artigo mantém a regra, declara a limitação ou analisa os nulos à parte.]`
 
 Em todas as RQs, reportamos **mediana e intervalo interquartil (IQR)**, e não média e desvio-padrão,
 por causa da assimetria das distribuições, como pede o guia.
@@ -302,8 +313,10 @@ por causa da assimetria das distribuições, como pede o guia.
 | C3 | tag | (b) | (a) |
 
 O dataset traz, além da referência, `c2_deployment_frequency`, `c2_lead_time_b_hours`,
-`c3_deployment_frequency` e `c3_lead_time_b_hours`.
-`[VERIFICAR: o cfr_b do dataset é calculado sobre as releases de C1 (dados/README.md, seção 2.1), e não sobre as de C2 (releases + pré-releases). A combinação C2 definida no guia usa CFR (b); decidir, ao implementar a RQ 07, se o CFR (b) de C2 será recalculado sobre C2 ou se isso será declarado como limitação.]`
+`c3_deployment_frequency` e `c3_lead_time_b_hours`. Em C3, a data de uma tag é a data do autor do commit
+apontado por ela (`git for-each-ref`, não a data de criação da tag), e não o `published_at` de uma
+release.
+`[VERIFICAR: o cfr_b do dataset é calculado sobre as releases de C1 (dados/README.md, seção 2.1; pipeline/orchestrator.py chama compute_cfr_b_columns com release_commits_c1), e não sobre as de C2 (releases + pré-releases). A combinação C2 definida no guia usa CFR (b); decidir, ao implementar a RQ 07, se o CFR (b) de C2 será recalculado sobre C2 ou se isso será declarado como limitação.]`
 
 ### 3.6 CFR (b) e a heurística de release corretiva
 
@@ -316,35 +329,48 @@ contra a amostra rotulada manualmente (seção 3.7).
 **Classificação de cada release da janela** (`metricas/cfr_b.py::calculate_cfr_b`, as unidades em
 ordem cronológica, C1):
 
-1. **Censurada:** publicada depois de `janela.fim − 7 dias`. Ainda não se sabe se haverá correção;
-   fica fora do denominador.
-2. **Sem falha:** não existe próxima release, ou a próxima veio **mais de 7 dias** depois.
+1. **Censurada:** publicada depois de `janela.fim − 7 dias`. Como `"2026-09-30"` é lido como
+   2026-09-30T00:00Z, isso vale para releases publicadas depois de 23/09/2026 00:00 UTC. Ainda não se sabe
+   se haverá correção; fica fora do denominador.
+2. **Sem falha:** não existe próxima release, ou a próxima veio **mais de 7 dias** depois (exatamente 7
+   dias ainda conta como "em até 7 dias", conforme `test_corrective_release_exactly_seven_days_later_counts`).
 3. **Ignorada (*skipped*):** a próxima veio em até 7 dias, mas os commits dela são desconhecidos
    (`status` `first_release` ou `not_found`), então não dá para julgar se ela é corretiva; fica fora do
    denominador.
 4. Caso contrário, a próxima release $N$ (em até 7 dias) é avaliada pela heurística: se $N$ é
-   corretiva, $R$ **falhou**; senão, $R$ **não falhou**.
+   corretiva, $R$ **falhou**; senão, $R$ **não falhou**. O veredito depende só da tag e dos commits de $N$;
+   os commits da própria $R$ não são usados.
 
 Assim, `avaliadas = falhas + sem falha`, e, por repositório,
 `avaliadas + censuradas + ignoradas = releases na janela`. O $\text{CFR}_b$ é nulo se `avaliadas = 0`.
 Note-se que apenas a **próxima** release é examinada; releases seguintes dentro dos 7 dias não são
-consideradas.
+consideradas, e a "próxima" é sempre a seguinte na ordem de publicação entre as releases de C1 da
+janela.
 
 **Heurística `v1`** (`metricas/cfr_b.py::heuristic_v1`; é a única versão registrada, e a versão em uso
-é escolhida em `cfr_b.heuristica` do `config.yaml`). A release $N$, com predecessora $R$, é
+é escolhida em `cfr_b.heuristica` do `config.yaml`, com `v1` como padrão; o dataset **não** grava qual
+versão foi usada, conforme `dados/README.md`, seção 2.1). A release $N$, com predecessora $R$, é
 **corretiva** se as duas condições ocorrem juntas:
 
 1. **só o número de *patch* aumenta** em relação a $R$ no Versionamento Semântico ([semver.org](https://semver.org/lang/pt-BR/))
-   (por exemplo, `2.3.0 → 2.3.1`; `MAJOR` e `MINOR` iguais e `PATCH` maior). O padrão aceito é
-   `MAJOR.MINOR[.PATCH]` com prefixo livre (`v`, `release-`, `pkg@`) e sufixo opcional (`-rc.1`,
-   `+build`); `PATCH` ausente vale 0; e
+   (por exemplo, `2.3.0 → 2.3.1`; `MAJOR` e `MINOR` iguais e `PATCH` maior, não necessariamente em +1).
+   O padrão aceito é `MAJOR.MINOR[.PATCH]` no **final** da tag, com prefixo livre (`v`, `release-`,
+   `pkg@`; o caractere anterior à versão não pode ser dígito nem ponto) e sufixo opcional (`-rc.1`,
+   `+build`); `PATCH` ausente vale 0. O sufixo é ignorado na comparação (`2.3.0-rc.1 → 2.3.0` não é
+   incremento de *patch*), e o nome do pacote não é comparado (em monorepos, `a@1.0.1` após `b@1.0.0`
+   conta como incremento de *patch*); e
 2. **ao menos um commit de $N$** tem, no assunto, uma das palavras `revert`/`reverts`/`reverted`,
    `hotfix`/`hot-fix`, `fix`/`fixes`/`fixed` ou `bugfix`, como palavra inteira e sem diferenciar
-   maiúsculas de minúsculas (`fix(escopo):` também vale).
+   maiúsculas de minúsculas (`fix(escopo):`, `bug fix` e `bug-fix` também valem; `fixing`, `reverting`,
+   `hotfixes` e `fix_x` não valem).
 
-Quando alguma das tags não segue SemVer, o critério de versão é desconhecido e vale **só** o critério 2.
-A escolha do operador **E** (e não OU) se deve ao fato de que quase toda release tem algum commit com
-"fix"; com OU, quase tudo viraria "corretiva" (`docs/relatorio_sprint2_gabriel_assis.md`).
+Quando alguma das tags não segue esse padrão (por exemplo, `nightly`, `1.2.3.4` ou `v1.2.3_beta`), o
+critério de versão é desconhecido e vale **só** o critério 2. Tags de calendário (CalVer, como
+`2026.01.29`) casam com o padrão e são lidas como `MAJOR.MINOR.PATCH` (`2026.1.29`), de modo que o
+"*patch*" passa a ser o dia do mês (ver 3.9).
+A escolha do operador **E** (e não OU) se deve, segundo o relatório da Sprint 02, a que quase toda release
+tem algum commit com "fix" e, com OU, quase tudo viraria "corretiva" (`docs/relatorio_sprint2_gabriel_assis.md`);
+essa frequência é uma afirmação qualitativa do relatório e não foi medida neste repositório.
 
 `[PENDENTE: versão final da heurística (v1 ou refinamentos v2, v3...) e o F1 de cada versão testada, que dependem da avaliação contra o consenso (#62), por sua vez dependente da rotulação (#57, #61, #64) e do consenso (#65). Hoje só a v1 existe.]`
 
@@ -479,16 +505,19 @@ versionados; o que depende de resultados futuros está marcado.
 * **Release não é deploy.** Uma biblioteca que publica uma release por mês não "implanta" nada em
   produção; os usuários é que o fazem. A frequência de deploy mede cadência de publicação.
 * **Falha de CI não é falha em produção.** O CFR (a) mede falhas do pipeline no default branch; o
-  CFR (b) só captura falhas severas o bastante para motivar uma nova release em até 7 dias. As duas
+  CFR (b) só captura falhas que motivam uma nova release corretiva em até 7 dias. As duas
   variantes medem coisas diferentes.
 * **A heurística de release corretiva pode errar.** Ela usa só a mudança de *patch* e palavras no
-  **assunto** do commit (o corpo da mensagem não é coletado); releases corretivas que mudam o *minor*,
-  tags fora de SemVer e correções sem palavra-chave escapam, e palavras como "fix" em manutenção
-  rotineira podem gerar falsos positivos. `[PENDENTE: precisão, recall e F1 reais (#62).]`
+  **assunto** do commit (o corpo da mensagem não é coletado). Releases corretivas que mudam o *minor*
+  e correções sem palavra-chave escapam (falsos negativos). Palavras como "fix" em manutenção rotineira
+  e tags fora de SemVer, que são julgadas só pelas palavras, podem gerar falsos positivos. Tags de
+  calendário (CalVer, como `2026.01.29` em `yt-dlp/yt-dlp`) são lidas como SemVer, e o "*patch*"
+  vira o dia do mês, o que distorce o critério 1. `[PENDENTE: precisão, recall e F1 reais (#62).]`
 * **Só a próxima release é examinada** no CFR (b). Quem publica muitas releases em menos de 7 dias
-  tem mais chance de aparecer como "falha", o que pode gerar correlação espúria na RQ 05.
-* **Data do autor.** `commit.author.date` pode ser distorcida por *rebase* e *squash merge*, e
-  valores posteriores à release são truncados em 0.
+  tem, em princípio, mais chance de aparecer como "falha", o que poderia gerar correlação espúria na
+  RQ 05 (hipótese, ainda não testada).
+* **Data do autor.** `commit.author.date` pode ser distorcida por *rebase* e *squash merge* (aviso do
+  guia), e valores posteriores à release são truncados em 0.
 * **Predecessora de outra linha de manutenção.** A release anterior é a cronologicamente anterior
   (definição comum da turma, necessária para a replicação), mas em projetos com várias linhas de
   manutenção ela pode estar em outra linha (por exemplo, `v19.0.1` comparada com `v19.2.0` no
@@ -497,9 +526,26 @@ versionados; o que depende de resultados futuros está marcado.
   maior. Em monorepos, tags de pacotes diferentes também contam. Uma variante "por linha" pode entrar
   na análise de sensibilidade (`docs/investigacao_lead_time.md`, seção 5).
 * **Monorepos com várias releases por commit.** No `expo/expo`, 145 das 146 releases da janela não têm
-  commits novos em relação à anterior; por isso é o único repositório sem lead time.
-* **Tags (C3).** São todas as tags do repositório, o que pode incluir tags que não são entregas.
-* **Valores ausentes viram "Low"** na classificação (3.5.5). `[VERIFICAR: ver 3.5.5.]`
+  commits novos em relação à anterior (a restante tem tag não encontrada); por isso é o único
+  repositório sem lead time depois da correção do clone.
+* **Tags (C3).** São todas as tags do repositório, o que pode incluir tags que não são entregas. Além
+  disso, a data de uma tag é a data do autor do commit apontado, e não a de criação da tag, de modo que
+  o lead time de C3 mede o intervalo entre commits e o commit etiquetado.
+* **Motivos de valores nulos.** Um valor nulo nunca é imputado; o que muda é o tratamento na classificação.
+  * `lead_time_a_hours`/`lead_time_b_hours`: nenhuma release da janela pôde ser avaliada (todas
+    `first_release`, `not_found` ou sem commits novos). No `repositorios.csv` versionado há 61 nulos (59 por
+    tag não encontrada em todas as releases, 1 por tag não encontrada somada a releases sem commits novos e
+    1 por primeira release somada a tag não encontrada; `docs/investigacao_lead_time.md`, seção 3.1);
+    depois da correção do clone resta 1 (`expo/expo`).
+  * `recovery_hours`: nenhum episódio de falha foi resolvido. No `repositorios.csv` versionado há 18
+    nulos: 15 repositórios sem nenhum episódio de falha (todos com `cfr_a = 0`) e 3 com apenas episódios
+    censurados (`censored_episodes_ratio = 1`). Entre os 330, 151 têm ao menos um episódio censurado.
+  * `cfr_a`: nulo só sem nenhum run válido, o que o critério de ≥ 50 runs válidos impede; nenhum nulo no
+    `repositorios.csv` versionado.
+  * `cfr_b`: nulo quando `cfr_b_evaluated_releases = 0` (todas as releases da janela censuradas ou
+    ignoradas). `[PENDENTE: contar os nulos de cfr_b depois da regeneração do dataset (#56); o repositorios.csv versionado não tem as colunas cfr_b*.]`
+  * Os nulos de lead time, CFR (a) e recuperação viram **Low** na classificação (3.5.5), e os de
+    `cfr_b` ficam sem faixa. `[VERIFICAR: ver 3.5.5.]`
 * **Releases e janela.** Releases publicadas em 30/09/2026 depois de 00:00 UTC ficam fora da janela
   (3.2).
 
@@ -514,8 +560,8 @@ versionados; o que depende de resultados futuros está marcado.
   um intervalo ainda com `total_count ≥ 1.000` é lido só até 10 páginas (1.000 runs), e o dataset não
   traz coluna indicando que isso ocorreu. `[VERIFICAR: medir em quantos repositórios isso aconteceu; o resultado da divisão (bisection_events) não é persistido.]`
 * **A correção do clone mudou os resultados.** Antes de buscar todas as tags, 5.289 das releases da
-  janela (20,6%) eram descartadas como `not_found` (`--single-branch` trazia só as tags do default
-  branch); depois da correção, resta **1**. O lead time passou de 269 para 329 repositórios com valor,
+  janela (20,6%) eram descartadas como `not_found` (`--single-branch` trazia só as tags alcançáveis a
+  partir do default branch, e não as de ramos de manutenção); depois da correção, resta **1**. O lead time passou de 269 para 329 repositórios com valor,
   a mediana de (a) foi de 6,91 para 10,35 dias e a de (b), de 6,07 para 11,97 dias; 23 dos 269 repositórios
   que já tinham valor mudaram de faixa de lead time. Isso mostra a sensibilidade das métricas à
   coleta. `[PENDENTE: o repositorios.csv/.parquet versionado ainda é anterior a essa correção (61 repositórios com lead time nulo no CSV; 1 depois da correção). Regerar o dataset (#56) antes de reportar qualquer valor de lead time.]`
@@ -551,7 +597,8 @@ versionados; o que depende de resultados futuros está marcado.
   recuperação usa só os episódios resolvidos na mediana; como o guia alerta, ignorar os censurados faz
   os repositórios parecerem mais rápidos para se recuperar. A proporção de censurados é reportada por
   repositório (`censored_episodes_ratio`). `[PENDENTE: proporções reais de censura e, se o grupo quiser, uma análise de sensibilidade que trate os censurados (RQ 04).]`
-* **Releases ignoradas por tag não encontrada (404).** Contadas e reportadas: depois da correção,
+* **Releases fora do lead time (tag não encontrada, primeira release, sem commits novos).** Contadas e
+  reportadas: depois da correção,
   das 25.732 releases da janela, 21.835 têm commits novos, 3.835 não têm commits novos, 61 são a
   primeira release da história do repositório e **1** tem tag não encontrada
   (`dados/analises/lead_time_diagnostico.csv`).
