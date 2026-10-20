@@ -619,11 +619,29 @@ versionados; o que depende de resultados futuros está marcado.
 
 O pipeline (código, `config.yaml`, testes e documentação) e os dados (`dados/repositorios.csv` e
 `.parquet`, `funil.csv`, `runs/`, `analises/`, `amostra_ouro/`) estão versionados no repositório do
-grupo. `dados/releases/` e `dados/releases_c2/` (cerca de 320 MB; um arquivo passa de 100 MB) **não**
-são versionados e são regenerados em cerca de 10 minutos por
-`uv run python -m pipeline.persist_releases --config config.yaml`. O dicionário de dados completo está
-em `lab03/dados/README.md`. `dados/tags/` também é gerado pelo pipeline, mas não consta entre os
-arquivos versionados hoje. A replicação cruzada é relatada em seção própria.
+grupo. As dependências ficam travadas em `uv.lock` (`uv sync --frozen` no CI) e o projeto exige
+Python ≥ 3.12 (`requires-python`). O dicionário de dados completo está em `lab03/dados/README.md`.
+`[VERIFICAR: o .python-version versionado fixa o Python 3.14, enquanto o README e o dicionário de dados citam 3.12; confirmar com qual versão a coleta foi feita e alinhar os documentos.]`
+
+`dados/releases/` e `dados/releases_c2/` (cerca de 320 MB, segundo o dicionário de dados e o
+relatório da Sprint 02; um arquivo passa de 100 MB) **não** são versionados (`.gitignore`).
+`releases/` pode ser regenerado por `uv run python -m pipeline.persist_releases --config config.yaml`,
+que precisa de rede e levou cerca de 10 a 12 minutos para os 330 repositórios (o dicionário de dados
+diz cerca de 10; o relatório da Sprint 02, cerca de 12). Esse comando **não** gera `releases_c2/`
+nem `tags/`: eles só são escritos pelo pipeline completo (`python -m pipeline --clean`), que
+seleciona a amostra de novo a partir do estado atual do GitHub. `dados/tags/` também não consta entre
+os arquivos versionados hoje.
+
+Os `runs/` versionados bastam para recalcular, sem rede, `cfr_a`, `recovery_hours` e
+`censored_episodes_ratio`. O lead time e o CFR (b) dependem de `releases/`, que precisa ser
+regenerado. O `repositorios.csv`/`.parquet` versionado tem 24 das 38 colunas atuais (sem pré-releases,
+tags, C2, C3 e `cfr_b*`) e é anterior à correção do clone (seção 3.4); ele só fica consistente com o
+dicionário de dados depois da regeneração (#56).
+`[VERIFICAR: dados/runs/ tem 333 arquivos para 330 repositórios no dataset; elastic__elasticsearch, home-assistant__core e ueberdosis__tiptap não constam em repositorios.csv. Hipótese, não verificada: foram descartados depois da coleta de runs (o orquestrador grava runs/ antes da etapa de clone). Decidir se esses arquivos saem do versionamento ou são documentados.]`
+
+Como a coleta lê o estado do GitHub no momento da execução (Search API, contagens, releases, tags e
+runs mudam com o tempo) e o cache HTTP não é versionado, uma replicação reproduz o método, e não
+necessariamente os mesmos valores (seção 3.2). A replicação cruzada é relatada em seção própria.
 `[PENDENTE: link final do repositório e do GitHub Projects no artigo; link do Overleaf (#48).]`
 
 ---
