@@ -429,6 +429,69 @@ async def test_pipeline_resumption_after_interruption(test_config: dict[str, Any
     assert names == ["org/repo-valid-1", "org/repo-valid-2"]
 
 
+@pytest.mark.parametrize("state_mode", ["missing", "stale_counter"])
+async def test_funnel_stays_consistent_when_resuming_without_accepted_in_state(
+    test_config: dict[str, Any], tmp_path: Path, state_mode: str
+):
+    """Regression (#66): repos accepted in an earlier run must be counted in the funnel.
+
+    `total_evaluated` used to be persisted in the state file and started at 0
+    when that file was missing (the `len(evaluated_names)` fallback was dead
+    code), so a run resumed from an existing dataset did not count the repos
+    accepted before. In the real collection the resumed run reported 653
+    evaluated for a final sample of 330 (653 - 423 discards = 230): the 100
+    repos accepted in the first run were missing from the first row.
+    """
+    import json
+
+    transport = httpx.MockTransport(_build_mock_http_handler())
+    cache_path = tmp_path / "cache" / "http_cache.sqlite"
+
+    async with httpx.AsyncClient(transport=transport) as mock_httpx:
+        async with GitHubClient(client=mock_httpx, cache_path=cache_path) as client1:
+            orchestrator1 = PipelineOrchestrator(
+                config=test_config, client=client1, limit=1
+            )
+            result1 = await orchestrator1.run_async()
+    assert result1["accepted_count"] == 1
+
+    state_path = orchestrator1.state_file
+    if state_mode == "missing":
+        # State lost between runs: only the dataset (accepted repos) survives
+        state_path.unlink()
+    else:
+        # Legacy state whose counter does not include the repo accepted in run 1
+        state = json.loads(state_path.read_text(encoding="utf-8"))
+        state["total_evaluated"] = (
+            state.get("discarded_no_actions", 0)
+            + state.get("discarded_low_releases", 0)
+            + state.get("discarded_low_runs", 0)
+            + state.get("discarded_git_errors", 0)
+        )
+        state_path.write_text(json.dumps(state), encoding="utf-8")
+
+    async with httpx.AsyncClient(transport=transport) as mock_httpx:
+        async with GitHubClient(client=mock_httpx, cache_path=cache_path) as client2:
+            orchestrator2 = PipelineOrchestrator(
+                config=test_config, client=client2, limit=2
+            )
+            result2 = await orchestrator2.run_async()
+
+    assert result2["accepted_count"] == 2
+    # valid-1 (accepted in run 1) + valid-2 + no-actions + few-releases
+    assert result2["total_evaluated"] == 4
+
+    with open(result2["funil_csv"], newline="", encoding="utf-8") as f:
+        rows = list(csv.DictReader(f))
+    quantities = [int(r["quantidade_restante"]) for r in rows]
+    assert quantities[0] == 4
+    assert quantities[-1] == 2
+    for prev, cur in zip(rows, rows[1:-1]):
+        assert int(cur["quantidade_restante"]) == (
+            int(prev["quantidade_restante"]) - int(cur["descartados"])
+        )
+
+
 CFR_B_COLUMNS = [
     "cfr_b",
     "cfr_b_tier",

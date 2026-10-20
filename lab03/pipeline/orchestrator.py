@@ -194,9 +194,29 @@ FUNNEL_FIRST_STAGE_LABEL = (
 )
 
 
+def count_evaluated_candidates(
+    accepted_count: int,
+    discarded_no_actions: int,
+    discarded_low_releases: int,
+    discarded_low_runs: int,
+    discarded_git_errors: int = 0,
+) -> int:
+    """Return how many candidates were evaluated: every one is accepted or discarded.
+
+    Derived from the outcome counters instead of a separately persisted total,
+    so runs resumed from an earlier collection cannot make the funnel drift.
+    """
+    return (
+        accepted_count
+        + discarded_no_actions
+        + discarded_low_releases
+        + discarded_low_runs
+        + discarded_git_errors
+    )
+
+
 def export_funnel_summary(
     funnel_path: str | Path,
-    total_evaluated: int,
     discarded_no_actions: int,
     discarded_low_releases: int,
     discarded_low_runs: int,
@@ -205,30 +225,42 @@ def export_funnel_summary(
     min_releases: int = 5,
     min_workflow_runs: int = 50,
 ) -> Path:
-    """Construct and export selection funnel CSV adhering to Table T4 specifications."""
+    """Construct and export selection funnel CSV adhering to Table T4 specifications.
+
+    The first row is the number of evaluated candidates, i.e. the accepted ones
+    (including those accepted in earlier resumed runs) plus every discard, so
+    each row equals the previous one minus its discards and the last row is
+    ``accepted_count``.
+    """
     funnel = FunnelTracker()
-    remaining = total_evaluated
+    remaining = count_evaluated_candidates(
+        accepted_count=accepted_count,
+        discarded_no_actions=discarded_no_actions,
+        discarded_low_releases=discarded_low_releases,
+        discarded_low_runs=discarded_low_runs,
+        discarded_git_errors=discarded_git_errors,
+    )
     funnel.record_stage(
         etapa=FUNNEL_FIRST_STAGE_LABEL,
         quantidade_restante=remaining,
         descartados=0,
         motivo_descarte="-",
     )
-    remaining = max(0, remaining - discarded_no_actions)
+    remaining -= discarded_no_actions
     funnel.record_stage(
         etapa="Filtro de uso de CI/CD (GitHub Actions)",
         quantidade_restante=remaining,
         descartados=discarded_no_actions,
         motivo_descarte="total_count de workflows == 0 ou erro de acesso",
     )
-    remaining = max(0, remaining - discarded_low_releases)
+    remaining -= discarded_low_releases
     funnel.record_stage(
         etapa=f"Filtro de releases na janela (>= {min_releases})",
         quantidade_restante=remaining,
         descartados=discarded_low_releases,
         motivo_descarte=f"Menos de {min_releases} releases publicadas na janela",
     )
-    remaining = max(0, remaining - discarded_low_runs)
+    remaining -= discarded_low_runs
     funnel.record_stage(
         etapa=f"Filtro de workflow runs na janela (>= {min_workflow_runs})",
         quantidade_restante=remaining,
@@ -236,7 +268,7 @@ def export_funnel_summary(
         motivo_descarte=f"Menos de {min_workflow_runs} runs válidos no default branch",
     )
     if discarded_git_errors > 0:
-        remaining = max(0, remaining - discarded_git_errors)
+        remaining -= discarded_git_errors
         funnel.record_stage(
             etapa="Filtro de integridade de clone local (Git Blobless)",
             quantidade_restante=remaining,
@@ -334,7 +366,6 @@ class PipelineOrchestrator:
             except Exception as e:
                 logger.warning("Could not read state file %s: %s", self.state_file, e)
         return {
-            "total_evaluated": 0,
             "discarded_no_actions": 0,
             "discarded_low_releases": 0,
             "discarded_low_runs": 0,
@@ -638,8 +669,9 @@ class PipelineOrchestrator:
             evaluated_names = set(state.get("evaluated_names", []))
             evaluated_names.update(accepted_names)
 
+            # `total_evaluated` is no longer persisted: a stale value in an old
+            # state file is ignored and the total is derived from the counters.
             stats = {
-                "total_evaluated": state.get("total_evaluated", len(evaluated_names)),
                 "discarded_no_actions": state.get("discarded_no_actions", 0),
                 "discarded_low_releases": state.get("discarded_low_releases", 0),
                 "discarded_low_runs": state.get("discarded_low_runs", 0),
@@ -661,7 +693,6 @@ class PipelineOrchestrator:
                 )
                 export_funnel_summary(
                     funnel_path=self.funil_csv,
-                    total_evaluated=stats["total_evaluated"],
                     discarded_no_actions=stats["discarded_no_actions"],
                     discarded_low_releases=stats["discarded_low_releases"],
                     discarded_low_runs=stats["discarded_low_runs"],
@@ -671,7 +702,9 @@ class PipelineOrchestrator:
                     min_workflow_runs=self.min_workflow_runs,
                 )
                 return {
-                    "total_evaluated": stats["total_evaluated"],
+                    "total_evaluated": count_evaluated_candidates(
+                        accepted_count=len(accepted_records), **stats
+                    ),
                     "accepted_count": len(accepted_records),
                     "parquet_path": self.dataset_parquet,
                     "csv_path": self.dataset_csv,
@@ -721,7 +754,6 @@ class PipelineOrchestrator:
                                 accepted_records.append(record)
                                 accepted_names.add(full_name)
                                 evaluated_names.add(full_name)
-                                stats["total_evaluated"] += 1
                                 logger.info(
                                     "Accepted repository [%d/%d]: %s (stars: %d, tier: %s)",
                                     len(accepted_records),
@@ -745,7 +777,6 @@ class PipelineOrchestrator:
                         else:
                             # Discarded repository
                             evaluated_names.add(full_name)
-                            stats["total_evaluated"] += 1
                             if reason == "no_actions":
                                 stats["discarded_no_actions"] += 1
                             elif reason == "low_releases":
@@ -762,7 +793,6 @@ class PipelineOrchestrator:
                         })
                         export_funnel_summary(
                             funnel_path=self.funil_csv,
-                            total_evaluated=stats["total_evaluated"],
                             discarded_no_actions=stats["discarded_no_actions"],
                             discarded_low_releases=stats["discarded_low_releases"],
                             discarded_low_runs=stats["discarded_low_runs"],
@@ -800,7 +830,6 @@ class PipelineOrchestrator:
             })
             export_funnel_summary(
                 funnel_path=self.funil_csv,
-                total_evaluated=stats["total_evaluated"],
                 discarded_no_actions=stats["discarded_no_actions"],
                 discarded_low_releases=stats["discarded_low_releases"],
                 discarded_low_runs=stats["discarded_low_runs"],
@@ -811,7 +840,9 @@ class PipelineOrchestrator:
             )
 
             return {
-                "total_evaluated": stats["total_evaluated"],
+                "total_evaluated": count_evaluated_candidates(
+                    accepted_count=len(accepted_records), **stats
+                ),
                 "accepted_count": len(accepted_records),
                 "parquet_path": self.dataset_parquet,
                 "csv_path": self.dataset_csv,
