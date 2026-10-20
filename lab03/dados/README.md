@@ -146,7 +146,9 @@ Armazena as tags Git do repositório mapeadas na janela de observação (mais a 
 
 ## 7. Como regenerar o dataset final
 
-`repositorios.csv`, `repositorios.parquet`, `funil.csv` e `runs/` são regenerados pelo pipeline completo. Os `repositorios.csv`/`repositorios.parquet` versionados hoje foram gerados antes das colunas atuais existirem: o CSV tem apenas as 24 primeiras colunas da seção 2 (até `overall_dora_tier`), sem as colunas de pré-releases, tags, C2, C3 e `cfr_b*`. Eles só voltam a ser consistentes com este dicionário após uma regeneração.
+`repositorios.csv`, `repositorios.parquet`, `funil.csv` e `runs/` são gerados pelo pipeline completo (`python -m pipeline`). Como a amostra-ouro (60 repositórios, seed 42) foi sorteada sobre os 330 repositórios atuais, o **conjunto de repositórios não pode mudar**; por isso as colunas novas são preenchidas por *backfill* (seção 7.1), e não por uma nova busca.
+
+**Estado atual (execução de 2026-10-20):** `repositorios.csv` e `repositorios.parquet` têm as 38 colunas da seção 2, com os mesmos 330 repositórios e a mesma ordem. As 24 primeiras colunas (até `overall_dora_tier`) são as da coleta original, inalteradas; as 6 colunas `cfr_b*` foram preenchidas pelo backfill. As 8 colunas de pré-releases, tags, C2 e C3 (`prereleases_count_window`, `total_prereleases`, `tags_count_window`, `total_tags`, `c2_*`, `c3_*`) **continuam nulas**: só existem para repositórios processados pela versão atual do pipeline e ainda não têm backfill.
 
 Requisitos:
 
@@ -166,9 +168,38 @@ uv run python -m pipeline --config config.yaml --clean
 
 Pontos de atenção:
 
-- `--clean` é obrigatório para recalcular as colunas. Sem ele, o pipeline reaproveita os repositórios já gravados em `repositorios.parquet` e **não** os recalcula: nesses repositórios as colunas `cfr_b*` ausentes saem nulas.
+- Uma regeneração completa com `--clean` refaz a busca de candidatos e **não preserva o conjunto de 330 repositórios** (ver a seção 7.1 para o caminho que o preserva). `--clean` é o caminho para recalcular todas as colunas. Sem ele, o pipeline reaproveita os repositórios já gravados em `repositorios.parquet` e **não** os recalcula: nesses repositórios as colunas `cfr_b*` ausentes saem nulas.
 - `--clean` apaga `repositorios.parquet`, `repositorios.csv`, `funil.csv` e `.pipeline_state.json`. Os diretórios `runs/`, `releases/`, `releases_c2/` e `tags/` não são apagados; seus arquivos são sobrescritos para cada repositório aceito.
 - A seleção usa a Search API, que reflete o estado atual do GitHub; a amostra regenerada pode diferir da anterior (estrelas, releases e runs mudam com o tempo).
-- Não há comando que preencha só as colunas `cfr_b*` nos repositórios já coletados. `python -m pipeline.persist_releases` (seção 5) regenera apenas `releases/`, e `python -m analises.persistir_amostra_ouro` persiste `releases/` só dos 60 repositórios da amostra-ouro.
+- `python -m pipeline.persist_releases` (seção 5) regenera apenas `releases/`, e `python -m analises.persistir_amostra_ouro` persiste `releases/` só dos 60 repositórios da amostra-ouro; nenhum dos dois altera `repositorios.*`. Para preencher só as colunas `cfr_b*` nos repositórios já coletados, use o backfill da seção 7.1.
 - `releases/` e `releases_c2/` não são versionados (seção 5); versione apenas `repositorios.*`, `funil.csv` e `runs/`.
 - Depois de regenerar, rode `uv run python -m pytest --cov=metricas --cov=pipeline --cov-report=term-missing --cov-fail-under=80` e confira se as 38 colunas de `repositorios.parquet` seguem a seção 2.
+
+### 7.1 Backfill das colunas `cfr_b*` sem alterar os 330 repositórios
+
+`pipeline/backfill_cfr_b.py` preenche as colunas `cfr_b*` do dataset existente. Para cada repositório, na ordem do arquivo, lê `releases/{owner}__{repo}.parquet` (coletando-o antes, pelo mesmo caminho de `persist_releases`, se não existir), calcula as colunas com a heurística de `cfr_b.heuristica` (`config.yaml`, padrão `v1`) pela mesma função do orquestrador e regrava `repositorios.parquet` e `repositorios.csv` com o esquema completo. Todas as outras colunas e a ordem das linhas são preservadas.
+
+```bash
+# a partir de lab03/, com GITHUB_TOKEN definido
+uv run python -m pipeline.backfill_cfr_b --config config.yaml            # coleta o que falta e preenche
+uv run python -m pipeline.backfill_cfr_b --config config.yaml --offline  # só usa dados/releases/ já existente
+```
+
+Opções: `--workers N` (padrão 4) e `--limit N` (só os N primeiros repositórios). O comando é idempotente e retomável: arquivos de `releases/` já coletados são reaproveitados, então uma execução interrompida só coleta o que falta; repositórios que falham mantêm os valores anteriores (nulos) e saem listados no relatório final (código de saída 1). Ele também avisa quando `cfr_b_evaluated_releases + cfr_b_censored_releases + cfr_b_skipped_releases` difere de `releases_count_window`. O backfill **não** reescreve `funil.csv` nem `runs/`.
+
+Execução real (2026-10-20, heurística `v1`, janela 2025-10-01 a 2026-09-30):
+
+| Resultado | Quantidade |
+|---|---|
+| Repositórios no dataset (mesmos nomes e ordem de antes) | 330 |
+| Com `cfr_b` calculado | 328 |
+| Sem release avaliável (`cfr_b` e `cfr_b_tier` nulos; todas as releases censuradas) | 2 (`Alishahryar1/free-claude-code`, `expo/expo`) |
+| Com ao menos uma release censurada | 141 |
+| Com ao menos uma release ignorada (`cfr_b_skipped_releases > 0`) | 0 |
+| `cfr_b_tier`: Elite / High / Medium / Low / nulo | 149 / 68 / 48 / 63 / 2 |
+| Releases: falhas / avaliadas / censuradas / ignoradas | 7923 / 24681 / 1050 / 0 |
+
+Observações da execução:
+
+- 12 repositórios grandes (por exemplo `llvm/llvm-project`, `rails/rails`) estouraram o timeout fixo de 120 s do `git clone` (`pipeline/git_clone.py`). Foram pré-clonados manualmente com o mesmo comando (`git clone --bare --filter=tree:0 --single-branch`, mais o *fetch* das tags), que o pipeline reaproveita, e o backfill foi reexecutado para coletá-los.
+- `PostHog/posthog` tem 2576 releases na janela em `releases_count_window` (coleta original) e 2575 na coleta atual (2165 avaliadas + 410 censuradas); a diferença de uma release vem de a coleta ter sido refeita meses depois. O `releases_count_window` original foi mantido.

@@ -62,6 +62,12 @@ O comando executa automaticamente todo o fluxo:
 
 Para regenerar o dataset final (requisitos, `--clean` e o que é versionado), veja a seção 7 do [Dicionário de Dados](./dados/README.md#7-como-regenerar-o-dataset-final).
 
+Para preencher as colunas `cfr_b*` do dataset já coletado **sem alterar os 330 repositórios** (a amostra-ouro foi sorteada sobre eles), use o backfill, executado em 2026-10-20 (detalhes e contagens na [seção 7.1](./dados/README.md#71-backfill-das-colunas-cfr_b-sem-alterar-os-330-repositórios)):
+
+```bash
+uv run python -m pipeline.backfill_cfr_b --config config.yaml
+```
+
 ### Execução com Amostra Reduzida (`--limit`)
 Para validar o pipeline ou realizar testes rápidos, utilize o argumento `--limit`:
 
@@ -140,6 +146,7 @@ lab03/
 │   ├── commits.py            # Coleta de commits entre releases (compare)
 │   ├── git_clone.py          # Clone blobless temporário: tags e commits via git local
 │   ├── persist_releases.py   # Regenera dados/releases/ de repositórios já aceitos
+│   ├── backfill_cfr_b.py     # Preenche as colunas cfr_b* do dataset sem mudar os repositórios
 │   ├── graphql/              # Consulta GraphQL de detalhes do repositório e releases
 │   ├── workflow_runs.py      # Coleta de runs com bissecção e armazenamento Parquet
 │   └── funnel.py             # Rastreamento e exportação do funil de seleção
@@ -160,6 +167,7 @@ lab03/
     ├── test_git_clone.py
     ├── test_graphql.py
     ├── test_persist_releases.py
+    ├── test_backfill_cfr_b.py
     ├── test_tags_extraction.py
     ├── test_amostra_ouro.py
     ├── test_investigar_lead_time.py
