@@ -88,7 +88,11 @@ da coleta, uma nova execução pode produzir uma amostra ligeiramente diferente.
 teto de 1.000 resultados por consulta: `>10000`, `5001..10000`, `2501..5000`, `1501..2500` e
 `1000..1500`. Cada consulta usa os qualificadores `archived:false`, `mirror:false` e `size:>1000`,
 ordenação por estrelas decrescente e até 10 páginas de 100 resultados. Duplicatas entre faixas são
-unificadas por `owner/name`.
+unificadas por `owner/name`. As faixas são percorridas na ordem acima e os candidatos são avaliados
+na ordem em que chegam; como o funil avaliou menos de 1.000 candidatos (653 na Tabela 2), a primeira
+faixa (`>10000`) basta para explicar a amostra, e as demais não devem ter sido alcançadas (inferência
+a partir da contagem do funil e do teto de 1.000 resultados por consulta; o log da execução não está
+versionado).
 
 **Critérios de inclusão (aplicados nesta ordem a cada candidato).**
 
@@ -99,16 +103,29 @@ unificadas por `owner/name`.
 3. **≥ 50 *workflow runs* válidos no default branch na janela:** runs do evento `push` cuja
    conclusão é `success` ou falha (`failure`, `timed_out`, `startup_failure`); as demais conclusões
    não contam.
-4. **Integridade do clone local:** repositórios cujo `git clone` falha de forma irrecuperável são
-   descartados.
+4. **Integridade do clone local:** repositórios cuja etapa de clone local falha de forma irrecuperável
+   são descartados (no código, qualquer exceção nessa etapa, que inclui o `git clone`, a leitura das
+   tags e dos commits e a gravação dos Parquet de releases).
+
+Erros de coleta são contados na etapa em que ocorrem: uma falha ao obter as releases (inclusive na
+rota de contingência REST) entra no descarte "menos de 5 releases", e uma falha ao obter os *runs*
+entra no descarte "menos de 50 runs" (`pipeline/orchestrator.py::evaluate_candidate`). Esses
+descartes por erro não são distinguidos dos descartes por critério no `funil.csv`.
 
 **Seleção da amostra final.** Os candidatos são avaliados em ordem decrescente de estrelas, por
-trabalhadores assíncronos concorrentes, e a avaliação **para ao atingir 330 repositórios
-aceitos** (`amostra.tamanho_final`). Na prática, a amostra é composta dos repositórios mais populares
-que cumprem todos os critérios. Como há concorrência, a ordem de aceitação pode divergir levemente
-da ordem estrita de estrelas.
+4 trabalhadores assíncronos concorrentes (padrão de `PipelineOrchestrator`), e a avaliação **para ao
+atingir 330 repositórios aceitos** (`amostra.tamanho_final`). Na prática, a amostra é composta dos
+repositórios mais populares que cumprem todos os critérios. Como há concorrência, a ordem de aceitação
+pode divergir levemente da ordem estrita de estrelas.
 
-**Tabela 2.** Funil de seleção, exatamente como está em `dados/funil.csv`.
+A amostra atual resulta de **duas execuções** do pipeline com retomada: as 100 primeiras linhas de
+`dados/repositorios.csv` são exatamente os 100 repositórios aceitos na execução da Issue #47 (commit
+de 10/10/2026), e as 230 seguintes foram acrescentadas no commit que escalou a coleta (Issue #53,
+14/10/2026).
+Na retomada, os repositórios já aceitos são pulados. Por isso o arquivo não está ordenado por
+estrelas, e as estrelas dos dois blocos foram medidas em momentos diferentes.
+
+**Tabela 2.** Funil de seleção: valores de `dados/funil.csv` (rótulos das etapas abreviados).
 
 | Etapa | Restantes | Descartados | Motivo |
 |---|---:|---:|---|
@@ -119,13 +136,13 @@ da ordem estrita de estrelas.
 | Integridade do clone local | 230 | 2 | falha irrecuperável no `git clone` |
 | **Amostra final** | **330** | — | — |
 
-`[VERIFICAR: a coluna "restantes" do funil.csv não fecha. 653 − 56 − 315 − 50 − 2 = 230, mas a amostra final é 330. A soma dos descartes (423) mais as 330 aceitas dá 753, ou seja, exatamente 100 a mais que o 653 da primeira linha, e as quatro linhas intermediárias ficariam 697, 382, 332 e 330. Hipótese, NÃO verificada: 100 repositórios aceitos em uma coleta anterior (Sprint 01) não entraram no contador total_evaluated do estado salvo (pipeline/orchestrator.py, estado em .pipeline_state.json). Antes de publicar a Tabela 2, a Marcela (#31/#66) deve confirmar a causa e corrigir o funil.csv; este rascunho não altera o arquivo.]`
+`[VERIFICAR: a coluna "restantes" do funil.csv não fecha. 653 − 56 − 315 − 50 − 2 = 230, mas a amostra final é 330. A soma dos descartes (423) mais as 330 aceitas dá 753, ou seja, exatamente 100 a mais que o 653 da primeira linha, e as quatro linhas intermediárias ficariam 697, 382, 332 e 330. Evidências já conferidas: (i) as 100 primeiras linhas de repositorios.csv são exatamente os 100 repositórios do repositorios.csv do commit da Issue #47; (ii) 230 + 100 = 330; (iii) no código, o contador total_evaluated parte de 0 quando não há .pipeline_state.json (pipeline/orchestrator.py::_load_state) e os 100 aceitos anteriores só entram em accepted_records/evaluated_names, não no contador. Isso torna provável que o funil conte apenas a segunda execução, mas NÃO está confirmado, porque o .pipeline_state.json e o log da execução não são versionados. Antes de publicar a Tabela 2, a Marcela (#31/#66) deve confirmar a causa e corrigir o funil.csv (o funil completo seria 753 → 697 → 382 → 332 → 330 se os 100 aceitos antes forem somados a todas as etapas); este rascunho não altera o arquivo.]`
 
 A primeira linha conta os candidatos **avaliados**, e não todos os resultados que a Search API
 devolveria, porque a avaliação para ao atingir a meta (`docs/criterios_selecao_e_funil.md`).
 
 **Caracterização da amostra.** Valores calculados sobre as 330 linhas de `dados/repositorios.csv`
-(colunas disponíveis nessa versão do arquivo; estrelas medidas no momento da coleta):
+(24 colunas nessa versão do arquivo; estrelas medidas no momento da coleta de cada bloco de repositórios):
 
 | Característica | Valor |
 |---|---|
