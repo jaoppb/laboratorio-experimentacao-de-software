@@ -57,8 +57,10 @@ O comando executa automaticamente todo o fluxo:
 3. **Filtro de Releases:** Coleta releases e exige $\ge 5$ releases publicadas na janela de 12 meses.
 4. **Filtro de Workflow Runs:** Coleta execuções de push no default branch e exige $\ge 50$ runs válidos.
 5. **Metadados e Commits:** Coleta estrelas, linguagem, contribuidores e commits entre releases consecutivas.
-6. **Cálculo de Métricas DORA:** Computa Deployment Frequency, Lead Time (a) e (b), Change Failure Rate (CFR a) e Tempo de Recuperação, além do tier DORA final.
-7. **Exportação e Funil:** Salva incrementalmente `dados/repositorios.parquet`, `dados/repositorios.csv`, `dados/funil.csv` e `dados/runs/*.parquet`.
+6. **Cálculo de Métricas DORA:** Computa Deployment Frequency, Lead Time (a) e (b), Change Failure Rate (CFR a e CFR b) e Tempo de Recuperação, além do tier DORA final e das combinações C2 (releases + pré-releases) e C3 (tags).
+7. **Exportação e Funil:** Salva incrementalmente `dados/repositorios.parquet`, `dados/repositorios.csv`, `dados/funil.csv`, `dados/runs/*.parquet`, `dados/releases/*.parquet`, `dados/releases_c2/*.parquet` e `dados/tags/*.parquet`.
+
+Para regenerar o dataset final (requisitos, `--clean` e o que é versionado), veja a seção 7 do [Dicionário de Dados](./dados/README.md#7-como-regenerar-o-dataset-final).
 
 ### Execução com Amostra Reduzida (`--limit`)
 Para validar o pipeline ou realizar testes rápidos, utilize o argumento `--limit`:
@@ -107,13 +109,26 @@ lab03/
 ├── config.yaml               # Configurações do pipeline (janela, limites e filtros)
 ├── pyproject.toml            # Dependências gerenciadas via uv
 ├── README.md                 # Guia de execução do zero e documentação do projeto
-├── dados/                    # Diretório de saída dos dados (ignorado no git com exceção do funil/README)
+├── dados/                    # Diretório de saída dos dados (releases/ e releases_c2/ não são versionados)
 │   ├── README.md             # Dicionário de dados completo de todas as colunas e métricas
 │   ├── funil.csv             # Tabela do funil de amostragem com contagens e descartes (T4)
 │   ├── repositorios.parquet  # Dataset consolidado em formato Parquet columnar (Snappy)
 │   ├── repositorios.csv      # Dataset consolidado em CSV para replicação cruzada
-│   └── runs/                 # Execuções brutas de workflow por repositório ({owner}__{repo}.parquet)
+│   ├── runs/                 # Execuções brutas de workflow por repositório ({owner}__{repo}.parquet)
+│   ├── releases/             # Releases C1 e commits por release (não versionado; regenerável)
+│   ├── releases_c2/          # Releases + pré-releases (C2) e commits (não versionado; regenerável)
+│   ├── tags/                 # Tags Git (C3) e commits entre tags consecutivas
+│   ├── analises/             # Saídas de análises (diagnóstico de lead time)
+│   └── amostra_ouro/         # Planilhas de rotulação da amostra-ouro (60 repositórios)
 ├── cache/                    # Cache local SQLite das requisições HTTP (ignorado no git)
+├── analises/                 # Scripts de análise (amostra-ouro, diagnóstico de lead time)
+│   ├── amostra_ouro.py       # Sorteio da amostra-ouro e planilhas de rotulação
+│   ├── persistir_amostra_ouro.py # Persiste releases apenas dos repositórios sorteados
+│   └── investigar_lead_time.py   # Diagnóstico de lead time nulo e de LT(b) > LT(a)
+├── validacao/                # Rótulos manuais da amostra-ouro (rotulos_{avaliador}.csv)
+├── docs/                     # Critérios de seleção, hipóteses, investigações e relatórios de sprint
+├── guialab03.md              # Enunciado/guia do laboratório
+├── artigo_contexto_e_hipoteses.md # Contexto e hipóteses do artigo
 ├── pipeline/                 # Módulos do pipeline de extração e orquestração
 │   ├── __main__.py           # Ponto de entrada CLI (python -m pipeline)
 │   ├── orchestrator.py       # Orquestrador do fluxo ponta a ponta e checkpoints
@@ -123,20 +138,31 @@ lab03/
 │   ├── metadata.py           # Coleta de metadados e contagem de contribuidores
 │   ├── releases.py           # Coleta de releases, tags e filtragem de janela
 │   ├── commits.py            # Coleta de commits entre releases (compare)
+│   ├── git_clone.py          # Clone blobless temporário: tags e commits via git local
+│   ├── persist_releases.py   # Regenera dados/releases/ de repositórios já aceitos
+│   ├── graphql/              # Consulta GraphQL de detalhes do repositório e releases
 │   ├── workflow_runs.py      # Coleta de runs com bissecção e armazenamento Parquet
 │   └── funnel.py             # Rastreamento e exportação do funil de seleção
 ├── metricas/                 # Funções de cálculo das métricas DORA
 │   ├── schemas.py            # Dataclasses tipadas (Repo, Release, Commit, WorkflowRun)
 │   ├── dora.py               # Deployment Frequency e classificação DORA (RQ01 e tiers)
 │   ├── lead_time.py          # Lead Time variantes (a) e (b) (RQ02)
+│   ├── cfr_b.py              # CFR variante (b): release corretiva em até 7 dias (heurística versionada)
 │   └── stability.py          # CFR variante (a) e Tempo de Recuperação (RQ03a e RQ04)
 └── tests/                    # Suíte de testes automatizados com fixtures e mocks
     ├── test_pipeline_integration.py # Testes de integração E2E e retomada
     ├── test_lead_time.py
     ├── test_cfr_recovery.py
+    ├── test_cfr_b.py
     ├── test_dora.py
     ├── test_releases.py
     ├── test_commits.py
+    ├── test_git_clone.py
+    ├── test_graphql.py
+    ├── test_persist_releases.py
+    ├── test_tags_extraction.py
+    ├── test_amostra_ouro.py
+    ├── test_investigar_lead_time.py
     ├── test_workflow_runs.py
     ├── test_repo_selector.py
     ├── test_metadata.py
