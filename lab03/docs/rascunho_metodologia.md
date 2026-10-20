@@ -34,10 +34,13 @@
 ### 3.1 Desenho do estudo
 
 Trata-se de um estudo observacional, quantitativo e baseado em mineração de repositórios. A unidade
-de análise é o **repositório** open-source do GitHub que usa GitHub Actions. Para cada repositório,
-calculamos as quatro métricas DORA (*deployment frequency*, *lead time for changes*, *change
-failure rate* e tempo de recuperação) (Forsgren, Humble & Kim, 2018; DORA, [guia das métricas](https://dora.dev/guides/dora-metrics-four-keys/))
-dentro de uma janela de observação de 12 meses.
+de análise é o **repositório** open-source do GitHub que usa GitHub Actions e atende aos critérios de
+inclusão da seção 3.3 (amostra-alvo de 330 repositórios, `amostra.tamanho_final` em `config.yaml`).
+Para cada repositório, calculamos as quatro métricas DORA (*deployment frequency*, *lead time for
+changes*, *change failure rate* e tempo de recuperação) (Forsgren, Humble & Kim, 2018; DORA, [guia
+das métricas](https://dora.dev/guides/dora-metrics-four-keys/)) dentro de uma única janela de
+observação de 12 meses (seção 3.2). Não há intervenção sobre os repositórios: os dados são
+coletados a posteriori, a partir de registros públicos.
 
 Como o GitHub não registra *deploys* nem falhas em produção, todas as métricas são **proxies**:
 uma *release* publicada representa um *deploy*, e uma execução de CI com falha representa uma falha.
@@ -49,17 +52,20 @@ as definições operacionais (RQ 07).
 
 | RQ | Pergunta | Métrica / variantes | Análise planejada | Hipótese informal (a priori) |
 |---|---|---|---|---|
-| RQ 01 | Qual a frequência de deploys? | *Deployment frequency* = releases publicadas na janela ÷ 52,1 semanas | mediana, IQR e faixa DORA | `artigo_contexto_e_hipoteses.md` |
+| RQ 01 | Qual a frequência de deploys? | *Deployment frequency* = releases publicadas (sem rascunhos nem pré-releases) na janela ÷ 52,1 semanas | mediana, IQR e faixa DORA | `artigo_contexto_e_hipoteses.md` |
 | RQ 02 | Qual o tempo entre commit e deploy? | *Lead time*: (a) por release; (b) por commit | mediana, IQR e faixa DORA; contraste (a) × (b) | `docs/hipoteses_rq02_rq03_rq05.md` |
-| RQ 03 | Qual a taxa de falha das mudanças entregues? | CFR: (a) proxy de CI; (b) proxy de entrega (release corretiva em até 7 dias) | mediana, IQR e faixa DORA; contraste (a) × (b) | `docs/hipoteses_rq02_rq03_rq05.md` |
-| RQ 04 | Qual o tempo de recuperação após falha de CI? | Duração de episódios de falha por workflow; proporção de episódios censurados | mediana, IQR e faixa DORA | `docs/hipoteses_rq04_rq07.md` |
+| RQ 03 | Qual a taxa de falha das mudanças entregues? | CFR: (a) proxy de CI (runs `push` do default branch com falha ÷ runs com sucesso ou falha); (b) proxy de entrega (release corretiva em até 7 dias) | mediana, IQR e faixa DORA; contraste (a) × (b) | `docs/hipoteses_rq02_rq03_rq05.md` |
+| RQ 04 | Qual o tempo de recuperação após falha de CI? | Duração de episódios de falha por workflow (mediana por repositório); proporção de episódios censurados | mediana, IQR e faixa DORA | `docs/hipoteses_rq04_rq07.md` |
 | RQ 05 | Maior frequência de deploy implica maior ou menor taxa de falha? | Correlação de Spearman entre RQ 01 e RQ 03, para CFR (a) e CFR (b) | ρ, p-valor e n | `docs/hipoteses_rq02_rq03_rq05.md` |
 | RQ 06 | Que características dos repositórios se associam ao desempenho? | Métricas das RQ 01 a 04 comparadas entre subgrupos | Kruskal-Wallis / Mann-Whitney, correção de Holm, ε² / Cliff's δ | `artigo_contexto_e_hipoteses.md` |
-| RQ 07 | A classificação DORA depende da definição operacional? | Combinações C1, C2 e C3 (seção 3.5.6) | % de mudança de categoria e κ ponderado linear | `docs/hipoteses_rq04_rq07.md` |
+| RQ 07 | A classificação DORA depende da definição operacional? | Combinações C1, C2 e C3 (seção 3.5.6) | % de mudança de categoria e κ de Cohen ponderado (pesos lineares) | `docs/hipoteses_rq04_rq07.md` |
 | RQ 08 (bônus) | (Rework rate ou evolução temporal) | — | — | `[PENDENTE: decisão do grupo sobre fazer ou não a RQ 08; nada disso existe no repositório]` |
 
-As hipóteses informais foram escritas **antes** da coleta e da análise dos dados, conforme o guia, e
-estão na Introdução do artigo; esta seção não as repete.
+As hipóteses informais foram versionadas antes do primeiro dado do Lab03 (arquivos de hipóteses em
+08/10/2026; primeiro `repositorios.csv` em 09/10/2026, segundo o histórico do Git) e devem estar na
+Introdução do artigo; esta seção não as repete. `docs/hipoteses_rq04_rq07.md` foi alterado depois
+(#51, 14/10/2026, correção da definição de falha no texto da RQ 04).
+`[VERIFICAR: a ordem “hipótese antes dos dados” foi checada só pelas datas dos commits; o histórico não prova que nenhuma coleta local anterior a 09/10 foi vista pelos autores, e o texto da Introdução no Overleaf não está no repositório. Os autores devem confirmar a afirmação.]`
 
 ### 3.2 Fonte de dados e janela de observação
 
