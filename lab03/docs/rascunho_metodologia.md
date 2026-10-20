@@ -376,10 +376,12 @@ julgamento humano, e rotular o tipo do projeto (fator da RQ 06).
 **Amostragem.** Foram sorteados **60 repositórios** das 330 linhas de `dados/repositorios.parquet`,
 com `df.sample(n=60, random_state=42)`, e, para cada um, **5 releases** sorteadas entre as releases
 publicadas da janela (C1, sem pré-releases), com semente determinística por repositório
-(`42 × 1000 + índice do repositório`). Resultam **300 linhas** (60 × 5). O sorteio e a lista exata de
-repositórios e releases estão em `dados/amostra_ouro/sorteio_info.json` (gerado em 15/10/2026), e
-o código está em `analises/amostra_ouro.py`.
-`[VERIFICAR: o sorteio usou a ordem das linhas do dataset de 15/10/2026. Se o dataset for regenerado (#56) e a composição das 330 mudar, a lista de 60 repositórios pode deixar de pertencer à amostra final. O sorteio_info.json é o registro oficial dos 60.]`
+(`42 × 1000 + índice`, em que o índice vai de 1 a 60 na ordem do sorteio dos repositórios). O desenho
+prevê **300 linhas** (60 × 5). A lista dos 60 repositórios está em `dados/amostra_ouro/sorteio_info.json`
+(gerado em 15/10/2026) e o código está em `analises/amostra_ouro.py`. Reexecutar o sorteio sobre o
+`repositorios.parquet` e o `repositorios.csv` versionados reproduz exatamente os mesmos 60 repositórios.
+`[VERIFICAR: o sorteio de releases só foi feito para 30 dos 60 repositórios. Para os outros 30, o arquivo dados/releases/ do repositório não existia no momento do sorteio (analises/amostra_ouro.py::carregar_releases_repositorio devolve lista vazia), então releases_sorteadas está vazia no sorteio_info.json e as 5 linhas de cada um (150 das 300) saíram na planilha com tag_name = "(pendente de persistência)" e sem data. Hoje só 150 releases reais estão identificadas. Antes de a rotulação seguir, é preciso persistir as releases desses 30 repositórios (analises.persistir_amostra_ouro) e gerar de novo as planilhas (analises.amostra_ouro), e as 150 linhas já rotuladas em validacao/rotulos_marcela.csv precisam ser refeitas, porque não apontam para uma release identificável.]`
+`[VERIFICAR: o sorteio usou a ordem das linhas do dataset de 15/10/2026. Se o dataset for regenerado (#56) e a composição ou a ordem das 330 mudar, a lista de 60 repositórios pode deixar de pertencer à amostra final. O sorteio_info.json é o registro oficial dos 60.]`
 
 **Rotulação independente.** Cada um dos três autores preenche, **sem consultar os demais e sem ver a
 saída da heurística**, sua própria planilha (CSV/XLSX com *links* diretos para a página de cada
@@ -397,7 +399,7 @@ arquivos com valores diferentes entre as linhas do mesmo repositório são rejei
 
 **Concordância entre avaliadores.** Para cada dimensão, calculamos o **kappa de Fleiss** (`[REF: Fleiss, 1971]`)
 entre os 3 avaliadores com `statsmodels` (`aggregate_raters` com `n_cat` fixo, seguido de
-`fleiss_kappa`):
+`fleiss_kappa(..., method="fleiss")`):
 
 $$P_i = \frac{\sum_j n_{ij}^2 - n}{n(n-1)}, \qquad \bar{P} = \frac{1}{N}\sum_i P_i, \qquad P_e = \sum_j p_j^2, \qquad \kappa = \frac{\bar{P} - P_e}{1 - P_e}$$
 
@@ -406,7 +408,7 @@ $i$, e $p_j$ a proporção global da categoria $j$. Reportamos também a concord
 apoio. Se todos os avaliadores escolhem sempre a mesma categoria, $P_e = 1$ e o kappa é indefinido;
 a ferramenta o reporta como `n/d`, e isso será discutido. A interpretação segue Landis & Koch (1977):
 < 0 pobre; 0,00-0,20 leve; 0,21-0,40 razoável; 0,41-0,60 moderada; 0,61-0,80 substancial; 0,81-1,00
-quase perfeita. Um kappa baixo indica que o próprio critério é ambíguo, o que é um achado e será
+quase perfeita (a ferramenta usa limites superiores inclusivos, por exemplo 0,40 é razoável). Um kappa baixo indica que o próprio critério é ambíguo, o que é um achado e será
 discutido. O kappa é calculado **antes** da reunião de consenso e os arquivos de rótulos individuais
 **não são editados depois**.
 
@@ -437,9 +439,11 @@ releases), e reavalia-se. **Cada versão testada, mesmo as que falharam, e o seu
 
 **Estado atual da validação manual** (verificado nesta data no repositório):
 
-* o sorteio e as planilhas em branco existem (`dados/amostra_ouro/`; Issue #63);
+* o sorteio e as planilhas em branco existem (`dados/amostra_ouro/`; Issue #63), mas só 30 dos 60
+  repositórios têm as 5 releases identificadas (ver o `[VERIFICAR]` em "Amostragem");
 * **apenas um** dos três arquivos de rótulos existe: `validacao/rotulos_marcela.csv`, que passa na
-  validação de formato da ferramenta (300 linhas válidas);
+  validação de formato da ferramenta (300 linhas válidas; essa validação compara `repo_name` e
+  `tag_name` com a planilha e, por isso, não detecta que 150 linhas têm `tag_name` pendente);
 * **não existem** `validacao/rotulos_joao.csv`, `validacao/rotulos_gabriel.csv` nem
   `validacao/consenso.csv`. Rodar `python -m analises.concordancia kappa` termina com código 2,
   informando os arquivos ausentes.
