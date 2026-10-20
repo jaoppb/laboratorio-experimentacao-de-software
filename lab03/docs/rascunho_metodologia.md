@@ -459,16 +459,20 @@ afirmar o contrário até que os arquivos existam.
 ### 3.8 Análise estatística planejada
 
 Esta subseção descreve o plano do guia. **Nenhum script das RQ 05, 06 e 07 existe ainda no
-repositório** (a pasta `analises/` tem apenas amostra-ouro, concordância, avaliação da heurística e
-diagnóstico de lead time), e nenhum resultado é reportado.
-`[PENDENTE: scripts e resultados das RQ 01 a 07 (Sprint 03); issues ainda não abertas no repositório.]`
+repositório** (a pasta `analises/` tem apenas amostra-ouro, concordância, avaliação da heurística,
+diagnóstico de lead time e persistência das releases da amostra-ouro; uma busca por `spearmanr`,
+`kruskal`, `mannwhitneyu`, `multipletests` e `cohen_kappa` no código Python não encontra nada), e
+nenhum resultado é reportado.
+`[PENDENTE: scripts e resultados das RQ 01 a 07 (Sprint 03); não há issue aberta para isso até a #69.]`
 
 * **Estatística descritiva (RQ 01 a 04).** Mediana e IQR de cada métrica entre os repositórios,
   distribuição das faixas DORA e da classificação geral. Para o tempo de recuperação, também a
   proporção de episódios censurados.
 * **RQ 05.** Correlação de Spearman ($\rho$) entre frequência de deploy e CFR, **separadamente** para
   CFR (a) e CFR (b), reportando $\rho$, p-valor e $n$ (`[REF: Spearman]`). Spearman foi escolhida por
-  não exigir normalidade nem linearidade. Correlação não implica causalidade.
+  não exigir normalidade nem relação linear (mede associação monotônica, a partir dos postos). O $n$
+  pode diferir entre as duas variantes, porque o CFR (b) é nulo quando nenhuma release do repositório
+  pôde ser avaliada (3.6). Correlação não implica causalidade.
 * **RQ 06.** Comparação das métricas das RQ 01 a 04 entre subgrupos definidos por **no mínimo três
   fatores** entre: linguagem principal, popularidade (quartis de estrelas), número de contribuidores
   (quartis), idade do repositório (quartis) e tipo do projeto. Teste de Kruskal-Wallis para fatores
@@ -479,18 +483,20 @@ diagnóstico de lead time), e nenhum resultado é reportado.
   delta) para dois grupos, interpretado por |δ| < 0,147 desprezível, < 0,33 pequeno, < 0,474 médio e
   ≥ 0,474 grande (Romano et al., 2006).
   `[PENDENTE: fatores efetivamente usados. Decisão aberta na Issue #69, ver abaixo.]`
+  `[VERIFICAR: o guia descreve o tipo do projeto com três grupos (biblioteca/framework, aplicação/serviço, ferramenta CLI), mas a rotulação da amostra-ouro admite também "outro". Definir se "outro" vira um quarto grupo ou é excluído da RQ 06.]`
 * **RQ 07.** Para cada combinação C1, C2 e C3 (3.5.6), classifica-se cada repositório em
-  Elite/High/Medium/Low (3.5.5). Para cada par (C1×C2, C1×C3, C2×C3) calcula-se a **porcentagem de
+  Elite/High/Medium/Low (3.5.5; ver o `[VERIFICAR]` sobre o CFR (b) de C2 em 3.5.6). Para cada par (C1×C2, C1×C3, C2×C3) calcula-se a **porcentagem de
   repositórios que mudaram de categoria** e o **kappa de Cohen ponderado linear**
   (`sklearn.metrics.cohen_kappa_score(..., weights='linear')`; `[REF: Cohen, 1968]`), que pesa menos
   uma troca entre categorias vizinhas do que uma troca entre extremos, por serem ordinais.
 
-**Decisão aberta: fator "tipo do projeto" na RQ 06 (Issue #69).** O tipo do projeto só é rotulado nos
+**Decisão aberta: fator "tipo do projeto" na RQ 06 (Issue #69, aberta).** O tipo do projeto só é rotulado nos
 60 repositórios da amostra-ouro. Se ele for um dos fatores da RQ 06, essa análise terá $n = 60$,
-contra $n = 330$ nos demais fatores. As opções registradas na issue são: **(a)** não usar o tipo;
-**(b)** rotular o tipo nos 330 repositórios (uma dimensão só, mas com mais carga de rotulação); ou
-**(c)** usar com $n = 60$ e registrar como ameaça à validade. A decisão e a justificativa ainda não
-foram tomadas.
+contra até $n = 330$ nos demais fatores (o $n$ de cada teste ainda varia com os valores nulos de cada
+métrica). As opções registradas na issue são: **(a)** não usar o tipo; **(b)** rotular o tipo nos
+330 repositórios (uma dimensão só, o que é mais rápido que a rotulação completa, mas aumenta a carga
+de rotulação da sprint); ou **(c)** usar com $n = 60$ e registrar como ameaça à validade. A decisão
+e a justificativa ainda não foram tomadas.
 `[PENDENTE: decisão (a), (b) ou (c) da Issue #69 e sua justificativa. Se for (a), ajustar a hipótese 4 da RQ 06 na Introdução (artigo_contexto_e_hipoteses.md), que hoje prevê um efeito do tipo de projeto.]`
 
 ### 3.9 Ameaças à validade e limitações conhecidas
