@@ -12,8 +12,9 @@ import csv
 import json
 import logging
 from datetime import datetime
+from collections.abc import Sequence
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import pyarrow as pa
 import pyarrow.parquet as pq
@@ -22,6 +23,7 @@ from metricas.dora import (
     calculate_deployment_frequency,
     evaluate_repository_dora,
 )
+from metricas.cfr_b import DEFAULT_HEURISTIC, HEURISTICS, calculate_cfr_b
 from metricas.lead_time import calculate_lead_time
 from metricas.schemas import _parse_datetime
 from metricas.stability import (
@@ -48,6 +50,9 @@ from pipeline.releases import (
 )
 from pipeline.repo_selector import iter_candidates_by_stars
 from pipeline.workflow_runs import collect_workflow_runs, save_runs_to_parquet
+
+if TYPE_CHECKING:
+    from pipeline.commits import ReleaseCommits
 
 logger = logging.getLogger(__name__)
 
@@ -85,8 +90,40 @@ SCHEMA_REPOSITORIOS = pa.schema(
         ("c2_lead_time_b_hours", pa.float64()),
         ("c3_deployment_frequency", pa.float64()),
         ("c3_lead_time_b_hours", pa.float64()),
+        ("cfr_b", pa.float64()),
+        ("cfr_b_tier", pa.string()),
+        ("cfr_b_failed_releases", pa.int64()),
+        ("cfr_b_evaluated_releases", pa.int64()),
+        ("cfr_b_censored_releases", pa.int64()),
+        ("cfr_b_skipped_releases", pa.int64()),
     ]
 )
+
+
+def compute_cfr_b_columns(
+    release_commits: Sequence[ReleaseCommits],
+    window_end: datetime | str,
+    heuristic: str = DEFAULT_HEURISTIC,
+) -> dict[str, Any]:
+    """Compute the CFR (b) dataset columns from the C1 releases of a repository.
+
+    `cfr_b` and `cfr_b_tier` are None when no release could be evaluated
+    (all censored or skipped); the counters are always filled.
+    """
+    result = calculate_cfr_b(
+        [(rc.release, rc.commits_or_none) for rc in release_commits],
+        window_end=window_end,
+        version=heuristic,
+    )
+    tier = result.tier
+    return {
+        "cfr_b": result.cfr_b,
+        "cfr_b_tier": tier.value if tier is not None else None,
+        "cfr_b_failed_releases": result.failed_releases,
+        "cfr_b_evaluated_releases": result.evaluated_releases,
+        "cfr_b_censored_releases": result.censored_releases,
+        "cfr_b_skipped_releases": result.skipped_releases,
+    }
 
 
 def save_repositories_dataset(
@@ -245,6 +282,15 @@ class PipelineOrchestrator:
         self.target_size: int = limit if limit is not None else config_limit
         self.min_releases: int = amostra.get("min_releases", 5)
         self.min_workflow_runs: int = amostra.get("min_workflow_runs", 50)
+
+        self.cfr_b_heuristic: str = (
+            config.get("cfr_b", {}).get("heuristica") or DEFAULT_HEURISTIC
+        )
+        if self.cfr_b_heuristic not in HEURISTICS:
+            raise ValueError(
+                f"Unknown CFR (b) heuristic {self.cfr_b_heuristic!r}; "
+                f"available: {sorted(HEURISTICS)}"
+            )
 
         self.star_ranges: list[str] = busca.get(
             "star_ranges",
@@ -509,6 +555,13 @@ class PipelineOrchestrator:
             recovery_hours=recovery_result.median_hours,
         )
 
+        # CFR (b): delivery proxy on the C1 releases (skipped = unknown commits)
+        cfr_b_columns = compute_cfr_b_columns(
+            release_commits_c1,
+            window_end=self.window_end,
+            heuristic=self.cfr_b_heuristic,
+        )
+
         # C2 Metrics (Official Releases + Pre-releases)
         c2_dep_freq = window_releases_c2.count / 52.1
         c2_lead_time_b = lead_time_result_c2.median_b_hours
@@ -562,6 +615,7 @@ class PipelineOrchestrator:
             "c2_lead_time_b_hours": c2_lead_time_b,
             "c3_deployment_frequency": c3_dep_freq,
             "c3_lead_time_b_hours": c3_lead_time_b,
+            **cfr_b_columns,
         }
 
         return record, None

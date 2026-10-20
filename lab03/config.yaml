@@ -26,6 +26,11 @@ busca:
     - "1501..2500"
     - "1000..1500"
 
+# Variante (b) do CFR: versão da heurística de release corretiva (metricas/cfr_b.py::HEURISTICS).
+# Trocar aqui pela versão final escolhida na avaliação contra o consenso (Issue #62).
+cfr_b:
+  heuristica: "v1"
+
 # Diretórios de saída e cache local
 diretorios:
   dados: "dados"
