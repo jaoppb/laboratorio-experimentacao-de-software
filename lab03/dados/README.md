@@ -110,7 +110,11 @@ Heurística `v1` (única versão disponível em `metricas/cfr_b.HEURISTICS`): `N
 
 ## 5. Dicionário de Dados: `releases/{owner}__{repo}.parquet` e `releases_c2/{owner}__{repo}.parquet`
 
-Uma linha por release publicada **dentro** da janela de observação, em ordem cronológica. A release âncora (última antes da janela) não vira linha: ela só aparece como `previous_release` da primeira release da janela. Os commits vêm de `git log {previous_release}..{tag_name}` no clone local *blobless* (equivalente ao `compare/{base}...{head}` da API).
+Uma linha por release publicada **dentro** da janela de observação, em ordem cronológica. A release âncora (última antes da janela) não vira linha: ela só aparece como `previous_release` da primeira release da janela. Os commits vêm de `git log {previous_release}..{tag_name}` no clone local *treeless/blobless* (`--bare --filter=tree:0`, ver nota abaixo; equivalente ao `compare/{base}...{head}` da API).
+
+**Mensagem completa (`full_message`).** Além do assunto, a coleta guarda a mensagem inteira do commit (`git log --format=%B`), para a heurística CFR (b) poder ser avaliada sobre assunto + corpo (`Fixes #123`, `Revert ...` no corpo, mensagens de *merge*). Regras: quebras de linha CRLF viram `\n`, espaços nas pontas são removidos e o texto é **truncado em 10.000 caracteres** (`metricas.schemas.MAX_FULL_MESSAGE_CHARS`) para limitar o tamanho. `message` (assunto) continua igual, e a heurística `v1` lê só ele, então o resultado dela não muda. A heurística `v1_full_message` (em `metricas.cfr_b.HEURISTICS`) aplica a mesma regra da `v1` sobre `full_message`; o padrão (`DEFAULT_HEURISTIC`) segue sendo `v1`. Arquivos gerados antes desse campo não o têm: ao ler, use `Commit.from_record`, que deixa `full_message = None` e faz a `v1_full_message` cair no assunto (igual à `v1`). Custo medido em repositórios públicos: o Parquet de `releases/` cresce cerca de 35% a 70% (ver PR); recoletar é preciso para ter o campo.
+
+**Filtro do clone.** O clone é `git clone --bare --single-branch --filter=tree:0` e as tags vêm de `git fetch --filter=tree:0 origin '+refs/tags/*:refs/tags/*'`. O filtro `tree:0` já exclui árvores **e** blobs (por isso o artigo pode chamar o clone de *treeless* e de *blobless*): só os objetos de commit e as tags são baixados, e é o que `git log` e `for-each-ref` usam. O grupo decidiu usar `combine:tree:0+blob:none`, mas o GitHub rejeita filtros `combine` (`fatal: remote error: filter 'combine' not supported`), então o pipeline usa `tree:0`, que equivale ao combinado. SHAs, datas de autor, assuntos, mensagens e tags saem idênticos com e sem o filtro (testado contra um clone completo em repositório local, onde o `combine` também foi comparado, e em repositórios públicos do GitHub; ver `tests/test_git_messages_real_git.py` e o PR).
 
 - `releases/` usa a definição principal (C1): releases publicadas, `prerelease = false`.
 - `releases_c2/` usa a combinação C2 da RQ 07: releases publicadas e pré-releases.
@@ -125,7 +129,7 @@ Os dois diretórios são gravados pelo orquestrador para cada repositório aceit
 | `previous_release` | `string` | - | Tag da release anterior na ordem cronológica (pode ser a âncora, fora da janela). Nulo quando a release é a primeira da história do repositório. |
 | `status` | `string` | - | Resultado da comparação com a release anterior: `ok` (commits coletados), `first_release` (não há release anterior; ignorada no lead time) ou `not_found` (tag inexistente no clone, equivalente ao 404 do `compare`; ignorada no lead time). |
 | `commits_count` | `int64` | commits | Número de commits em `previous_release..tag_name`. `0` significa release sem commits novos; nulo quando `status ≠ ok`. |
-| `commits` | `list<struct<sha: string, committed_at: string, message: string>>` | - | Commits incluídos na release: SHA, data do autor (`commit.author.date`, ISO 8601) e **assunto** da mensagem (primeira linha, `git log --format=%s`). Lista vazia quando `status ≠ ok`. |
+| `commits` | `list<struct<sha: string, committed_at: string, message: string, full_message: string>>` | - | Commits incluídos na release: SHA, data do autor (`commit.author.date`, ISO 8601), **assunto** da mensagem em `message` (primeira linha, `%s`) e **mensagem completa** em `full_message` (assunto + corpo, `%B`). Lista vazia quando `status ≠ ok`. |
 
 ---
 
@@ -140,7 +144,7 @@ Armazena as tags Git do repositório mapeadas na janela de observação (mais a 
 | `commit_sha` | `string` | SHA-1 completo do commit apontado pela tag. |
 | `previous_tag` | `string` | Nome da tag anterior na ordem cronológica de deploy (nulo para a primeira). |
 | `commits_count` | `int64` | Quantidade de commits entre a tag anterior e a atual. |
-| `commits` | `list<struct<sha: string, committed_at: string, message: string>>` | Lista estruturada de commits entre as tags consecutivas com SHA, data e mensagem. |
+| `commits` | `list<struct<sha: string, committed_at: string, message: string, full_message: string>>` | Lista estruturada de commits entre as tags consecutivas com SHA, data, assunto (`message`) e mensagem completa (`full_message`, ver seção 5). |
 
 ---
 
@@ -152,7 +156,7 @@ Armazena as tags Git do repositório mapeadas na janela de observação (mais a 
 
 Requisitos:
 
-- Rede com acesso à API do GitHub e `git` instalado (os commits vêm de clones *blobless* temporários).
+- Rede com acesso à API do GitHub e `git` instalado (os commits vêm de clones *treeless/blobless* temporários, `--filter=tree:0`).
 - Token em `GITHUB_TOKEN` (ou vários separados por vírgula em `GITHUB_TOKENS`, que habilita rotação), em `.env` ou via `gh auth token`.
 - `uv` e Python 3.12 (`uv sync` dentro de `lab03/`).
 - Tempo: a regeneração de `releases/` de 330 repositórios leva cerca de 10 minutos (seção 5); o tempo do pipeline completo depende da cota da API e não foi medido para este documento.
