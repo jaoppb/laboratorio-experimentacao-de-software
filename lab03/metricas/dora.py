@@ -1,7 +1,7 @@
 """Calculation of Deployment Frequency and DORA performance tier classification.
 
 Follows the official specifications of Lab03 (guialab03.md):
-- Deployment Frequency = releases publicadas / 52.1 semanas
+- Deployment Frequency = releases publicadas / 52,14 semanas (365 dias)
 - Classification into Elite, High, Medium, Low for each of the 4 DORA metrics
 - Overall classification = median of the tier scores (4, 3, 2, 1), rounded down
 
@@ -50,11 +50,15 @@ POINTS_TO_TIER: dict[int, DORATier] = {
     1: DORATier.LOW,
 }
 
-# Number of weeks in a 12-month observation window
-DEFAULT_WINDOW_WEEKS: float = 52.1
+# Length of the official 12-month observation window: 2025-10-01 to 2026-09-30,
+# both days included (`janela.fim` date-only is the END of the day), i.e. 365 days.
+DEFAULT_WINDOW_DAYS: int = 365
 
-# Minimum frequency threshold for ">= 1 por mês" (12 months in 52.1 weeks)
-MONTHLY_FREQ_THRESHOLD: float = 12.0 / 52.1
+# Number of weeks in the 12-month observation window (365 / 7 = 52.14)
+DEFAULT_WINDOW_WEEKS: float = DEFAULT_WINDOW_DAYS / 7
+
+# Minimum frequency threshold for ">= 1 por mês" (12 months in 52.14 weeks)
+MONTHLY_FREQ_THRESHOLD: float = 12.0 / DEFAULT_WINDOW_WEEKS
 
 
 def calculate_deployment_frequency(
@@ -90,8 +94,8 @@ def classify_deployment_frequency(freq: float) -> DORATier:
 
     - Elite: >= 7 por semana (≈ diária ou mais)
     - High: >= 1 e < 7 por semana
-    - Medium: >= 1 por mês (≈ 12/52.1) e < 1 por semana
-    - Low: < 1 por mês (< 12/52.1)
+    - Medium: >= 1 por mês (≈ 12/52,14) e < 1 por semana
+    - Low: < 1 por mês (< 12/52,14)
     """
     if freq >= 7.0:
         return DORATier.ELITE
