@@ -131,7 +131,7 @@ lab03/
 │   ├── amostra_ouro.py       # Sorteio da amostra-ouro e planilhas de rotulação
 │   ├── persistir_amostra_ouro.py # Persiste releases apenas dos repositórios sorteados
 │   └── investigar_lead_time.py   # Diagnóstico de lead time nulo e de LT(b) > LT(a)
-├── validacao/                # Rótulos manuais da amostra-ouro (rotulos_{avaliador}.csv)
+├── validacao/                # Rótulos manuais da amostra-ouro (rotulos_{avaliador}.csv), linhas inválidas e PROVENIENCIA.md
 ├── docs/                     # Critérios de seleção, hipóteses, investigações e relatórios de sprint
 ├── guialab03.md              # Enunciado/guia do laboratório
 ├── artigo_contexto_e_hipoteses.md # Contexto e hipóteses do artigo

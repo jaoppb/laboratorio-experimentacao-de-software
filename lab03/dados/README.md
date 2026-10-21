@@ -16,7 +16,7 @@ Este diretório contém os artefatos de dados gerados pelo pipeline de mineraç�
 | `releases_c2/{owner}__{repo}.parquet` | Apache Parquet (Snappy) | Mesmo esquema de `releases/`, para a combinação C2 da RQ 07 (releases + pré-releases). |
 | `analises/lead_time_diagnostico.csv` | CSV (UTF-8) | Diagnóstico por repositório dos motivos de lead time nulo e dos casos LT(b) > LT(a), gerado por `analises/investigar_lead_time.py` (Issue #60; ver `docs/investigacao_lead_time.md`). |
 | `tags/{owner}__{repo}.parquet` | Apache Parquet (Snappy) | Tags Git avaliadas na janela (+ âncora) com datas de autor, commits e SHAs (Issue #54). |
-| `amostra_ouro/` | CSV / XLSX / JSON | Planilhas em branco de rotulação por avaliador, template e `sorteio_info.json` da amostra-ouro de 60 repositórios, gerados por `analises/amostra_ouro.py` (Issue #63). Não faz parte do dataset de métricas. |
+| `amostra_ouro/` | CSV / XLSX / JSON | Planilhas em branco de rotulação por avaliador, template e `sorteio_info.json` da amostra-ouro de 60 repositórios, gerados por `analises/amostra_ouro.py` (Issue #63); 300 linhas reais, com o sorteio dos 30 repositórios antes pendentes concluído (`--completar-pendentes`; ver `docs/amostra_ouro.md`). Não faz parte do dataset de métricas. |
 
 ---
 
