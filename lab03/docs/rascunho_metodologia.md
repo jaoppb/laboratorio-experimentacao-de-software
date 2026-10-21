@@ -4,18 +4,29 @@
 > artigo **não** vive neste repositório; este arquivo existe para que os números e as definições
 > citados batam com o que o código e os CSVs versionados realmente fazem.
 >
+> **Edição automatizada (21/10/2026), pendente de leitura pelos autores.** Esta versão aplica ao
+> rascunho as decisões do grupo de 20/10/2026 (janela de observação, regra de valores nulos, CFR (b)
+> na combinação C2, divisão dos *workflow runs*, filtro do clone e mensagens completas, funil,
+> rotulação do tipo de projeto por agentes, validação manual com avaliador LLM e política da
+> heurística) e troca os marcadores de referência (`[REF]`) pelas citações verificadas em
+> `referencias_metodologia.md`. Foi feita por um agente de IA, sem calcular nenhum resultado novo.
+> Onde uma decisão já vale para o texto mas o código ou os dados versionados ainda não a refletem,
+> o texto afirma a decisão e traz um `[PENDENTE]` dizendo o que falta (a regeneração do dataset é a
+> Issue #56).
+>
 > **Legenda dos marcadores**
 >
 > * `[PENDENTE: ...]`: informação que ainda **não existe** (resultado, decisão ou etapa humana). Diz
 >   qual issue ou arquivo vai fornecê-la. Não preencher com estimativas.
-> * `[VERIFICAR: ...]`: inconsistência ou dúvida encontrada ao cruzar documentos, código e CSVs.
->   Precisa ser resolvida pelos autores antes da submissão.
-> * `[REF: ...]`: citação bibliográfica que **não** consta nos documentos do repositório. Foi deixada
->   como marcador para não inventar referência; os autores devem localizar a fonte.
+> * `[VERIFICAR: ...]`: inconsistência ou dúvida encontrada ao cruzar documentos, código e CSVs, ou
+>   referência com verificação incompleta. Precisa ser resolvida pelos autores antes da submissão.
+> * Os marcadores `[REF]` da versão anterior foram todos substituídos por citações no formato
+>   autor-ano; a lista completa está em "Referências", no fim do arquivo.
 >
 > **Regras seguidas:** tudo o que está afirmado abaixo foi derivado do código (`metricas/`,
-> `pipeline/`, `analises/`), dos documentos em `lab03/docs/`, do `config.yaml` e dos CSVs
-> versionados. O apêndice B liga cada afirmação ao arquivo de origem. Nenhum resultado de análise
+> `pipeline/`, `analises/`), dos documentos em `lab03/docs/`, do `config.yaml`, dos CSVs
+> versionados ou das decisões do grupo de 20/10/2026 (citadas no texto como "decisão do grupo,
+> 20/10/2026"). O apêndice B liga cada afirmação ao arquivo de origem. Nenhum resultado de análise
 > (kappa, precisão/recall/F1, correlações, testes) é reportado, porque nenhum existe ainda.
 >
 > **Tamanho.** O guia limita o artigo a 10 páginas. Este rascunho é deliberadamente mais longo que a
@@ -37,10 +48,13 @@ Trata-se de um estudo observacional, quantitativo e baseado em mineração de re
 de análise é o **repositório** open-source do GitHub que usa GitHub Actions e atende aos critérios de
 inclusão da seção 3.3 (amostra-alvo de 330 repositórios, `amostra.tamanho_final` em `config.yaml`).
 Para cada repositório, calculamos as quatro métricas DORA (*deployment frequency*, *lead time for
-changes*, *change failure rate* e tempo de recuperação) (Forsgren, Humble & Kim, 2018; DORA, [guia
-das métricas](https://dora.dev/guides/dora-metrics-four-keys/)) dentro de uma única janela de
-observação de 12 meses (seção 3.2). Não há intervenção sobre os repositórios: os dados são
-coletados a posteriori, a partir de registros públicos.
+changes*, *change failure rate* e tempo de recuperação) (Forsgren, Humble & Kim, 2018; Harvey, s.d.,
+[guia das métricas](https://dora.dev/guides/dora-metrics-four-keys/); DORA, 2024) dentro de uma
+única janela de observação de 12 meses (seção 3.2). Seguimos a definição clássica das quatro
+métricas adotada no guia da disciplina; o guia online da DORA hoje descreve cinco métricas (inclui
+o *deployment rework rate*) e já renomeou a métrica de recuperação, então ele serve aqui como
+referência conceitual, e não como especificação das fórmulas. Não há intervenção sobre os
+repositórios: os dados são coletados a posteriori, a partir de registros públicos.
 
 Como o GitHub não registra *deploys* nem falhas em produção, todas as métricas são **proxies**:
 uma *release* publicada representa um *deploy*, e uma execução de CI com falha representa uma falha.
@@ -52,7 +66,7 @@ as definições operacionais (RQ 07).
 
 | RQ | Pergunta | Métrica / variantes | Análise planejada | Hipótese informal (a priori) |
 |---|---|---|---|---|
-| RQ 01 | Qual a frequência de deploys? | *Deployment frequency* = releases publicadas (sem rascunhos nem pré-releases) na janela ÷ 52,1 semanas | mediana, IQR e faixa DORA | `artigo_contexto_e_hipoteses.md` |
+| RQ 01 | Qual a frequência de deploys? | *Deployment frequency* = releases publicadas (sem rascunhos nem pré-releases) na janela ÷ 52,1 semanas (constante do guia; a janela tem 365 dias ≈ 52,14 semanas) | mediana, IQR e faixa DORA | `artigo_contexto_e_hipoteses.md` |
 | RQ 02 | Qual o tempo entre commit e deploy? | *Lead time*: (a) por release; (b) por commit | mediana, IQR e faixa DORA; contraste (a) × (b) | `docs/hipoteses_rq02_rq03_rq05.md` |
 | RQ 03 | Qual a taxa de falha das mudanças entregues? | CFR: (a) proxy de CI (runs `push` do default branch com falha ÷ runs com sucesso ou falha); (b) proxy de entrega (release corretiva em até 7 dias) | mediana, IQR e faixa DORA; contraste (a) × (b) | `docs/hipoteses_rq02_rq03_rq05.md` |
 | RQ 04 | Qual o tempo de recuperação após falha de CI? | Duração de episódios de falha por workflow (mediana por repositório); proporção de episódios censurados | mediana, IQR e faixa DORA | `docs/hipoteses_rq04_rq07.md` |
@@ -64,8 +78,13 @@ as definições operacionais (RQ 07).
 As hipóteses informais foram versionadas antes do primeiro dado do Lab03 (arquivos de hipóteses em
 08/10/2026; primeiro `repositorios.csv` em 09/10/2026, segundo o histórico do Git) e devem estar na
 Introdução do artigo; esta seção não as repete. `docs/hipoteses_rq04_rq07.md` foi alterado depois
-(#51, 14/10/2026, correção da definição de falha no texto da RQ 04).
-`[VERIFICAR: a ordem “hipótese antes dos dados” foi checada só pelas datas dos commits; o histórico não prova que nenhuma coleta local anterior a 09/10 foi vista pelos autores, e o texto da Introdução no Overleaf não está no repositório. Os autores devem confirmar a afirmação.]`
+(#51, 14/10/2026, correção da definição de falha no texto da RQ 04). Um dos autores (João Pedro)
+confirmou, em 20/10/2026, que nenhuma hipótese foi escrita nem alterada depois de ver dados do
+dataset e que ele não viu nenhuma coleta local anterior a 09/10/2026. Os outros dois autores
+(Marcela e Gabriel) **não foram consultados** sobre isso, e a ordem “hipótese antes dos dados” também
+só foi checada pelas datas dos commits; por isso a afirmação vale, por ora, como declaração de um
+autor.
+`[VERIFICAR: Marcela e Gabriel devem confirmar que não viram dados do dataset antes de escrever ou alterar as hipóteses (incluindo a alteração de 14/10/2026, #51); o texto da Introdução no Overleaf não está no repositório.]`
 
 ### 3.2 Fonte de dados e janela de observação
 
@@ -73,16 +92,42 @@ Introdução do artigo; esta seção não as repete. `docs/hipoteses_rq04_rq07.m
 repositório (seção 3.4). Seguindo o guia, a coleta é feita por código próprio (cliente HTTP
 assíncrono sobre `httpx`), sem bibliotecas prontas de acesso à API do GitHub.
 
-**Janela.** A janela de observação tem 12 meses, de **01/10/2025 a 30/09/2026** (`janela.inicio` e
-`janela.fim` em `config.yaml`). Entram nos cálculos apenas releases publicadas e *workflow runs*
+**Janela.** A janela de observação tem 12 meses, de **01/10/2025 a 30/09/2026, ambos os dias
+inclusive**: do início de 01/10/2025 (00:00:00 UTC) ao **fim do dia 30/09/2026 (23:59:59 UTC)**, o que
+dá **365 dias** (≈ 52,14 semanas). Entram nos cálculos apenas releases publicadas e *workflow runs*
 criados dentro da janela. Para a frequência de deploy, divide-se a contagem de releases por **52,1
-semanas** (≈ 365/7, constante `DEFAULT_WINDOW_WEEKS` em `metricas/dora.py`, valor indicado pelo guia
-para 12 meses). Como o limite superior é lido como 30/09/2026 às 00:00 UTC (ver abaixo), o intervalo
-efetivo tem 364 dias (52,0 semanas); a diferença no denominador é de cerca de 0,2%.
-`[VERIFICAR: o config.yaml diz que as datas foram "fixadas para a Sprint 01 conforme o enunciado" e são "ajustáveis caso o professor defina janela específica", e o guialab03.md só diz que o professor fixa as datas na abertura do Lab03S01, sem trazê-las; confirmar com o professor/enunciado que 01/10/2025-30/09/2026 é a janela oficial da turma.]`
-`[VERIFICAR: "2026-09-30" é lido como 2026-09-30T00:00:00Z (metricas/schemas.py::_parse_datetime). Verificado no código que isso vale para as duas pontas: releases entram se start <= published_at <= end (pipeline/releases.py::filter_window) e o último intervalo mensal de runs termina em 2026-09-30T00:00:00Z (pipeline/workflow_runs.py::split_window_into_months), então releases e runs de 30/09 depois de 00:00 UTC ficam de fora do limite superior; decidir se isso é aceitável ou se o limite deve ser o fim do dia.]`
+semanas** (constante `DEFAULT_WINDOW_WEEKS` em `metricas/dora.py`, valor indicado pelo guia para 12
+meses e igual a 365/7 com a precisão de uma casa; a diferença para 52,14 é de cerca de 0,08%).
 
-**Data da coleta.** `[PENDENTE: data(s) exata(s) da coleta e da regeneração final do dataset, a registrar na consolidação do dataset (#56). Indício (histórico do git): as 100 primeiras linhas de repositorios.csv vêm do commit da refatoração #47, de 10/10/2026, e o commit da amostra de 330 repositórios (#53) é de 14/10/2026.]`
+*Origem da janela.* As datas foram **definidas pelo grupo em sala de aula**. Não há registro escrito
+dessa definição e ela **não foi confirmada com o professor** (decisão do grupo, 20/10/2026: não
+será pedida confirmação). O `guialab03.md` só diz que o professor fixa as datas na abertura do
+Lab03S01, sem trazê-las.
+
+*Limite superior (mudança em relação à primeira coleta).* Na primeira coleta, `janela.fim = "2026-09-30"`
+era lido como 2026-09-30T00:00:00Z (`metricas/schemas.py::_parse_datetime`), tanto para as releases
+(`pipeline/releases.py::filter_window`) quanto para o último intervalo mensal de runs
+(`pipeline/workflow_runs.py::split_window_into_months`). O dia 30/09 ficava de fora e a janela efetiva
+tinha 364 dias (52,0 semanas). Por **decisão do grupo (20/10/2026)**, o limite superior passa a ser o
+**fim do dia** (2026-09-30T23:59:59Z, inclusive), e o dataset será regenerado com ele. Uma estimativa
+offline sobre os dados persistidos (`docs/impacto_limitacoes_conhecidas.md`, seção 3) mostra que o
+dia 30/09 corresponderia a cerca de 93 releases (0,36% das 25.731) e 7,2 mil runs (0,32%), ou seja,
+a mudança é pequena para as estatísticas agregadas e importa sobretudo para repositórios na fronteira
+de uma faixa. O corte de censura do CFR (b) (`janela.fim − 7 dias`, seção 3.6) acompanha o novo limite.
+`[PENDENTE: aplicar a mudança no config.yaml e no código e regenerar o dataset (#56). Em 21/10/2026, o config.yaml ainda traz fim "2026-09-30" lido como 00:00Z, e os CSV/Parquet versionados foram gerados com a janela de 364 dias; os valores que dependem da janela (releases na janela, deployment_frequency, censura do CFR (b), caracterização da amostra) devem ser reconferidos depois da regeneração. analises/persistir_amostra_ouro.py e analises/amostra_ouro.py (DEFAULT_WINDOW_END) também fixam o limite e precisam acompanhar a mudança.]`
+
+*Desvio documentado.* A **seleção dos 330 repositórios** (seção 3.3) e o **sorteio da amostra-ouro**
+(seção 3.7; 15/10/2026, completado em 20/10/2026) foram feitos com a janela antiga, que terminava em
+30/09/2026 às 00:00Z. Por decisão do grupo (20/10/2026), os 330 repositórios ficam **congelados**: a
+seleção e o funil não são refeitos, e a regeneração recoleta os mesmos 330 com a janela nova. Os
+critérios de inclusão (≥ 5 releases e ≥ 50 runs na janela) não são reavaliados com o dia 30/09 incluído,
+e o sorteio das releases da amostra-ouro não é refeito.
+
+**Data da coleta.** O dataset versionado foi coletado em duas execuções do pipeline, nas datas dos
+respectivos commits, confirmadas por um dos autores: **10/10/2026** (100 repositórios, Issue #47) e
+**14/10/2026** (230 repositórios, Issue #53), ambas com Python 3.14 (seção 3.10). A correção do
+funil (#66) e o preenchimento posterior das colunas `cfr_b*` (#56, 20/10/2026) não foram execuções de
+coleta. `[PENDENTE: data da regeneração final do dataset (#56), que recoleta os mesmos 330 repositórios com as regras decididas em 20/10/2026.]`
 Como a Search API e as contagens (estrelas, releases, runs) refletem o estado do GitHub no momento
 da coleta, uma nova execução pode produzir uma amostra ligeiramente diferente.
 
@@ -95,7 +140,7 @@ teto de 1.000 resultados por consulta: `>10000`, `5001..10000`, `2501..5000`, `1
 `1000..1500`. Cada consulta usa os qualificadores `archived:false`, `mirror:false` e `size:>1000`,
 ordenação por estrelas decrescente e até 10 páginas de 100 resultados. Duplicatas entre faixas são
 unificadas por `owner/name`. As faixas são percorridas na ordem acima e os candidatos são avaliados
-na ordem em que chegam; como o funil avaliou menos de 1.000 candidatos (653 na Tabela 2), a primeira
+na ordem em que chegam; como o funil avaliou menos de 1.000 candidatos (753 na Tabela 2), a primeira
 faixa (`>10000`) basta para explicar a amostra, e as demais não devem ter sido alcançadas (inferência
 a partir da contagem do funil e do teto de 1.000 resultados por consulta; o log da execução não está
 versionado).
@@ -135,20 +180,30 @@ estrelas, e as estrelas dos dois blocos foram medidas em momentos diferentes.
 
 | Etapa | Restantes | Descartados | Motivo |
 |---|---:|---:|---|
-| Candidatos avaliados até atingir a meta (Search API) | 653 | — | — |
-| Uso de CI/CD (GitHub Actions) | 597 | 56 | `total_count` de workflows = 0 ou erro de acesso |
-| ≥ 5 releases publicadas na janela | 282 | 315 | menos de 5 releases na janela |
-| ≥ 50 *workflow runs* válidos na janela | 232 | 50 | menos de 50 runs válidos no default branch |
-| Integridade do clone local | 230 | 2 | falha irrecuperável no `git clone` |
+| Candidatos avaliados até atingir a meta (Search API); **derivada: aceitos + descartes** | 753 | — | — |
+| Uso de CI/CD (GitHub Actions) | 697 | 56 | `total_count` de workflows = 0 ou erro de acesso |
+| ≥ 5 releases publicadas na janela | 382 | 315 | menos de 5 releases na janela |
+| ≥ 50 *workflow runs* válidos na janela | 332 | 50 | menos de 50 runs válidos no default branch |
+| Integridade do clone local | 330 | 2 | falha irrecuperável no `git clone` |
 | **Amostra final** | **330** | — | — |
 
-`[VERIFICAR: a coluna "restantes" do funil.csv não fecha. 653 − 56 − 315 − 50 − 2 = 230, mas a amostra final é 330. A soma dos descartes (423) mais as 330 aceitas dá 753, ou seja, exatamente 100 a mais que o 653 da primeira linha, e as quatro linhas intermediárias ficariam 697, 382, 332 e 330. Evidências já conferidas: (i) as 100 primeiras linhas de repositorios.csv são exatamente os 100 repositórios do repositorios.csv do commit da Issue #47; (ii) 230 + 100 = 330; (iii) no código, o contador total_evaluated parte de 0 quando não há .pipeline_state.json (pipeline/orchestrator.py::_load_state) e os 100 aceitos anteriores só entram em accepted_records/evaluated_names, não no contador. Isso torna provável que o funil conte apenas a segunda execução, mas NÃO está confirmado, porque o .pipeline_state.json e o log da execução não são versionados. Antes de publicar a Tabela 2, a Marcela (#31/#66) deve confirmar a causa e corrigir o funil.csv (o funil completo seria 753 → 697 → 382 → 332 → 330 se os 100 aceitos antes forem somados a todas as etapas); este rascunho não altera o arquivo.]`
+A primeira linha é **derivada**: é a soma dos repositórios aceitos (330) com os descartados nas etapas
+seguintes (56 + 315 + 50 + 2 = 423), e a coluna "restantes" fecha em cada etapa (753 − 56 = 697;
+697 − 315 = 382; 382 − 50 = 332; 332 − 2 = 330). Ela conta os candidatos **avaliados**, e não todos os
+resultados que a Search API devolveria, porque a avaliação para ao atingir a meta
+(`docs/criterios_selecao_e_funil.md`). Esta tabela corrige a versão anterior do `funil.csv`, cuja
+primeira linha era 653 e cuja coluna "restantes" terminava em 230, e não nos 330 aceitos; o código do
+pipeline passou a derivar a primeira linha em vez de persistir o contador (Issue #66). O texto do
+artigo deve descrever a primeira linha apenas como derivada (aceitos + descartes). A evidência
+disponível não permite afirmar por que o contador antigo ficou 100 abaixo do valor derivado, e este
+rascunho não propõe uma explicação.
 
-A primeira linha conta os candidatos **avaliados**, e não todos os resultados que a Search API
-devolveria, porque a avaliação para ao atingir a meta (`docs/criterios_selecao_e_funil.md`).
+Fora do funil, `dados/runs/` tem 333 arquivos para os 330 repositórios da amostra. Os três a mais
+(`elastic__elasticsearch`, `home-assistant__core` e `ueberdosis__tiptap`) são órfãos, sem linha em
+`repositorios.csv`; por decisão do grupo (20/10/2026), eles saem do versionamento (ver 3.10).
 
 **Caracterização da amostra.** Valores calculados sobre as 330 linhas de `dados/repositorios.csv`
-(24 colunas nessa versão do arquivo; estrelas medidas no momento da coleta de cada bloco de repositórios):
+(38 colunas nessa versão do arquivo, das quais 8 ainda nulas; estrelas medidas no momento da coleta de cada bloco de repositórios, 10/10 e 14/10/2026):
 
 | Característica | Valor |
 |---|---|
@@ -163,7 +218,7 @@ Observação importante para a validade externa: embora a busca aceite repositó
 estrelas, a amostra final tem **mínimo de 38.855 estrelas**, efeito direto de parar a avaliação nos
 330 primeiros aceitos em ordem de popularidade.
 
-`[PENDENTE: reconferir esta tabela depois da regeneração do dataset (#56); o repositorios.csv versionado ainda é anterior às colunas novas e à correção do lead time, e a amostra pode mudar numa nova coleta.]`
+`[PENDENTE: reconferir esta tabela depois da regeneração do dataset (#56), que recoleta os mesmos 330 repositórios com a janela de 365 dias; o repositorios.csv versionado ainda tem lead time anterior à correção do clone e as colunas de pré-releases, tags, C2 e C3 nulas, e as contagens de releases e runs mudam com o dia 30/09 incluído.]`
 
 ### 3.4 Coleta de dados e pipeline
 
@@ -190,30 +245,41 @@ devolvido pela Search API).
 ***Workflow runs*.** `GET /repos/{owner}/{repo}/actions/runs` com `branch` = default branch,
 `event=push`, `created=<início>..<fim>` e 100 resultados por página. A janela é dividida em
 intervalos por mês-calendário (UTC), consultados em paralelo. Se um intervalo devolve
-`total_count ≥ 1.000` (teto de resultados por consulta), ele é dividido ao meio e as metades são
-consultadas em paralelo, recursivamente, até a profundidade 3 (no máximo 8 subintervalos por mês) e
-desde que o intervalo tenha mais de 2 dias. Um subintervalo que ainda atinge 1.000 na profundidade
-máxima é lido só até a 10ª página, ou seja, **truncado em 1.000 runs, sem marca no dataset** (seção
-3.9). Os runs são deduplicados por `id` (as metades compartilham o instante central) e gravados em
+`total_count ≥ 1.000` (teto de resultados por consulta), ele é dividido ao meio (metades disjuntas,
+em segundos inteiros) e as metades são consultadas em paralelo, **recursivamente, sem limite de
+profundidade e sem tamanho mínimo em dias** (decisão do grupo, 20/10/2026; antes: profundidade máxima 3
+e intervalos mínimos de 2 dias). A divisão só pára quando `total_count < 1.000` ou quando o intervalo
+chega a 1 segundo. **Não há marcador de truncamento** no dataset (decisão do grupo): se um intervalo
+de 1 segundo ainda tem `total_count ≥ 1.000`, o filtro `created` não consegue separá-los, o coletor lê
+os 1.000 primeiros e registra um único aviso por repositório. Esse **limite residual** é declarado
+na seção 3.9. Os runs são deduplicados por `id` e gravados em
 `dados/runs/{owner}__{repo}.parquet`, com `id`, `workflow_id`, `name`, `event`, `branch`,
 `conclusion`, `run_started_at`, `updated_at` e `is_valid`. O arquivo guarda todos os runs
 recuperados, inclusive os de conclusão ignorada; só `is_valid` os distingue.
+`[PENDENTE: os runs/ versionados foram coletados com a regra antiga (profundidade 3, mínimo de 2 dias); a regra nova só vale para o dataset depois da regeneração (#56), que faz mais chamadas à API por repositório.]`
 
 **Commits de cada release: clone Git local no lugar do `compare`.** O guia sugere obter os commits
 de uma release com `GET /compare/{base}...{head}`. O pipeline, desde a Issue #47, obtém os mesmos
-commits com `git log {release anterior}..{release}` em um **clone parcial *bare* e *treeless***
-(`git clone --bare --filter=tree:0 --single-branch`), seguido de
-`git fetch --filter=tree:0 origin +refs/tags/*:refs/tags/*` para trazer todas as tags. O código e os
-documentos do grupo chamam esse clone de *blobless*, mas, em rigor, *blobless* é
-`--filter=blob:none`; com `tree:0` o clone omite também as árvores. A semântica é a do `compare`
-(commits alcançáveis pela release e não pela anterior), com estas vantagens:
+commits com `git log {release anterior}..{release}` em um **clone parcial *bare*, *treeless* e
+*blobless*** (`git clone --bare --single-branch` com filtro de objetos), seguido de um `fetch` com o
+mesmo filtro para trazer todas as tags. *Treeless* é o filtro `tree:0` e *blobless* é o filtro
+`blob:none`; **nota técnica:** `tree:0` já exclui as árvores **e** os blobs, então os dois nomes
+descrevem, na prática, o mesmo clone, que só traz objetos de commit e tags. Por **decisão do grupo
+(20/10/2026)**, o pipeline usa **um único filtro combinado**, `combine:tree:0+blob:none`, e o texto
+cita os dois termos. Na implementação (Issue #56), o servidor do GitHub **rejeita** filtros `combine`
+no clone (`filter 'combine' not supported`), de modo que o código passa `--filter=tree:0`
+(`pipeline/git_clone.py::CLONE_FILTER`), que é equivalente ao combinado: SHAs, datas de autor,
+assuntos, mensagens e tags saem idênticos nos testes do repositório (`dados/README.md`, seção 5).
+`[VERIFICAR: o texto do artigo não deve dizer que o clone usa literalmente combine:tree:0+blob:none; a decisão do grupo foi o filtro combinado, mas o que roda contra o GitHub é tree:0.]`
+A semântica é a do `compare` (commits alcançáveis pela release e não pela anterior), com estas
+vantagens:
 
 * **não consome a cota das APIs REST e GraphQL**, o que importa para 330 repositórios com milhares
   de releases (a base tem 25.732 releases na janela). O clone usa o protocolo Git em `github.com`,
   que tem limites próprios (ver o uso de token abaixo);
 * **não tem o teto de 250 commits** nem exige paginar o `compare`;
-* o clone sem árvores nem blobs (`tree:0`) traz apenas objetos de commit, que bastam para o
-  `git log` entre tags, em vez do repositório completo. Não medimos o ganho de tempo nem de espaço.
+* o clone sem árvores nem blobs traz apenas objetos de commit, que bastam para o `git log` entre
+  tags, em vez do repositório completo. Não medimos o ganho de tempo nem de espaço.
 
 O clone tenta primeiro sem autenticação e, se falhar por limite de taxa ou autenticação (mensagem de
 erro com `403`, `429`, `authentication`, `rate limit` ou `username`), tenta de novo com um token do
@@ -226,9 +292,15 @@ log, e as releases cujas tags faltam recebem `not_found`. A implementação via 
 (`pipeline/commits.py`) continua no código e testada, mas não é a usada na coleta.
 
 **Datas e mensagens dos commits.** Cada commit é guardado com SHA, data do **autor**
-(`%aI`, equivalente a `commit.author.date`, como manda o guia) e **assunto** da mensagem (primeira
-linha, `%s`). Diferença em relação à REST: o corpo da mensagem não é coletado (ver ameaça à validade
-na seção 3.9).
+(`%aI`, equivalente a `commit.author.date`, como manda o guia), **assunto** da mensagem (primeira
+linha, `%s`, campo `message`) e **mensagem completa** (`%B`, assunto mais corpo, campo
+`full_message`). A mensagem completa passou a ser coletada por decisão do grupo (20/10/2026): a
+primeira coleta guardava só o assunto (ver nota histórica na seção 3.9). Quebras CRLF viram `\n`,
+espaços nas pontas são removidos e o texto é truncado em 10.000 caracteres
+(`metricas.schemas.MAX_FULL_MESSAGE_CHARS`). A heurística de release corretiva `v1` continua lendo
+só o assunto (padrão inalterado); a variante `v1_full_message` aplica a mesma regra à mensagem
+completa e é avaliada junto com a `v1` (seção 3.6).
+`[PENDENTE: os releases/ e o repositorios.* versionados não têm full_message; só a regeneração (#56) o coleta.]`
 
 **Releases, pré-releases e tags (C1, C2 e C3).** Para a RQ 07, o pipeline coleta três conjuntos de
 "unidades de deploy" na mesma rodada, cada um com a lista de commits entre unidades consecutivas:
@@ -257,7 +329,7 @@ token aguarda o reinício da cota. Um token que devolve 401 é desativado. Erros
 repetidos com *backoff* exponencial: até 5 novas tentativas, com esperas de 1, 2, 4, 8 e 16 s. Toda
 resposta 2xx é gravada em um cache SQLite em disco (modo WAL), indexado por URL e parâmetros e sem
 prazo de validade. Cada repositório aceito é gravado de forma incremental em
-`dados/repositorios.parquet`/`.csv`, e os contadores do funil e os nomes já avaliados ficam em
+`dados/repositorios.parquet`/`.csv`, e os contadores de descartes e os nomes já avaliados ficam em
 `dados/.pipeline_state.json`. Assim, uma execução interrompida (limite de taxa, queda de rede,
 *Ctrl+C*) continua de onde parou: os candidatos já avaliados são pulados e as chamadas já feitas são
 servidas do cache. Como o cache não expira, uma nova execução com o mesmo `cache/` reaproveita
@@ -281,9 +353,12 @@ Todas as fórmulas abaixo estão implementadas em `metricas/` e documentadas col
 $$\text{DF} = \frac{\text{releases publicadas na janela (draft = false, prerelease = false)}}{52{,}1\ \text{semanas}}$$
 
 O numerador conta as releases com `janela.inicio ≤ published_at ≤ janela.fim` (limites inclusivos).
-O divisor 52,1 é o valor fixo do guia (≈ 365 ÷ 7) e não é recalculado a partir das datas
-configuradas: a janela de `config.yaml` (01/10/2025 a 30/09/2026 às 00:00 UTC) tem 364 dias, ou
-52,0 semanas, o que subestima a frequência em cerca de 0,2%.
+O divisor 52,1 é o valor fixo do guia (≈ 365 ÷ 7 = 52,14) e não é recalculado a partir das datas
+configuradas. Com o fim do dia 30/09/2026 (decisão do grupo, seção 3.2), a janela tem 365 dias,
+52,14 semanas, e o divisor 52,1 a subestima em cerca de 0,08%. Na primeira coleta, em que o dia 30/09
+ficava de fora, a janela efetiva tinha 364 dias (52,0 semanas) e a diferença era de cerca de 0,2%;
+esse valor é só histórico.
+`[PENDENTE: os limites inclusivos acima valem para o dataset regenerado (#56); o repositorios.* versionado foi gerado com a janela de 364 dias.]`
 
 #### 3.5.2 Lead time (RQ 02)
 
@@ -350,7 +425,8 @@ resolvidos, de todos os workflows. Um episódio que não termina até o fim do h
 `censored_episodes_ratio = censurados ÷ (resolvidos + censurados)` (0 se não há episódios). Os
 episódios censurados **não são descartados da contagem**, mas também **não entram na mediana**, que
 usa apenas os episódios resolvidos (ver ameaça na seção 3.9). O valor é nulo se nenhum episódio foi
-resolvido, seja porque não houve falha, seja porque todos os episódios ficaram censurados.
+resolvido, seja porque não houve nenhum episódio de falha, seja porque todos os episódios ficaram
+censurados; a classificação trata os dois casos de forma diferente (3.5.5).
 
 #### 3.5.5 Classificação DORA (faixas fixas da disciplina)
 
@@ -369,10 +445,31 @@ quatro métricas; a categoria é a **mediana** das quatro notas **arredondada pa
 exemplo, notas 4, 3, 3 e 1 dão mediana 3, logo High). No dataset atual, a faixa de lead time usa a
 variante (a), a de CFR usa a variante (a) e o CFR (b) **não** entra na nota geral.
 
-Tratamento de valores ausentes: se lead time, CFR ou tempo de recuperação são nulos, o código
-(`metricas/dora.py::classify_*`) atribui a faixa **Low** (nota 1) àquela métrica; só `cfr_b_tier` é
-deixado nulo. A frequência de deploy nunca é nula.
-`[VERIFICAR: esse tratamento penaliza repositórios sem episódios de falha resolvidos. No dataset versionado, os 18 repositórios com recovery_hours nulo se dividem em 15 sem nenhum episódio de falha (todos com cfr_a = 0) e 3 só com episódios censurados; todos ficam com recovery_tier = Low. Como cálculo de verificação, tratar como Elite os 15 sem episódios mudaria a classificação geral de 14 deles. Também no dataset versionado, os 61 repositórios com lead_time_a_hours nulo ficam Low em lead time; com o lead time corrigido (docs/investigacao_lead_time.md) resta 1 nulo (expo/expo). Decidir se o artigo mantém a regra, declara a limitação ou analisa os nulos à parte.]`
+**Valores ausentes (decisão do grupo, 20/10/2026).** Um valor nulo nunca é imputado; o que muda é a
+faixa atribuída (`metricas/dora.py`, `pipeline/orchestrator.py`; `dados/README.md`, seção 2):
+
+* **Tempo de recuperação nulo sem nenhum episódio de falha** (`censored_episodes_ratio = 0`): não há
+  nada a recuperar, e o repositório é classificado **Elite**. No dataset anterior à decisão, são 15
+  repositórios (todos com `cfr_a = 0`).
+* **Tempo de recuperação nulo porque todos os episódios ficaram censurados**
+  (`censored_episodes_ratio > 0`): o repositório falhou e não voltou a passar no histórico coletado, e
+  é classificado **Low**. São 3 repositórios.
+* **Lead time nulo** (falta de dado: nenhuma release avaliável): a métrica **fica sem faixa** (não é
+  `Low` nem `Elite`) e **sai da nota geral**, que passa a ser a mediana das 3 notas disponíveis, em
+  vez de 4, arredondada para baixo. No dataset anterior à correção do clone são 61 repositórios, e
+  depois dela resta 1 (`expo/expo`).
+* **CFR (a) nunca é nulo** na amostra (0 nulos nos 330); o critério de ≥ 50 runs válidos impede o
+  caso, e o código mantém `Low` caso ele ocorresse.
+* **CFR (b) fica fora da nota geral**; quando é nulo, `cfr_b_tier` é nulo.
+
+A frequência de deploy nunca é nula. Uma estimativa offline sobre os dados persistidos
+(`docs/impacto_limitacoes_conhecidas.md`, seção 4) indica a ordem de grandeza do efeito, medido
+**isoladamente** para cada regra: classificar "sem falhas" como Elite em recuperação muda a faixa
+geral de cerca de 14 repositórios, e tirar o lead time nulo da mediana muda cerca de 7. Antes da
+decisão, os nulos eram tratados como `Low` (90% dos 20 repositórios `Low` em recuperação eram nulos,
+15 deles sem falha alguma), o que penalizava justamente quem nunca falhou. A regra decidida não foi
+medida em conjunto.
+`[PENDENTE: recalcular as faixas e a nota geral e reportar a distribuição final depois da regeneração (#56): o repositorios.csv versionado foi gerado com a regra antiga (nulo → Low), e suas colunas de faixa ainda não refletem esta regra.]`
 
 Em todas as RQs, reportamos **mediana e intervalo interquartil (IQR)**, e não média e desvio-padrão,
 por causa da assimetria das distribuições, como pede o guia.
@@ -381,8 +478,8 @@ por causa da assimetria das distribuições, como pede o guia.
 
 O pipeline grava só as frequências de deploy e os lead times (b) de C2 e C3, e não as faixas nem a
 nota geral dessas combinações: a análise da RQ 07 precisa classificá-las com as mesmas funções de
-`metricas/dora.py`. O CFR (a) é o mesmo nas três combinações (`cfr_a`). As colunas de C2 e C3 ainda
-não existem no `repositorios.csv` versionado, que tem 24 colunas (ver 3.10).
+`metricas/dora.py`. O CFR (a) é o mesmo nas três combinações (`cfr_a`). O `repositorios.csv`
+versionado já tem as 38 colunas, mas as 8 de pré-releases, tags, C2 e C3 estão nulas (ver 3.10).
 
 | Combinação | Unidade de deploy | Lead time | CFR |
 |---|---|---|---|
@@ -394,7 +491,13 @@ O dataset traz, além da referência, `c2_deployment_frequency`, `c2_lead_time_b
 `c3_deployment_frequency` e `c3_lead_time_b_hours`. Em C3, a data de uma tag é a data do autor do commit
 apontado por ela (`git for-each-ref`, não a data de criação da tag), e não o `published_at` de uma
 release.
-`[VERIFICAR: o cfr_b do dataset é calculado sobre as releases de C1 (dados/README.md, seção 2.1; pipeline/orchestrator.py chama compute_cfr_b_columns com release_commits_c1), e não sobre as de C2 (releases + pré-releases). A combinação C2 definida no guia usa CFR (b); decidir, ao implementar a RQ 07, se o CFR (b) de C2 será recalculado sobre C2 ou se isso será declarado como limitação.]`
+**CFR (b) na combinação C2 (decisão do grupo, 20/10/2026).** O `cfr_b` de referência do dataset é
+calculado sobre as releases de C1 (`dados/README.md`, seção 2.1). Para a combinação C2, que usa CFR
+(b), ele é **recalculado sobre as unidades de C2** (releases publicadas **e** pré-releases, a partir de
+`dados/releases_c2/`), e não sobre C1, de acordo com a definição da combinação C2 (todas as métricas sobre a mesma unidade
+de deploy); a RQ 07 usa esse valor. Os valores de C1 e C2 serão
+reportados lado a lado: `[PENDENTE: resultados após regeneração]`.
+`[PENDENTE: implementar o cálculo no pipeline (colunas próprias de C2, previstas como c2_cfr_b*) e gerar releases_c2/ na regeneração (#56). Em 21/10/2026, pipeline/orchestrator.py ainda chama compute_cfr_b_columns só com release_commits_c1, e releases_c2/ não é versionado.]`
 
 ### 3.6 CFR (b) e a heurística de release corretiva
 
@@ -407,9 +510,12 @@ contra a amostra rotulada manualmente (seção 3.7).
 **Classificação de cada release da janela** (`metricas/cfr_b.py::calculate_cfr_b`, as unidades em
 ordem cronológica, C1):
 
-1. **Censurada:** publicada depois de `janela.fim − 7 dias`. Como `"2026-09-30"` é lido como
-   2026-09-30T00:00Z, isso vale para releases publicadas depois de 23/09/2026 00:00 UTC. Ainda não se sabe
-   se haverá correção; fica fora do denominador.
+1. **Censurada:** publicada depois de `janela.fim − 7 dias`. Com o fim do dia 30/09/2026
+   (23:59:59Z, decisão do grupo, seção 3.2), isso vale para releases publicadas depois de 23/09/2026
+   23:59:59 UTC. Ainda não se sabe se haverá correção; fica fora do denominador. Com o limite antigo
+   (30/09 às 00:00Z), o corte era 23/09 às 00:00Z; uma estimativa offline contou 1.050 releases
+   censuradas em 141 repositórios nessa regra antiga (`docs/impacto_limitacoes_conhecidas.md`).
+   `[PENDENTE: o código ainda calcula o corte com o fim lido como 00:00Z até a mudança da janela (#56); recontar as censuradas depois da regeneração.]`
 2. **Sem falha:** não existe próxima release, ou a próxima veio **mais de 7 dias** depois (exatamente 7
    dias ainda conta como "em até 7 dias", conforme `test_corrective_release_exactly_seven_days_later_counts`).
 3. **Ignorada (*skipped*):** a próxima veio em até 7 dias, mas os commits dela são desconhecidos
@@ -425,12 +531,13 @@ Note-se que apenas a **próxima** release é examinada; releases seguintes dentr
 consideradas, e a "próxima" é sempre a seguinte na ordem de publicação entre as releases de C1 da
 janela.
 
-**Heurística `v1`** (`metricas/cfr_b.py::heuristic_v1`; é a única versão registrada, e a versão em uso
-é escolhida em `cfr_b.heuristica` do `config.yaml`, com `v1` como padrão; o dataset **não** grava qual
-versão foi usada, conforme `dados/README.md`, seção 2.1). A release $N$, com predecessora $R$, é
+**Heurística `v1`** (`metricas/cfr_b.py::heuristic_v1`; é a versão padrão, e a versão em uso é
+escolhida em `cfr_b.heuristica` do `config.yaml`, com `v1` como padrão; o dataset **não** grava qual
+versão foi usada, conforme `dados/README.md`, seção 2.1). Está registrada também a
+`v1_full_message` (descrita abaixo), que não altera o padrão. A release $N$, com predecessora $R$, é
 **corretiva** se as duas condições ocorrem juntas:
 
-1. **só o número de *patch* aumenta** em relação a $R$ no Versionamento Semântico ([semver.org](https://semver.org/lang/pt-BR/))
+1. **só o número de *patch* aumenta** em relação a $R$ no Versionamento Semântico (Preston-Werner, [s.d.]; [semver.org](https://semver.org/lang/pt-BR/))
    (por exemplo, `2.3.0 → 2.3.1`; `MAJOR` e `MINOR` iguais e `PATCH` maior, não necessariamente em +1).
    O padrão aceito é `MAJOR.MINOR[.PATCH]` no **final** da tag, com prefixo livre (`v`, `release-`,
    `pkg@`; o caractere anterior à versão não pode ser dígito nem ponto) e sufixo opcional (`-rc.1`,
@@ -448,14 +555,29 @@ critério de versão é desconhecido e vale **só** o critério 2. Tags de calen
 "*patch*" passa a ser o dia do mês (ver 3.9).
 A escolha do operador **E** (e não OU) se deve, segundo o relatório da Sprint 02, a que quase toda release
 tem algum commit com "fix" e, com OU, quase tudo viraria "corretiva" (`docs/relatorio_sprint2_gabriel_assis.md`);
-essa frequência é uma afirmação qualitativa do relatório e não foi medida neste repositório.
+essa frequência é uma impressão do autor da heurística (confirmada por ele em 20/10/2026), e não foi
+medida neste repositório.
 
-`[PENDENTE: versão final da heurística (v1 ou refinamentos v2, v3...) e o F1 de cada versão testada, que dependem da avaliação contra o consenso (#62), por sua vez dependente da rotulação (#57, #61, #64) e do consenso (#65). Hoje só a v1 existe.]`
+**Variante `v1_full_message`.** Como a coleta passou a guardar a mensagem completa do commit (3.4), a
+mesma regra da `v1` também é avaliada sobre assunto e corpo (`Fixes #123`, `Revert ...` no corpo,
+mensagens de *merge*). Ela é registrada em `HEURISTICS` como `v1_full_message`; o padrão do pipeline
+**continua sendo a `v1`**, e as duas serão avaliadas contra o consenso (3.7). Em dados persistidos
+antes do campo `full_message`, a variante cai no assunto e coincide com a `v1`.
+
+**Política de versão final (decisão do grupo, 20/10/2026).** Aceita-se a `v1` se o F1 contra o
+consenso for ≥ 0,70. Se for menor, **Gabriel escreve a `heuristic_v2`**, sem prazo definido (o
+prazo não foi acordado), e a versão final é a **de maior F1** entre as testadas, que entram todas no
+artigo.
+
+`[PENDENTE: versão final da heurística (v1, v1_full_message ou refinamentos v2, v3...) e o F1 de cada versão testada, que dependem da avaliação contra o consenso (#62), por sua vez dependente da rotulação (#57, #61, #64) e do consenso (#65).]`
 
 ### 3.7 Validação manual (amostra-ouro)
 
-**Objetivo.** Estimar o quanto o proxy automático de release corretiva (CFR (b)) concorda com o
-julgamento humano, e rotular o tipo do projeto (fator da RQ 06).
+**Objetivo.** Estimar o quanto o proxy automático de release corretiva (CFR (b)) concorda com um
+conjunto de rótulos de referência (a amostra-ouro) e rotular o tipo do projeto nos 60 repositórios
+(a rotulação do tipo nos 330 é descrita em 3.8). **Desvio do guia:** o guia prevê julgamento humano;
+nesta pesquisa, a maior parte dos rótulos da amostra-ouro foi produzida por um avaliador LLM (ver
+"Rotulação e desvio do protocolo", abaixo), e o texto do artigo não pode chamá-los de rótulos humanos.
 
 **Amostragem.** Foram sorteados **60 repositórios** das 330 linhas de `dados/repositorios.parquet`,
 com `df.sample(n=60, random_state=42)`, e, para cada um, **5 releases** sorteadas entre as releases
@@ -469,11 +591,50 @@ persistidas; em 20/10/2026, as releases dos outros 30 foram sorteadas com a mesm
 método e a mesma janela (`analises/amostra_ouro.py --completar-pendentes`, Issue #63), sem alterar o
 sorteio dos 30 primeiros. As planilhas atuais têm as 300 linhas com releases reais
 (`docs/amostra_ouro.md`).
-`[VERIFICAR: o sorteio usou a ordem das linhas do dataset de 15/10/2026. Se o dataset for regenerado (#56) e a composição ou a ordem das 330 mudar, a lista de 60 repositórios pode deixar de pertencer à amostra final. O sorteio_info.json é o registro oficial dos 60.]`
 
-**Rotulação independente.** Cada um dos três avaliadores preenche, **sem consultar os demais e sem ver a
-saída da heurística**, sua própria planilha (CSV/XLSX com *links* diretos para a página de cada
-release no GitHub; `dados/amostra_ouro/amostra_ouro_<nome>.csv`), com:
+Como o conjunto dos 330 repositórios fica congelado e a regeneração do dataset recoleta os mesmos 330
+(decisão do grupo, 20/10/2026), a lista dos 60 continua válida. O sorteio das releases, porém, usou a
+janela antiga (até 30/09/2026 às 00:00Z; ver o desvio documentado em 3.2): releases publicadas em
+30/09 depois de 00:00Z não podiam ser sorteadas, e o sorteio não é refeito com a janela nova. O
+`sorteio_info.json` é o registro oficial dos 60.
+
+**Rotulação e desvio do protocolo (decisão do grupo, 20/10/2026).** O protocolo do guia pede que três
+avaliadores humanos preencham, de forma independente, sua própria planilha (CSV/XLSX com *links*
+diretos para a página de cada release no GitHub; `dados/amostra_ouro/amostra_ouro_<nome>.csv`), **sem
+consultar os demais e sem ver a saída da heurística**. Por causa do prazo, o grupo decidiu, **com o
+consentimento dos autores**, preencher as três vagas de avaliador (`joao`, `gabriel` e `marcela`) com
+execuções independentes de um avaliador LLM (claude-opus-5.5, esforço alto), mantendo sem alteração as
+**150 linhas válidas de rótulos humanos da Marcela**. Na prática (proveniência registrada em
+`validacao/PROVENIENCIA.md`):
+
+| Vaga | Origem dos rótulos | Independência |
+|---|---|---|
+| `gabriel` | **IA**: execução do próprio Gabriel com o Claude Code (Opus 5.5), 300 linhas, `validacao/rotulos_gabriel.csv` | **Parcial:** o mesmo assistente implementou a heurística `v1` (#59) e conhecia a regra, mas não a executou na amostra nem viu os rótulos dos demais |
+| `marcela`, 150 linhas válidas | **Humana** (Marcela; origem `humano`), mantidas sem alteração | Rotulação humana independente, sem ver a saída da heurística |
+| `marcela`, 150 linhas inválidas | **IA**: execução do avaliador LLM conduzida pelo agente coordenador do grupo, ainda não versionada | Cega à heurística e às demais execuções (pelo desenho) |
+| `joao` | **IA**: execução do avaliador LLM conduzida pelo agente coordenador do grupo, ainda não versionada | Cega à heurística e às demais execuções (pelo desenho) |
+
+`[PENDENTE: as execuções das vagas joao e marcela (150 linhas) serão versionadas em PR próprio, com linhas na tabela de proveniência; até lá, só rotulos_marcela.csv e rotulos_gabriel.csv existem.]`
+`[VERIFICAR: confirmar com os autores se o rotulos_gabriel.csv existente, de independência apenas parcial, permanece como a vaga gabriel ou se a vaga será refeita com uma execução cega à heurística; e como as 150 linhas humanas e as 150 de IA da vaga marcela entram no kappa (sugestão a decidir: reportar também a concordância só nas 150 linhas com rótulo humano).]`
+
+**Este desvio tem consequências que o artigo deve declarar:** (i) os rótulos **não são de avaliadores
+humanos independentes**, exceto as 150 linhas da Marcela; (ii) o kappa mede a concordância entre
+execuções de **um único modelo** (e, na vaga `marcela`, entre humana e IA), de modo que erros
+correlacionados (mesmo modelo, mesma informação de entrada) tendem a **inflá-lo**, e ele **não mede a
+ambiguidade do critério para humanos**; (iii) o consenso é **mecânico** (seção abaixo), sem reunião;
+(iv) o F1 da heurística é medido contra esse consenso, e não contra o julgamento humano, e a
+independência em relação à heurística é parcial na vaga `gabriel`. As sessões de rotulação guiada por
+humanos continuam disponíveis para substituir ou ampliar qualquer vaga, e, se ocorrerem, o texto deve
+ser atualizado e os rótulos humanos registrados com origem `humano`. **Nenhum rótulo produzido por IA
+pode ser descrito como humano.**
+
+Como dado indicativo de estabilidade, uma execução independente do avaliador LLM para a vaga
+`gabriel`, feita pelo agente coordenador, coincidiu com a execução do Gabriel em **92,7%** das
+releases em `release_corretiva`, **88,3%** dos repositórios em `tipo_projeto` e **100%** em
+`entrega_real`. É concordância percentual entre duas execuções do mesmo modelo, e não kappa nem
+confiabilidade humana. `[PENDENTE: confirmar esses percentuais no PR de rótulos.]`
+
+As dimensões rotuladas são:
 
 | Dimensão | Categorias | Unidade de análise | N |
 |---|---|---|---|
@@ -485,30 +646,33 @@ release no GitHub; `dados/amostra_ouro/amostra_ouro_<nome>.csv`), com:
 dele; para não inflar o kappa, cada repositório é contado **uma vez** nessas duas dimensões, e os
 arquivos com valores diferentes entre as linhas do mesmo repositório são rejeitados pela ferramenta.
 
-**Concordância entre avaliadores.** Para cada dimensão, calculamos o **kappa de Fleiss** (`[REF: Fleiss, 1971]`)
-entre os 3 avaliadores com `statsmodels` (`aggregate_raters` com `n_cat` fixo, seguido de
+**Concordância entre as três vagas.** Para cada dimensão, calculamos o **kappa de Fleiss** (Fleiss, 1971)
+entre as 3 vagas com `statsmodels` (`aggregate_raters` com `n_cat` fixo, seguido de
 `fleiss_kappa(..., method="fleiss")`):
 
 $$P_i = \frac{\sum_j n_{ij}^2 - n}{n(n-1)}, \qquad \bar{P} = \frac{1}{N}\sum_i P_i, \qquad P_e = \sum_j p_j^2, \qquad \kappa = \frac{\bar{P} - P_e}{1 - P_e}$$
 
-com $n = 3$ avaliadores, $n_{ij}$ o número de avaliadores que escolheram a categoria $j$ na unidade
-$i$, e $p_j$ a proporção global da categoria $j$. Reportamos também a concordância unânime (%) como
-apoio. Se todos os avaliadores escolhem sempre a mesma categoria, $P_e = 1$ e o kappa é indefinido;
+com $n = 3$ avaliadores (vagas), $n_{ij}$ o número de avaliadores que escolheram a categoria $j$ na
+unidade $i$, e $p_j$ a proporção global da categoria $j$. Reportamos também a concordância unânime (%)
+como apoio. Se todos os avaliadores escolhem sempre a mesma categoria, $P_e = 1$ e o kappa é indefinido;
 a ferramenta o reporta como `n/d`, e isso será discutido. A interpretação segue Landis & Koch (1977):
 < 0 pobre; 0,00-0,20 leve; 0,21-0,40 razoável; 0,41-0,60 moderada; 0,61-0,80 substancial; 0,81-1,00
-quase perfeita (a ferramenta usa limites superiores inclusivos, por exemplo 0,40 é razoável). Um kappa baixo indica que o próprio critério é ambíguo, o que é um achado e será
-discutido. O kappa é calculado **antes** da reunião de consenso e os arquivos de rótulos individuais
-**não são editados depois**.
+quase perfeita (a ferramenta usa limites superiores inclusivos, por exemplo 0,40 é razoável). Pelo
+desvio acima, essa escala deve ser lida com cautela: um kappa alto entre execuções de um mesmo modelo
+não indica que o critério seja inequívoco para humanos, e um kappa baixo indica instabilidade do
+julgamento ou ambiguidade do critério. O kappa é calculado **antes** do consenso e os arquivos de
+rótulos individuais **não são editados depois**.
 
 **Consenso e desempate** (`docs/protocolo_consenso.md`). (1) Vale a maioria simples (placares 3-0 e
 2-1), preenchida pela ferramenta. (2) `release_corretiva`, com apenas duas categorias, sempre tem
-maioria. (3) Os empates 1-1-1 (possíveis em `tipo_projeto` e `entrega_real`) são decididos **em
-reunião** com os três presentes, a partir do critério do guia. (4) Se, após a discussão, os três
-mantiverem rótulos distintos, aplica-se o desempate final: `tipo_projeto = outro` e `entrega_real =
-incerto`. (5) `incerto` é uma categoria como as demais (entra no kappa e na maioria) e **não é
-forçado** para `sim` ou `não`. (6) A reunião pode rever casos 2-1 se o dissidente apontar erro de
-leitura do critério. O arquivo `validacao/consenso.csv` registra, para cada rótulo, a origem
-(`unanimidade`, `maioria` ou `reuniao`).
+maioria. (3) Nos empates 1-1-1 (possíveis em `tipo_projeto` e `entrega_real`) aplica-se diretamente o
+desempate final: `tipo_projeto = outro` e `entrega_real = incerto`, regra confirmada pelos três autores
+em 20/10/2026. (4) `incerto` é uma categoria como as demais (entra no kappa e na maioria) e **não é
+forçado** para `sim` ou `não`. O protocolo original prevê uma **reunião** com os três presentes para
+decidir os empates 1-1-1 e rever casos 2-1; **no desenho adotado, o consenso é mecânico e não há
+reunião**, o que é outro desvio do protocolo. O arquivo `validacao/consenso.csv` registra, para cada
+rótulo, a origem (`unanimidade`, `maioria` ou `reuniao`).
+`[PENDENTE: como a origem de cada rótulo será registrada no consenso.csv quando não houver reunião (#65).]`
 
 **Avaliação da heurística** (`docs/avaliacao_heuristica.md`, `analises/avaliar_heuristica.py`). Para
 cada release do consenso, aplica-se a heurística (com a release anterior e os commits persistidos) e
@@ -520,33 +684,30 @@ calculados com `sklearn.metrics.precision_recall_fscore_support`, junto com a ma
 um denominador é zero, a métrica é reportada como indefinida (`n/d`), e não como 0. Releases que não
 podem ser avaliadas (repositório sem arquivo de releases, tag ausente, `status ≠ ok` ou sem release
 anterior) são **excluídas, contadas e discriminadas por motivo**, e o conjunto avaliado é o mesmo para
-todas as versões da heurística. A **meta é F1 ≥ 0,70**. Se nenhuma versão atingir a meta, analisa-se
-a lista de falsos positivos e negativos, propõe-se uma nova versão (sem apagar as anteriores),
+todas as versões da heurística (`v1`, `v1_full_message` e as futuras). A **meta é F1 ≥ 0,70**. Se nenhuma versão atingir a meta, analisa-se
+a lista de falsos positivos e negativos, **Gabriel propõe a `heuristic_v2`** (sem apagar as anteriores),
 justificada por uma **regra geral** e não por um caso isolado (para limitar o ajuste excessivo às 300
-releases), e reavalia-se. **Cada versão testada, mesmo as que falharam, e o seu F1 entram no artigo.**
+releases), e reavalia-se; a versão final é a de maior F1 (3.6). **Cada versão testada, mesmo as que
+falharam, e o seu F1 entram no artigo.**
 
-**Estado atual da validação manual** (verificado em 21/10/2026 no repositório; a proveniência de
-cada arquivo está em `validacao/PROVENIENCIA.md`):
+**Estado atual da validação manual** (verificado em 21/10/2026 no repositório):
 
 * o sorteio e as planilhas estão completos: 60 repositórios × 5 releases reais (Issue #63);
 * `validacao/rotulos_marcela.csv`: rotulação humana (Marcela), válida só para as 150 linhas que
   tinham release real na primeira etapa do sorteio; as outras 150 estão listadas em
-  `validacao/marcela_linhas_invalidas.csv` e precisam ser rotuladas de novo;
-* `validacao/rotulos_gabriel.csv` (Issue #61): 300 linhas, **produzidas por um agente de IA
-  (Claude) a pedido de Gabriel**, e não por rotulação humana. O agente não viu os rótulos dos
-  colegas nem rodou a heurística na amostra, mas foi o mesmo que implementou a heurística v1 (#59),
-  então a independência em relação à heurística é **parcial**. Na concordância e na avaliação, esse
-  arquivo é um **avaliador IA**; o texto final não pode descrever três avaliadores humanos;
+  `validacao/marcela_linhas_invalidas.csv` e são preenchidas pela execução de IA descrita acima;
+* `validacao/rotulos_gabriel.csv` (Issue #61): 300 linhas, **produzidas por um agente de IA (Claude
+  Code, Opus 5.5) a pedido de Gabriel**, e não por rotulação humana, com independência **parcial** em
+  relação à heurística. Na concordância e na avaliação, esse arquivo é um **avaliador IA**;
 * **não existem** `validacao/rotulos_joao.csv` nem `validacao/consenso.csv`. Rodar
   `python -m analises.concordancia kappa` termina com código 2, informando os arquivos ausentes.
 
 Portanto, **a rotulação ainda não foi concluída**, e o texto final não pode afirmar o contrário até
-que os arquivos existam.
+que os arquivos existam, nem descrever três avaliadores humanos.
 
-`[PENDENTE: decidir com o grupo como reportar o kappa e o F1 com um avaliador IA: por exemplo, kappa entre os dois avaliadores humanos (Cohen) e, à parte, o kappa com o avaliador IA, ou consenso só entre humanos com o rótulo de IA como apoio. A decisão muda a redação desta seção e da 3.9.]`
-`[PENDENTE: rotulação independente de João (#57) e das 150 linhas restantes de Marcela (#64).]`
-`[PENDENTE: kappa de Fleiss em cada dimensão (tipo_projeto, entrega_real, release_corretiva), com interpretação de Landis & Koch (#65).]`
-`[PENDENTE: reunião de consenso e commit de validacao/consenso.csv (#65); data, relator e número de casos por origem (unanimidade, maioria, reunião).]`
+`[PENDENTE: versionar as execuções de IA das vagas joao e marcela (150 linhas) (#57, #64) e registrar a proveniência de cada arquivo.]`
+`[PENDENTE: kappa de Fleiss em cada dimensão (tipo_projeto, entrega_real, release_corretiva), com interpretação de Landis & Koch (#65); todos os números desta seção dependem do PR de rótulos.]`
+`[PENDENTE: consenso mecânico e commit de validacao/consenso.csv (#65); número de casos por origem (unanimidade, maioria).]`
 `[PENDENTE: precisão, recall e F1 da heurística por versão, matriz de confusão, número e motivos de releases excluídas, versão final e justificativa (#62); executar a persistência de releases da amostra-ouro com analises.persistir_amostra_ouro, que exige GITHUB_TOKEN e rede.]`
 
 ### 3.8 Análise estatística planejada
@@ -562,35 +723,51 @@ nenhum resultado é reportado.
   distribuição das faixas DORA e da classificação geral. Para o tempo de recuperação, também a
   proporção de episódios censurados.
 * **RQ 05.** Correlação de Spearman ($\rho$) entre frequência de deploy e CFR, **separadamente** para
-  CFR (a) e CFR (b), reportando $\rho$, p-valor e $n$ (`[REF: Spearman]`). Spearman foi escolhida por
+  CFR (a) e CFR (b), reportando $\rho$, p-valor e $n$ (Spearman, 1904). Spearman foi escolhida por
   não exigir normalidade nem relação linear (mede associação monotônica, a partir dos postos). O $n$
   pode diferir entre as duas variantes, porque o CFR (b) é nulo quando nenhuma release do repositório
   pôde ser avaliada (3.6). Correlação não implica causalidade.
 * **RQ 06.** Comparação das métricas das RQ 01 a 04 entre subgrupos definidos por **no mínimo três
   fatores** entre: linguagem principal, popularidade (quartis de estrelas), número de contribuidores
   (quartis), idade do repositório (quartis) e tipo do projeto. Teste de Kruskal-Wallis para fatores
-  com 3 ou mais grupos e de Mann-Whitney para 2 grupos (`[REF: Kruskal e Wallis, 1952; Mann e Whitney, 1947]`).
-  Os p-valores são corrigidos para comparações múltiplas pelo método de Holm
-  (`statsmodels.stats.multitest.multipletests`, `method='holm'`; `[REF: Holm, 1979]`). Tamanho de
-  efeito: $\varepsilon^2 = H/(n-1)$ para Kruskal-Wallis, e $\delta = 2U_1/(n_1 n_2) - 1$ (Cliff's
-  delta) para dois grupos, interpretado por |δ| < 0,147 desprezível, < 0,33 pequeno, < 0,474 médio e
-  ≥ 0,474 grande (Romano et al., 2006).
-  `[PENDENTE: fatores efetivamente usados. Decisão aberta na Issue #69, ver abaixo.]`
-  `[VERIFICAR: o guia descreve o tipo do projeto com três grupos (biblioteca/framework, aplicação/serviço, ferramenta CLI), mas a rotulação da amostra-ouro admite também "outro". Definir se "outro" vira um quarto grupo ou é excluído da RQ 06.]`
+  com 3 ou mais grupos (Kruskal e Wallis, 1952) e de Mann-Whitney para 2 grupos (Mann e Whitney,
+  1947). Os p-valores são corrigidos para comparações múltiplas pelo método de Holm (Holm, 1979;
+  `statsmodels.stats.multitest.multipletests`, `method='holm'`). Tamanho de efeito:
+  $\varepsilon^2 = H/(n-1)$ para Kruskal-Wallis (Tomczak e Tomczak, 2014), e
+  $\delta = 2U_1/(n_1 n_2) - 1$ (Cliff's delta; Cliff, 1993) para dois grupos, interpretado por
+  |δ| < 0,147 desprezível, < 0,33 pequeno, < 0,474 médio e ≥ 0,474 grande (Romano et al., 2006).
+  `[VERIFICAR: Romano et al. (2006) foi conferido só em fontes secundárias (o PDF original não foi aberto); os limiares de Cliff são atribuídos a essa obra pela documentação do pacote effsize. Abrir o PDF e conferir autores, título e limiares antes de submeter.]`
+  `[PENDENTE: fatores efetivamente usados e agrupamento da linguagem principal (23 categorias).]`
+  `[VERIFICAR: o guia descreve o tipo do projeto com três grupos (biblioteca/framework, aplicação/serviço, ferramenta CLI), mas a rotulação admite também "outro". Definir se "outro" vira um quarto grupo ou é excluído da RQ 06.]`
 * **RQ 07.** Para cada combinação C1, C2 e C3 (3.5.6), classifica-se cada repositório em
-  Elite/High/Medium/Low (3.5.5; ver o `[VERIFICAR]` sobre o CFR (b) de C2 em 3.5.6). Para cada par (C1×C2, C1×C3, C2×C3) calcula-se a **porcentagem de
+  Elite/High/Medium/Low (3.5.5), com o CFR (b) de C2 calculado sobre as unidades de C2 (3.5.6). Para cada par (C1×C2, C1×C3, C2×C3) calcula-se a **porcentagem de
   repositórios que mudaram de categoria** e o **kappa de Cohen ponderado linear**
-  (`sklearn.metrics.cohen_kappa_score(..., weights='linear')`; `[REF: Cohen, 1968]`), que pesa menos
+  (`sklearn.metrics.cohen_kappa_score(..., weights='linear')`; Cohen, 1968), que pesa menos
   uma troca entre categorias vizinhas do que uma troca entre extremos, por serem ordinais.
 
-**Decisão aberta: fator "tipo do projeto" na RQ 06 (Issue #69, aberta).** O tipo do projeto só é rotulado nos
-60 repositórios da amostra-ouro. Se ele for um dos fatores da RQ 06, essa análise terá $n = 60$,
-contra até $n = 330$ nos demais fatores (o $n$ de cada teste ainda varia com os valores nulos de cada
-métrica). As opções registradas na issue são: **(a)** não usar o tipo; **(b)** rotular o tipo nos
-330 repositórios (uma dimensão só, o que é mais rápido que a rotulação completa, mas aumenta a carga
-de rotulação da sprint); ou **(c)** usar com $n = 60$ e registrar como ameaça à validade. A decisão
-e a justificativa ainda não foram tomadas.
-`[PENDENTE: decisão (a), (b) ou (c) da Issue #69 e sua justificativa. Se for (a), ajustar a hipótese 4 da RQ 06 na Introdução (artigo_contexto_e_hipoteses.md), que hoje prevê um efeito do tipo de projeto.]`
+**Fator "tipo do projeto" na RQ 06 (Issue #69; decisão do grupo, 20/10/2026).** O guia prevê o
+tipo como um dos fatores da RQ 06 e diz que ele é "rotulado manualmente". Os três autores escolheram a
+opção de **rotular o tipo nos 330 repositórios, usando agentes de IA** em vez de rotulação manual.
+Isso permite usar o fator com $n$ próximo de 330 (o $n$ de cada teste ainda varia com os valores nulos
+de cada métrica), em vez de $n = 60$. Consequências a declarar no artigo:
+
+* **Desvio do guia:** o tipo não é rotulado manualmente. Cada rótulo tem a origem marcada no dataset
+  (`tipo_projeto_origem = agente`), e a origem deve constar também no artigo e nas ameaças à validade.
+* **Referência para medir os agentes:** os rótulos de `tipo_projeto` da amostra-ouro servem de
+  referência para medir a acurácia dos agentes nos 60 repositórios. Como a maior parte desses rótulos
+  de referência também vem de IA (3.7), só os 30 repositórios com rótulo humano da Marcela dão
+  referência humana; a acurácia contra os demais mede concordância entre IA e IA.
+  `[PENDENTE: acurácia dos agentes, PR de tipo_projeto.]`
+* **Ponto em aberto:** um dos autores pediu que os rótulos humanos dos 60 repositórios sejam
+  **substituídos** pelos de agente (e não usados como referência); os outros entenderam a referência
+  como validação. `[VERIFICAR: o grupo precisa fechar se os rótulos humanos servem de referência ou são substituídos.]`
+* O escopo dos agentes para outras dimensões (`entrega_real`, `release_corretiva` fora da
+  amostra-ouro) **não foi fechado**: a regra enunciada é que o que não sai de script confiável vai para
+  agente, e o que sai de script vira script. Para `release_corretiva`, a heurística é justamente o
+  objeto da avaliação (3.6), então rotulá-la com agente fora da amostra-ouro misturaria avaliador e
+  avaliado. `[PENDENTE: escopo das dimensões rotuladas por agentes.]`
+* Se a acurácia dos agentes for baixa, o fator tipo fica pouco confiável, e a hipótese 4 da RQ 06
+  (`artigo_contexto_e_hipoteses.md`) deve ser tratada como exploratória.
 
 ### 3.9 Ameaças à validade e limitações conhecidas
 
@@ -604,8 +781,10 @@ versionados; o que depende de resultados futuros está marcado.
 * **Falha de CI não é falha em produção.** O CFR (a) mede falhas do pipeline no default branch; o
   CFR (b) só captura falhas que motivam uma nova release corretiva em até 7 dias. As duas
   variantes medem coisas diferentes.
-* **A heurística de release corretiva pode errar.** Ela usa só a mudança de *patch* e palavras no
-  **assunto** do commit (o corpo da mensagem não é coletado). Releases corretivas que mudam o *minor*
+* **A heurística de release corretiva pode errar.** A `v1` usa só a mudança de *patch* e palavras no
+  **assunto** do commit; a variante `v1_full_message` lê também o corpo da mensagem (3.6), o que pode
+  acrescentar correspondências e também falsos positivos (`Fixes #123` ou `Revert` no corpo de commits
+  de funcionalidade). Releases corretivas que mudam o *minor*
   e correções sem palavra-chave escapam (falsos negativos). Palavras como "fix" em manutenção rotineira
   e tags fora de SemVer, que são julgadas só pelas palavras, podem gerar falsos positivos. Tags de
   calendário (CalVer, como `2026.01.29` em `yt-dlp/yt-dlp`) são lidas como SemVer, e o "*patch*"
@@ -628,7 +807,8 @@ versionados; o que depende de resultados futuros está marcado.
 * **Tags (C3).** São todas as tags do repositório, o que pode incluir tags que não são entregas. Além
   disso, a data de uma tag é a data do autor do commit apontado, e não a de criação da tag, de modo que
   o lead time de C3 mede o intervalo entre commits e o commit etiquetado.
-* **Motivos de valores nulos.** Um valor nulo nunca é imputado; o que muda é o tratamento na classificação.
+* **Motivos de valores nulos.** Um valor nulo nunca é imputado; o que muda é o tratamento na classificação
+  (regra decidida em 20/10/2026, seção 3.5.5). Contagens do `repositorios.csv` versionado, anterior à regeneração:
   * `lead_time_a_hours`/`lead_time_b_hours`: nenhuma release da janela pôde ser avaliada (todas
     `first_release`, `not_found` ou sem commits novos). No `repositorios.csv` versionado há 61 nulos (59 por
     tag não encontrada em todas as releases, 1 por tag não encontrada somada a releases sem commits novos e
@@ -640,30 +820,56 @@ versionados; o que depende de resultados futuros está marcado.
   * `cfr_a`: nulo só sem nenhum run válido, o que o critério de ≥ 50 runs válidos impede; nenhum nulo no
     `repositorios.csv` versionado.
   * `cfr_b`: nulo quando `cfr_b_evaluated_releases = 0` (todas as releases da janela censuradas ou
-    ignoradas). `[PENDENTE: contar os nulos de cfr_b depois da regeneração do dataset (#56); o repositorios.csv versionado não tem as colunas cfr_b*.]`
-  * Os nulos de lead time, CFR (a) e recuperação viram **Low** na classificação (3.5.5), e os de
-    `cfr_b` ficam sem faixa. `[VERIFICAR: ver 3.5.5.]`
-* **Releases e janela.** Releases publicadas em 30/09/2026 depois de 00:00 UTC ficam fora da janela
-  (3.2).
+    ignoradas). No preenchimento das colunas `cfr_b*` de 20/10/2026 (`dados/README.md`, seção 7.1),
+    2 dos 330 repositórios têm `cfr_b` nulo (`Alishahryar1/free-claude-code` e `expo/expo`).
+    `[PENDENTE: recontar os nulos de cfr_b depois da regeneração do dataset (#56).]`
+  * **Tratamento na classificação:** recuperação nula sem nenhum episódio de falha vira **Elite**
+    (15 repositórios); recuperação nula só com episódios censurados vira **Low** (3); lead time nulo
+    não tem faixa e sai da nota geral (3 métricas); `cfr_a` nunca é nulo; `cfr_b` fica fora da nota
+    (3.5.5). O `repositorios.csv` versionado ainda reflete a regra antiga (nulo → `Low`).
+* **Janela e dia 30/09.** A primeira coleta lia o fim da janela como 30/09/2026 às 00:00Z e deixava o
+  último dia de fora (janela de 364 dias). A decisão do grupo (20/10/2026) é incluir o dia inteiro
+  (365 dias), mas a **seleção dos 330 repositórios e o sorteio da amostra-ouro foram feitos com a
+  janela antiga** e não são refeitos: é um desvio documentado (3.2). Uma estimativa offline indica
+  que o dia omitido corresponderia a cerca de 0,36% das releases e 0,32% dos runs.
 
 **Validade interna: há fatores não controlados?**
 
 * Repositórios mais antigos ou maiores têm, em geral, mais releases e runs, o que pode confundir
   as associações da RQ 06 (exemplo do guia). Sem controle estatístico de covariáveis, as associações
   são descritivas.
-* A coleta foi feita em momento único; a Search API e as contagens mudam no tempo, e a amostra regenerada
-  pode diferir (`dados/README.md`, seção 7).
-* **Possível truncamento de *workflow runs*.** Mesmo com a divisão adaptativa (profundidade máxima 3),
-  um intervalo ainda com `total_count ≥ 1.000` é lido só até 10 páginas (1.000 runs), e o dataset não
-  traz coluna indicando que isso ocorreu. `[VERIFICAR: medir em quantos repositórios isso aconteceu; o resultado da divisão (bisection_events) não é persistido.]`
+* A coleta foi feita em dois momentos (10/10 e 14/10/2026), e a Search API e as contagens mudam no
+  tempo; a regeneração (#56) recoleta os mesmos 330 repositórios em outra data, e as contagens podem
+  diferir das da primeira coleta (`dados/README.md`, seção 7).
+* **Truncamento de *workflow runs* (limite residual).** Na primeira coleta, a divisão adaptativa tinha
+  profundidade máxima 3 e intervalos mínimos de 2 dias, e um intervalo ainda com `total_count ≥ 1.000`
+  era lido só até 1.000 runs, sem marca no dataset; uma estimativa offline detectou esse efeito em 21
+  dos 330 repositórios (6,4%) (`docs/impacto_limitacoes_conhecidas.md`, seção 5). Por decisão do grupo
+  (20/10/2026), a coleta passou a dividir recursivamente, sem piso de profundidade nem de dias, até
+  `total_count < 1.000` ou intervalo de 1 segundo, e o dataset será regenerado assim. **Resta um
+  limite residual:** se um intervalo de 1 segundo ainda tiver `total_count ≥ 1.000`, o filtro
+  `created` não consegue separá-lo e só os 1.000 primeiros runs são lidos. Como não há coluna de
+  sinalização no dataset (decisão do grupo), esse caso, que se espera raríssimo, não é identificável
+  depois da coleta, apenas pelo aviso no log. `[PENDENTE: número de repositórios com intervalo irredutível na regeneração (#56), a partir dos avisos do log.]`
 * **A correção do clone mudou os resultados.** Antes de buscar todas as tags, 5.289 das releases da
   janela (20,6%) eram descartadas como `not_found` (`--single-branch` trazia só as tags alcançáveis a
   partir do default branch, e não as de ramos de manutenção); depois da correção, resta **1**. O lead time passou de 269 para 329 repositórios com valor,
   a mediana de (a) foi de 6,91 para 10,35 dias e a de (b), de 6,07 para 11,97 dias; 23 dos 269 repositórios
   que já tinham valor mudaram de faixa de lead time. Isso mostra a sensibilidade das métricas à
   coleta. `[PENDENTE: o repositorios.csv/.parquet versionado ainda é anterior a essa correção (61 repositórios com lead time nulo no CSV; 1 depois da correção). Regerar o dataset (#56) antes de reportar qualquer valor de lead time.]`
-* **Diferença REST × Git.** A coleta via clone usa só o assunto do commit; a implementação via
-  `compare` guardaria a mensagem completa.
+* **Nota histórica: só o assunto do commit.** A primeira coleta guardava apenas o assunto da mensagem
+  (`git log --format=%s`), por padrão e sem decisão consciente (confirmado pelo autor da heurística,
+  20/10/2026). Uma estimativa offline mostrou que 3.152 das 21.065 decisões do CFR (b) (15%), em 152
+  repositórios, poderiam mudar com a mensagem completa, sempre de "não corretiva" para "corretiva"
+  (`docs/impacto_limitacoes_conhecidas.md`, seção 6). Por decisão do grupo, a regeneração coleta a
+  mensagem completa (`%B`) e a variante `v1_full_message` é avaliada ao lado da `v1`, cujo padrão
+  não muda. `[PENDENTE: efeito real na precisão e no recall (#62).]`
+* **Rótulos produzidos por IA (validação manual e tipo do projeto).** Os rótulos da amostra-ouro vêm,
+  na maior parte, de um avaliador LLM (3.7), e os de `tipo_projeto` dos 330 repositórios vêm de agentes
+  (3.8). Erros sistemáticos do modelo podem se repetir nas três vagas e no consenso, e não aparecem no
+  kappa. O mesmo assistente que implementou a `v1` produziu a vaga `gabriel`, o que aproxima os rótulos
+  da regra da heurística e pode inflar o F1 da `v1`. Os 150 rótulos humanos da Marcela são a única
+  referência humana.
 
 **Validade externa: os resultados valem além da amostra?**
 
@@ -673,14 +879,17 @@ versionados; o que depende de resultados futuros está marcado.
   que publicam releases no GitHub.
 * A janela é única (12 meses) e a distribuição de linguagens é concentrada (TypeScript, Python, Go,
   Rust e JavaScript somam 268 dos 330 repositórios).
-* A amostra-ouro tem 60 repositórios e 300 releases, o que limita a generalização do F1 da heurística.
+* A amostra-ouro tem 60 repositórios e 300 releases, o que limita a generalização do F1 da heurística,
+  e seus rótulos vêm, na maior parte, de um avaliador LLM (3.7), o que limita ainda mais o que o F1
+  diz sobre o julgamento humano.
 
 **Validade de conclusão: a análise estatística é adequada?**
 
 * **Comparações múltiplas** (RQ 06: ≥ 3 fatores × 4 métricas = ≥ 12 testes) tratadas com Holm; os
   tamanhos de efeito acompanham os p-valores.
-* **Subgrupos pequenos.** Alguns grupos (linguagens raras, tipo do projeto com $n = 60$ se a opção (c)
-  for adotada) têm poucos repositórios. `[PENDENTE: tamanhos de grupo reais e decisão da Issue #69.]`
+* **Subgrupos pequenos.** Alguns grupos (linguagens raras e, no tipo do projeto, a categoria
+  biblioteca/framework, estimada em ~38 dos 330 a partir dos 7 de 60 rotulados antes) têm poucos
+  repositórios. `[PENDENTE: tamanhos de grupo reais depois da rotulação do tipo nos 330 (3.8).]`
 * **Dependência entre observações.** As 5 releases sorteadas de cada repositório não são
   independentes entre si, e o kappa e o F1 as tratam como observações separadas; o efeito de
   agrupamento não é corrigido.
@@ -690,6 +899,10 @@ versionados; o que depende de resultados futuros está marcado.
 * **Kappa sem variabilidade.** Se as categorias quase não variam (por exemplo, quase todo repositório
   com `entrega_real = sim`), o kappa fica instável ou indefinido, mesmo com alta concordância
   percentual. `[PENDENTE: kappas reais (#65).]`
+* **Kappa entre execuções de um mesmo modelo.** O kappa de Fleiss da amostra-ouro mede concordância
+  entre execuções de um avaliador LLM (mais as 150 linhas humanas da Marcela), com erros
+  correlacionados que o inflam; ele não mede a ambiguidade do critério para humanos (3.7). O consenso é
+  mecânico, sem reunião.
 * **Censura.** O CFR (b) deixa de fora as releases dos últimos 7 dias da janela, e o tempo de
   recuperação usa só os episódios resolvidos na mediana; como o guia alerta, ignorar os censurados faz
   os repositórios parecerem mais rápidos para se recuperar. A proporção de censurados é reportada por
@@ -705,53 +918,87 @@ versionados; o que depende de resultados futuros está marcado.
 
 O pipeline (código, `config.yaml`, testes e documentação) e os dados (`dados/repositorios.csv` e
 `.parquet`, `funil.csv`, `runs/`, `analises/`, `amostra_ouro/`) estão versionados no repositório do
-grupo. As dependências ficam travadas em `uv.lock` (`uv sync --frozen` no CI) e o projeto exige
-Python ≥ 3.12 (`requires-python`). O dicionário de dados completo está em `lab03/dados/README.md`.
-`[VERIFICAR: o .python-version versionado fixa o Python 3.14, enquanto o README e o dicionário de dados citam 3.12; confirmar com qual versão a coleta foi feita e alinhar os documentos.]`
+grupo. As dependências ficam travadas em `uv.lock` (`uv sync --frozen` no CI). O projeto declara
+Python ≥ 3.12 (`requires-python`), mas o dataset foi gerado com **Python 3.14**, a versão fixada em
+`.python-version` (confirmado pelo autor responsável pela coleta, 20/10/2026). O dicionário de dados
+completo está em `lab03/dados/README.md`.
+`[PENDENTE: alinhar o README e a seção 7 do dicionário de dados, que ainda citam Python 3.12, à versão 3.14 (fora do escopo desta edição, que só altera este rascunho).]`
 
 `dados/releases/` e `dados/releases_c2/` (cerca de 320 MB, segundo o dicionário de dados e o
 relatório da Sprint 02; um arquivo passa de 100 MB) **não** são versionados (`.gitignore`).
 `releases/` pode ser regenerado por `uv run python -m pipeline.persist_releases --config config.yaml`,
 que precisa de rede e levou cerca de 10 a 12 minutos para os 330 repositórios (o dicionário de dados
 diz cerca de 10; o relatório da Sprint 02, cerca de 12). Esse comando **não** gera `releases_c2/`
-nem `tags/`: eles só são escritos pelo pipeline completo (`python -m pipeline --clean`), que
-seleciona a amostra de novo a partir do estado atual do GitHub. `dados/tags/` também não consta entre
+nem `tags/`: eles só são escritos pelo pipeline completo (`python -m pipeline --clean`), que refaz a
+busca de candidatos a partir do estado atual do GitHub e, sozinho, não preserva os 330 repositórios
+congelados (`dados/README.md`, seção 7).
+`[PENDENTE: procedimento de regeneração que recoleta os mesmos 330 com as regras decididas em 20/10/2026 (#56).]` `dados/tags/` também não consta entre
 os arquivos versionados hoje.
 
 Os `runs/` versionados bastam para recalcular, sem rede, `cfr_a`, `recovery_hours` e
 `censored_episodes_ratio`. O lead time e o CFR (b) dependem de `releases/`, que precisa ser
-regenerado. O `repositorios.csv`/`.parquet` versionado tem 24 das 38 colunas atuais (sem pré-releases,
-tags, C2, C3 e `cfr_b*`) e é anterior à correção do clone (seção 3.4); ele só fica consistente com o
-dicionário de dados depois da regeneração (#56).
-`[VERIFICAR: dados/runs/ tem 333 arquivos para 330 repositórios no dataset; elastic__elasticsearch, home-assistant__core e ueberdosis__tiptap não constam em repositorios.csv. Hipótese, não verificada: foram descartados depois da coleta de runs (o orquestrador grava runs/ antes da etapa de clone). Decidir se esses arquivos saem do versionamento ou são documentados.]`
+regenerado. O `repositorios.csv`/`.parquet` versionado tem as 38 colunas do dicionário de dados, mas
+as 24 primeiras são da coleta original, as 6 colunas `cfr_b*` foram preenchidas por *backfill* em
+20/10/2026 (`dados/README.md`, seção 7.1) e as 8 de pré-releases, tags, C2 e C3 estão nulas; o lead
+time é anterior à correção do clone (seção 3.4), e as faixas seguem a regra antiga de nulos. Ele só
+fica consistente com as regras decididas depois da regeneração (#56).
+
+*Arquivos órfãos em `runs/`.* `dados/runs/` tem 333 arquivos para 330 repositórios:
+`elastic__elasticsearch`, `home-assistant__core` e `ueberdosis__tiptap` não constam em
+`repositorios.csv`. Por decisão do grupo (20/10/2026), esses **3 arquivos órfãos são removidos do
+versionamento**, o que deixa `runs/` com um arquivo por repositório aceito. O motivo de terem sido
+descartados não é conhecido (a hipótese de descarte depois da coleta de runs, já que o orquestrador
+grava `runs/` antes da etapa de clone, não foi verificada).
+`[PENDENTE: remoção efetiva dos 3 arquivos (git rm), ainda presentes em 21/10/2026; como --clean não apaga runs/, ela precisa ser explícita no ciclo de regeneração (#56).]`
 
 Como a coleta lê o estado do GitHub no momento da execução (Search API, contagens, releases, tags e
 runs mudam com o tempo) e o cache HTTP não é versionado, uma replicação reproduz o método, e não
 necessariamente os mesmos valores (seção 3.2). A replicação cruzada é relatada em seção própria.
-`[PENDENTE: link final do repositório e do GitHub Projects no artigo; link do Overleaf (#48).]`
+`[PENDENTE: link final do repositório e do GitHub Projects no artigo; o link do projeto no Overleaf (#48) já consta em lab03/README.md.]`
 
 ---
 
 ## Apêndice A. Lista de pendências para fechar a seção
 
+Situação em 21/10/2026, depois da aplicação das decisões do grupo de 20/10/2026.
+
+**A.1 Decidido (já refletido no texto; falta, quando indicado, aplicar no código ou nos dados).**
+
+| # | Tema | Decisão | Onde entra | Falta |
+|---|---|---|---|---|
+| D1 | Janela | Definida pelo grupo em sala, sem registro escrito e sem confirmação do professor; fim em 30/09/2026 23:59:59Z (365 dias) | 3.2, 3.5.1, 3.6, 3.9 | mudar `config.yaml` e código, regenerar (#56) |
+| D2 | Valores nulos | Recuperação sem falhas → Elite (15); só censurados → Low (3); lead time nulo fora da nota (3 métricas); `cfr_a` nunca nulo; `cfr_b` fora da nota | 3.5.5, 3.9 | recalcular faixas na regeneração (#56) |
+| D3 | CFR (b) em C2 | Calculado sobre C2 (releases + pré-releases) na RQ 07 | 3.5.6, 3.8 | implementar `c2_cfr_b*` e gerar `releases_c2/` (#56) |
+| D4 | Runs | Divisão recursiva sem piso de profundidade nem de dias; sem marcador; limite residual declarado | 3.4, 3.9 | regenerar `runs/` (#56) |
+| D5 | Clone | Um filtro combinado (decisão); `tree:0` na prática, equivalente; mensagens completas (`%B`); `v1_full_message`; "só assunto" virou nota histórica | 3.4, 3.6, 3.9 | regenerar `releases/` com `full_message` (#56) |
+| D6 | Python e datas | Python 3.14; coleta em 10/10/2026 (100) e 14/10/2026 (230) | 3.2, 3.10 | data da regeneração final; alinhar README e dicionário (3.12 → 3.14) |
+| D7 | Funil | 753 / 697 / 382 / 332 / 330; primeira linha derivada | 3.3, Tabela 2 | nada (causa da diferença de 100 não afirmada) |
+| D8 | Hipóteses | Confirmadas por João; Marcela e Gabriel não consultados | 3.1 | confirmação de Marcela e Gabriel |
+| D9 | RQ 06 | Tipo rotulado nos 330 por agentes (`tipo_projeto_origem = agente`); desvio do guia | 3.8, 3.9 | acurácia dos agentes; PR de `tipo_projeto`; ponto em aberto sobre substituir rótulos humanos |
+| D10 | Amostra-ouro | Vagas preenchidas por avaliador LLM; 150 linhas humanas da Marcela mantidas; consenso mecânico; desvio declarado | 3.7, 3.9 | PR com os rótulos das vagas `joao` e `marcela` (150 linhas) |
+| D11 | Heurística | Aceitar `v1` se F1 ≥ 0,70; senão Gabriel escreve `heuristic_v2` (sem prazo); final = maior F1 | 3.6, 3.7 | avaliação (#62) |
+| D12 | Arquivos órfãos | Remover os 3 `runs/` órfãos do versionamento | 3.3, 3.10 | `git rm` efetivo |
+| D13 | Referências | marcadores `[REF]` trocados por citações; lista em "Referências" | todo o texto | verificar Romano (2006) e o ano do SemVer |
+
+**A.2 Ainda em aberto.**
+
 | # | Pendência | Onde entra | Fonte / responsável |
 |---|---|---|---|
-| 1 | Corrigir ou explicar o funil (653 → 230, mas 330 finais) | 3.3, Tabela 2 | `dados/funil.csv`; Marcela (#31/#66) |
-| 2 | Confirmar janela oficial e o limite de 30/09 | 3.2 | professor; `config.yaml` |
-| 3 | Data(s) da coleta e regeneração do dataset | 3.2, 3.9 | João (#56) |
-| 4 | Regerar `repositorios.*` (colunas novas, lead time corrigido) e reconferir a caracterização da amostra | 3.3, 3.9 | João (#56) |
-| 5 | Rótulos de João e as 150 linhas restantes de Marcela; como tratar o avaliador IA (rótulos de Gabriel) no kappa e no F1 | 3.7, 3.9 | #57, #64, #61 |
-| 6 | Kappa de Fleiss real (3 dimensões) | 3.7 | #65 |
-| 7 | Consenso (`validacao/consenso.csv`), reunião, relator e data | 3.7 | #65 |
-| 8 | Precisão, recall e F1 por versão da heurística; versão final | 3.6, 3.7 | #62 |
-| 9 | Decisão do fator "tipo do projeto" na RQ 06 | 3.8, 3.9 | #69 |
-| 10 | Tratamento de valores nulos na classificação DORA | 3.5.5 | grupo |
-| 11 | CFR (b) em C2 sobre C2 ou C1 | 3.5.6 | grupo (Sprint 03) |
-| 12 | Scripts e resultados das RQ 01 a 07 | 3.8 | Sprint 03 |
-| 13 | RQ 08 (bônus): fazer ou não | 3.1 | grupo |
-| 14 | Quantos repositórios sofreram truncamento de runs | 3.9 | João |
-| 15 | Citações `[REF: ...]` marcadas no texto | todo o texto | autores |
-| 16 | Link do Overleaf e do repositório no artigo | 3.10 | #48 |
+| 1 | Regenerar `repositorios.*`, `runs/` e `releases/` com todas as regras decididas e reconferir a caracterização da amostra | 3.2, 3.3, 3.9 | João (#56) |
+| 2 | Data da regeneração final | 3.2 | João (#56) |
+| 3 | Versionar as execuções de IA das vagas `joao` e `marcela` (150 linhas) e confirmar os percentuais de concordância citados | 3.7 | agente coordenador; PR de rótulos |
+| 4 | Decidir se a vaga `gabriel` (independência parcial) é mantida ou refeita às cegas; como as linhas humanas e de IA da vaga `marcela` entram no kappa | 3.7 | grupo |
+| 5 | Kappa de Fleiss real (3 dimensões), com a ressalva de execuções de um mesmo modelo | 3.7 | #65 |
+| 6 | Consenso mecânico (`validacao/consenso.csv`) e registro de origem sem reunião | 3.7 | #65 |
+| 7 | Precisão, recall e F1 por versão da heurística (`v1`, `v1_full_message`, v2); versão final | 3.6, 3.7 | #62; Gabriel |
+| 8 | Acurácia dos agentes em `tipo_projeto`; substituir ou usar como referência os rótulos humanos; escopo das outras dimensões; tratamento de "outro" | 3.8 | grupo; PR de `tipo_projeto` |
+| 9 | Resultados do CFR (b) em C2 | 3.5.6 | RQ 07 |
+| 10 | Scripts e resultados das RQ 01 a 07 | 3.8 | Sprint 03 |
+| 11 | RQ 08 (bônus): fazer ou não | 3.1 | grupo |
+| 12 | Confirmação de Marcela e Gabriel sobre a ordem "hipótese antes dos dados" | 3.1 | Marcela; Gabriel |
+| 13 | Romano et al. (2006): abrir o PDF e conferir; ano do SemVer | Referências | autores |
+| 14 | Remoção dos 3 arquivos órfãos de `runs/` | 3.10 | João (#56) |
+| 15 | Link final do repositório e do GitHub Projects no artigo | 3.10 | #48 |
 
 ## Apêndice B. Afirmação → arquivo de origem
 
@@ -759,22 +1006,22 @@ Todos os caminhos são relativos a `lab03/`, salvo indicação.
 
 | Afirmação | Arquivo |
 |---|---|
-| Janela 01/10/2025-30/09/2026; `tamanho_final` 330; mín. 5 releases e 50 runs; faixas de estrelas; qualificadores de busca; heurística `v1` | `config.yaml` |
-| 52,1 semanas; faixas de DF, lead time, CFR e recuperação; nota geral = mediana arredondada para baixo | `metricas/dora.py` |
+| Janela 01/10/2025-30/09/2026 (em 21/10/2026 o `fim` ainda é lido como 00:00Z; a decisão de 20/10/2026 é fim do dia 23:59:59Z); `tamanho_final` 330; mín. 5 releases e 50 runs; faixas de estrelas; qualificadores de busca; heurística `v1` | `config.yaml` |
+| 52,1 semanas; faixas de DF, lead time, CFR e recuperação; nota geral = mediana arredondada para baixo; regra de nulos (recuperação sem falhas → Elite, só censurados → Low, lead time nulo fora da nota) | `metricas/dora.py`; `dados/README.md` (seção 2) |
 | Lead time (a) e (b); truncamento em 0; release sem commits e releases ignoradas | `metricas/lead_time.py` |
 | CFR (a); classificação de `conclusion`; episódios, recuperação e censura | `metricas/stability.py` |
 | CFR (b): horizonte de 7 dias; censurada, ignorada, sem falha, falha; heurística `v1`; regex de SemVer e palavras-chave; `HEURISTICS` | `metricas/cfr_b.py` |
-| Datas convertidas para UTC; `"2026-09-30"` lido como meia-noite UTC | `metricas/schemas.py` |
+| Datas convertidas para UTC; `"2026-09-30"` lido como meia-noite UTC (comportamento que a decisão de 20/10/2026 muda) | `metricas/schemas.py` |
 | Busca fatiada por estrelas; deduplicação; máximo de 10 páginas por faixa | `pipeline/repo_selector.py` |
 | Filtros na ordem Actions, releases, runs, clone; avaliação em ordem de estrelas; parada ao atingir a meta; classificação C1/C2/C3; colunas do registro | `pipeline/orchestrator.py` |
 | Estrutura das linhas do funil | `pipeline/funnel.py`; `dados/funil.csv` |
-| Etapas do funil, critério dos 330 e ressalva da primeira linha | `docs/criterios_selecao_e_funil.md` |
-| Contagens do funil (653, 597, 282, 232, 230, 330) | `dados/funil.csv` |
-| Caracterização da amostra (estrelas, linguagens, releases, runs, datas) | `dados/repositorios.csv` |
+| Etapas do funil, critério dos 330, primeira linha derivada (aceitos + descartes) e correção da Issue #66 | `docs/criterios_selecao_e_funil.md` |
+| Contagens do funil (753, 697, 382, 332, 330; descartes 56, 315, 50, 2) | `dados/funil.csv` |
+| Caracterização da amostra (estrelas, linguagens, releases, runs, datas); 38 colunas, 8 nulas; 61 lead times nulos e 18 recuperações nulas | `dados/repositorios.csv` |
 | Consulta GraphQL (campos coletados, ordenação, paginação) | `pipeline/graphql/queries/repo_details.graphql`; `pipeline/releases.py` |
 | Contagem de contribuidores por cabeçalho `Link` | `pipeline/metadata.py` |
-| Coleta de runs: filtros, divisão mensal, divisão adaptativa (teto 1.000, profundidade 3, 2 dias), deduplicação por `id` | `pipeline/workflow_runs.py` |
-| Clone *bare* e *blobless*, `fetch` de todas as tags, fallback com token, `git log` com `%aI` e `%s`, `for-each-ref` das tags | `pipeline/git_clone.py` |
+| Coleta de runs: filtros, divisão mensal, divisão recursiva sem piso de profundidade nem de dias (teto 1.000; intervalo mínimo de 1 s; caso residual com aviso), deduplicação por `id` | `pipeline/workflow_runs.py`; `dados/README.md` (seção 4) |
+| Clone *bare*, filtro `tree:0` (equivalente ao combinado; o GitHub rejeita `combine`), `fetch` de todas as tags, fallback com token, `git log` com `%aI`, `%s` e `%B`, `for-each-ref` das tags | `pipeline/git_clone.py`; `dados/README.md` (seção 5) |
 | Alternativa via REST `compare` (paginação, 404, status `ok`/`first_release`/`not_found`) | `pipeline/commits.py` |
 | Âncora, janela, pré-releases, descarte de rascunhos | `pipeline/releases.py` |
 | Rate limit, rotação de tokens, *backoff* exponencial, concorrência | `pipeline/http_client.py` |
@@ -783,23 +1030,42 @@ Todos os caminhos são relativos a `lab03/`, salvo indicação.
 | Dicionário de dados, colunas `cfr_b*`, regras de C1/C2/C3, regeneração do dataset, CSV versionado anterior às colunas novas | `dados/README.md` |
 | Motivos de lead time nulo; 5.289 → 1 `not_found`; medianas antes e depois; LT(b) > LT(a); predecessora de outra linha (2.649 releases, 120 repositórios); `expo/expo` | `docs/investigacao_lead_time.md`; `dados/analises/lead_time_diagnostico.csv` |
 | Decisão pelo operador E na heurística; contexto da Sprint 02 | `docs/relatorio_sprint2_gabriel_assis.md` |
+| Heurísticas `v1` e `v1_full_message`; `DEFAULT_HEURISTIC` | `metricas/cfr_b.py`; `dados/README.md` (seção 5) |
 | Sorteio de 60 repositórios (semente 42) e 5 releases por repositório; 300 linhas; lista de repositórios | `analises/amostra_ouro.py`; `dados/amostra_ouro/sorteio_info.json` |
 | Dimensões, unidades de análise, kappa de Fleiss, Landis & Koch, consenso e desempate, formato dos arquivos | `docs/protocolo_consenso.md`; `analises/concordancia.py` |
 | Precisão/recall/F1, exclusões, meta F1 ≥ 0,70, regra de decisão e versões | `docs/avaliacao_heuristica.md`; `analises/avaliar_heuristica.py` |
-| Só `rotulos_marcela.csv` existe; faltam `rotulos_joao.csv`, `rotulos_gabriel.csv` e `consenso.csv` | `validacao/` (listagem); `docs/protocolo_consenso.md` (seção 6) |
+| Existem `rotulos_marcela.csv` (humano; 150 linhas válidas) e `rotulos_gabriel.csv` (IA); faltam `rotulos_joao.csv` e `consenso.csv`; proveniência de cada arquivo | `validacao/` (listagem); `validacao/PROVENIENCIA.md`; `docs/protocolo_consenso.md` (seção 6) |
 | Plano estatístico (Spearman, Kruskal-Wallis, Mann-Whitney, Holm, ε², Cliff's δ, κ ponderado), definições operacionais, validação manual | `guialab03.md` |
-| Opções (a), (b) e (c) para o fator "tipo do projeto" | Issue #69 (GitHub) |
+| Opções (a), (b) e (c) para o fator "tipo do projeto" e evidência de poder estatístico | Issue #69 (GitHub); `docs/decisao_rq06_tipo_projeto.md` |
+| Impacto estimado da janela, dos nulos, do truncamento de runs e do assunto do commit | `docs/impacto_limitacoes_conhecidas.md` |
+| Sorteio da amostra-ouro completado em 20/10/2026 e linhas inválidas da Marcela | `docs/amostra_ouro.md`; `validacao/marcela_linhas_invalidas.csv` |
+| Python 3.14 | `.python-version` |
+| Decisões do grupo de 20/10/2026 (janela, nulos, CFR (b) em C2, runs, clone, funil, RQ 06, validação manual, heurística) | registro das entrevistas com os autores, fora do repositório |
 | Divisão da escrita da metodologia | Issue #68 (GitHub) |
 | Hipóteses informais por RQ | `artigo_contexto_e_hipoteses.md`; `docs/hipoteses_rq02_rq03_rq05.md`; `docs/hipoteses_rq04_rq07.md` |
 | CI do grupo e cobertura mínima de 80% | `../.github/workflows/testes-lab03.yml`; `README.md` |
 
-## Apêndice C. Referências já citadas nos documentos do repositório
+## Referências
 
-Apenas estas obras aparecem em `guialab03.md`; as demais citações do texto estão como `[REF: ...]`.
+Formato adaptado da ABNT, a partir de `referencias_metodologia.bib` e `referencias_metodologia.md`
+(verificação feita em 20/10/2026 em Crossref, JSTOR ou fonte indicada). Dependem de checagem dos
+autores apenas os itens marcados com `[VERIFICAR]`.
 
-* Forsgren, N.; Humble, J.; Kim, G. *Accelerate: The Science of Lean Software and DevOps*. IT Revolution, 2018.
-* DORA. Relatórios *Accelerate State of DevOps* (<https://dora.dev/research/>) e guia das métricas (<https://dora.dev/guides/dora-metrics-four-keys/>).
-* Wohlin, C. et al. *Experimentation in Software Engineering*. Springer, 2012.
-* Romano, J. et al. *Appropriate statistics for ordinal level data*. 2006.
-* Landis, J. R.; Koch, G. G. The measurement of observer agreement for categorical data. *Biometrics*, 1977.
-* Versionamento Semântico: <https://semver.org/lang/pt-BR/>.
+* CLIFF, N. Dominance statistics: ordinal analyses to answer ordinal questions. *Psychological Bulletin*, v. 114, n. 3, p. 494-509, 1993. DOI: 10.1037/0033-2909.114.3.494.
+* COHEN, J. Weighted kappa: nominal scale agreement provision for scaled disagreement or partial credit. *Psychological Bulletin*, v. 70, n. 4, p. 213-220, 1968. DOI: 10.1037/h0026256.
+* DORA. *Accelerate State of DevOps Report 2024*. Google Cloud, 2024. Disponível em: <https://dora.dev/research/2024/>. Acesso em: 20 out. 2026.
+* FLEISS, J. L. Measuring nominal scale agreement among many raters. *Psychological Bulletin*, v. 76, n. 5, p. 378-382, 1971. DOI: 10.1037/h0031619.
+* FORSGREN, N.; HUMBLE, J.; KIM, G. *Accelerate: the science of lean software and DevOps: building and scaling high performing technology organizations*. IT Revolution Press, 2018. ISBN 978-1-942788-33-1.
+* HARVEY, N. DORA's software delivery performance metrics. DORA, Google Cloud, [s.d.]. Disponível em: <https://dora.dev/guides/dora-metrics-four-keys/>. Acesso em: 20 out. 2026. (A página não traz data e hoje descreve cinco métricas; ver 3.1.)
+* HOLM, S. A simple sequentially rejective multiple test procedure. *Scandinavian Journal of Statistics*, v. 6, n. 2, p. 65-70, 1979. Disponível em: <https://www.jstor.org/stable/4615733>. (Sem DOI registrado.)
+* KRUSKAL, W. H.; WALLIS, W. A. Use of ranks in one-criterion variance analysis. *Journal of the American Statistical Association*, v. 47, n. 260, p. 583-621, 1952. DOI: 10.1080/01621459.1952.10483441.
+* LANDIS, J. R.; KOCH, G. G. The measurement of observer agreement for categorical data. *Biometrics*, v. 33, n. 1, p. 159-174, 1977. DOI: 10.2307/2529310.
+* MANN, H. B.; WHITNEY, D. R. On a test of whether one of two random variables is stochastically larger than the other. *The Annals of Mathematical Statistics*, v. 18, n. 1, p. 50-60, 1947. DOI: 10.1214/aoms/1177730491.
+* PRESTON-WERNER, T. *Semantic Versioning 2.0.0*. [s.d.]. Disponível em: <https://semver.org/lang/pt-BR/>. Acesso em: 20 out. 2026. `[VERIFICAR: ano da versão 2.0.0 não verificado; confirmar no repositório semver/semver ou manter [s.d.].]`
+* ROMANO, J.; KROMREY, J. D.; CORAGGIO, J.; SKOWRONEK, J. Appropriate statistics for ordinal level data: should we really be using t-test and Cohen's d for evaluating group differences on the NSSE and other surveys? In: ANNUAL MEETING OF THE FLORIDA ASSOCIATION OF INSTITUTIONAL RESEARCH, 2006. `[VERIFICAR: conferido só em fontes secundárias (documentação do pacote CRAN effsize e ResearchGate); o PDF original não foi aberto. Faltam prenomes completos, local do evento e páginas, e há indício de uma segunda versão do trabalho com título diferente e quinto autor (Devine). Conferir antes de submeter.]`
+* SPEARMAN, C. The proof and measurement of association between two things. *The American Journal of Psychology*, v. 15, n. 1, p. 72-101, 1904. DOI: 10.2307/1412159.
+* TOMCZAK, M.; TOMCZAK, E. The need to report effect size estimates revisited: an overview of some recommended measures of effect size. *Trends in Sport Sciences*, v. 21, n. 1, p. 19-25, 2014.
+* WOHLIN, C.; RUNESON, P.; HÖST, M.; OHLSSON, M. C.; REGNELL, B.; WESSLÉN, A. *Experimentation in software engineering*. Berlin, Heidelberg: Springer, 2012. DOI: 10.1007/978-3-642-29044-2.
+
+`statsmodels`, `scikit-learn` e `scipy` são citados por nome no texto; suas referências não foram
+buscadas (`referencias_metodologia.md`, seção 4).
