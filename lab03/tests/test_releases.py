@@ -1,8 +1,10 @@
 """Tests for release and tag collection (pipeline.releases)."""
 
 import httpx
+import pyarrow as pa
 import pyarrow.parquet as pq
 import pytest
+from metricas.cfr_b import is_corrective_release
 from metricas.schemas import Commit, Release
 from pipeline.commits import ComparisonStatus, ReleaseCommits
 from pipeline.http_client import GitHubClient
@@ -373,3 +375,54 @@ def test_save_tags_to_parquet_roundtrip(tmp_path):
     assert pydict["commits"][1][0]["message"] == "major rewrite"
 
 
+
+
+def test_parquet_roundtrip_keeps_full_message_and_null_for_old_commits(tmp_path):
+    rel1 = Release(tag_name="v1.0", published_at="2024-01-01T00:00:00Z")
+    rel2 = Release(tag_name="v1.1", published_at="2024-02-01T00:00:00Z")
+    new = Commit(
+        sha="s1",
+        committed_at="2024-01-15T10:00:00Z",
+        message="chore: tidy",
+        full_message="chore: tidy\n\ncafé ✓\nFixes #123",
+    )
+    old = Commit(sha="s2", committed_at="2024-01-16T10:00:00Z", message="fix: x")
+    data = [ReleaseCommits(rel2, rel1, ComparisonStatus.OK, [new, old])]
+
+    out = save_releases_to_parquet(data, "o", "r", tmp_path / "r.parquet")
+    rows = pq.read_table(out).to_pylist()[0]["commits"]
+    loaded = [Commit.from_record(c) for c in rows]
+
+    assert loaded[0].message == "chore: tidy"
+    assert loaded[0].full_message == "chore: tidy\n\ncafé ✓\nFixes #123"
+    assert loaded[1].full_message is None
+    assert loaded[1].text == "fix: x"
+
+    tags = save_tags_to_parquet(data, "o", "r", tmp_path / "t.parquet")
+    tag_rows = pq.read_table(tags).to_pylist()[0]["commits"]
+    assert tag_rows[0]["full_message"] == new.full_message
+
+
+def test_old_parquet_without_full_message_field_still_loads(tmp_path):
+    """Files written before `full_message` existed: message only, no field in the struct."""
+    old_struct = pa.struct(
+        [("sha", pa.string()), ("committed_at", pa.string()), ("message", pa.string())]
+    )
+    table = pa.table(
+        {
+            "tag_name": ["v1.1"],
+            "commits": pa.array(
+                [[{"sha": "s", "committed_at": "2024-01-15T10:00:00Z", "message": "fix: boom"}]],
+                type=pa.list_(old_struct),
+            ),
+        }
+    )
+    path = tmp_path / "old.parquet"
+    pq.write_table(table, path)
+
+    (record,) = pq.read_table(path).to_pylist()[0]["commits"]
+    assert "full_message" not in record
+    commit = Commit.from_record(record)
+    assert commit.full_message is None
+    assert commit.text == "fix: boom"
+    assert is_corrective_release("v1.0.0", "v1.0.1", [commit], version="v1_full_message")

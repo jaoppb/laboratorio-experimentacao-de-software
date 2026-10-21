@@ -178,7 +178,7 @@ def _carregar_releases_repo(path: Path) -> dict[str, dict[str, object]]:
                 "previous_release": dados["previous_release"][i],
                 "status": dados["status"][i],
                 "commits": [
-                    Commit(sha=c["sha"], committed_at=c["committed_at"], message=c["message"])
+                    Commit.from_record(c)
                     for c in dados["commits"][i] or []
                 ],
             },

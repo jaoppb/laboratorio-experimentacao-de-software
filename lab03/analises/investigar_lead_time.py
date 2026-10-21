@@ -84,7 +84,7 @@ def load_releases(path: Path) -> list[tuple[Release, str, list[Commit]]]:
     for i, tag in enumerate(data["tag_name"]):
         release = Release(tag_name=tag, published_at=data["published_at"][i])
         commits = [
-            Commit(sha=c["sha"], committed_at=c["committed_at"], message=c["message"])
+            Commit.from_record(c)
             for c in data["commits"][i] or []
         ]
         release.previous_tag = data["previous_release"][i]  # type: ignore[attr-defined]
