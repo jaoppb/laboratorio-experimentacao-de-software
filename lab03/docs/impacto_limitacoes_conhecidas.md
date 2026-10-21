@@ -18,7 +18,7 @@ reexecução do pipeline. Reprodução na seção 8; os scripts completos estão
 
 | Achado | Quem é afetado | Magnitude medida | O que **não** dá para medir offline | Opções (sem mexer em código aqui) |
 |---|---|---|---|---|
-| 2. Janela termina às 00:00Z de 30/09 | todos os 330 (o último dia inteiro está ausente); ~93 releases (0,36%) e ~7,2 mil runs (0,32%) esperados nesse dia; 15 repositórios a ≤ 1 release de mudar de faixa de deployment frequency, ~0,85 mudança de faixa esperada | pequena nas médias, relevante só para fronteiras | os dados do dia 30/09 (a coleta já cortou) | perguntar ao professor; manter e documentar; ou ampliar o fim e recoletar só 30/09 |
+| 2. Janela termina às 00:00Z de 30/09 | todos os 330 (o último dia inteiro está ausente); ~93 releases (0,36%) e ~7,2 mil runs (0,32%) esperados nesse dia; 15 repositórios a ≤ 1 release de mudar de faixa de deployment frequency, ~0,85 mudança de faixa esperada | pequena nas médias, relevante só para fronteiras | os dados do dia 30/09 (a coleta já cortou) | decisão do grupo: ampliar o fim para 30/09 23:59:59Z e regenerar o dataset (alternativa: manter e documentar) |
 | 3. Nulos viram `Low` | no CSV versionado: 61 nulos de lead time (54% dos `Low` de lead time) e 18 de recuperação (**90%** dos `Low` de recuperação). Com o lead time corrigido: 1 e 18 | recuperação: 18 repositórios; 15 deles **nunca tiveram falha**; nota geral muda em 7 a 14 repositórios | — | manter; tratar como n/d; ou regra específica para "sem falhas" |
 | 5. Truncamento em 1.000 runs | 21 repositórios (6,4%), 561 intervalos saturados + 60 duvidosos; tempo não observado: mediana 4%, máximo 67% (PostHog) | CFR (a) e recuperação; efeito esperado em faixa: ~0,5 repositório | `total_count` real (não foi persistido) | aceitar e declarar; sinalizar no dataset; recoletar com divisão mais fina; excluir em sensibilidade |
 | 7. Só o assunto do commit | 3.152 decisões (15% de 21.065) em 152 repositórios podem mudar, sempre para "corretiva" | cenário calibrado: ~1,6 mil releases, 32 repositórios com faixa de CFR (b) diferente (P5–P95: 19–40); teto: 51 | texto completo das mensagens | aceitar; recoletar `%B` offline (~10 min); validar em amostra |
@@ -71,14 +71,15 @@ releases de 30/09 não estão nos dados e, quando existem, são a "próxima rele
 **Magnitude:** pequena para estatísticas agregadas (~0,3% dos eventos); afeta sobretudo repositórios na fronteira de
 faixa. O ponto principal é de **semântica**: o texto do guia diz "12 meses", e a janela efetiva tem 364 dias.
 
-**Opções.**
-1. **Confirmar com o professor** (rascunho em `docs/mensagem_professor_janela.md`) antes de qualquer mudança.
-2. **Manter e documentar** a regra na Metodologia ("fim exclusivo, 00:00 UTC"); custo ~0,5 h; mantém os dados atuais.
-3. **Ampliar o fim** para incluir 30/09 inteiro (por exemplo `fim: "2026-09-30T23:59:59Z"` ou `2026-10-01`) e coletar
+**Opções.** A janela foi definida pelo próprio grupo (não há data oficial externa a confirmar). **O grupo decidiu mudar o
+limite superior para o fim do dia (30/09 23:59:59Z) e regenerar o dataset**; a opção 2 abaixo é a escolhida e a 1 fica
+registrada como alternativa descartada.
+1. **Manter e documentar** a regra na Metodologia ("fim exclusivo, 00:00 UTC"); custo ~0,5 h; mantém os dados atuais.
+2. **Ampliar o fim** para incluir 30/09 inteiro (por exemplo `fim: "2026-09-30T23:59:59Z"` ou `2026-10-01`) e coletar
    de novo esse último dia: exige mudar a configuração, rodar `persist_releases` e refazer a coleta de runs do mês de setembro.
    Esforço estimado: algumas horas de execução e conferência (premissa: o cache HTTP reaproveita as demais requisições;
    não foi medido). Requer token e rede.
-4. Em qualquer caso, alinhar o divisor (52,1) e a regra de censura à janela escolhida.
+3. Em qualquer caso, alinhar o divisor (52,1) e a regra de censura à janela escolhida.
 
 ## 4. Achado 3: nulos mapeados para `Low`
 
