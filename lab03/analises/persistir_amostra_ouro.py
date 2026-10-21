@@ -15,7 +15,7 @@ import sys
 from pathlib import Path
 
 from analises.amostra_ouro import DEFAULT_NUM_REPOS, DEFAULT_SEED, sortear_repositorios
-from metricas.schemas import _parse_datetime
+from metricas.schemas import _parse_datetime, parse_window_end
 from pipeline.http_client import GitHubClient
 from pipeline.persist_releases import persist_repository_releases
 
@@ -37,7 +37,7 @@ async def persistir(
     logger.info("%d repositórios sorteados, %d pendentes", len(sample), len(pending))
 
     start = _parse_datetime("2025-10-01")
-    end = _parse_datetime("2026-09-30")
+    end = parse_window_end("2026-09-30")
     client = GitHubClient(cache_path=Path("cache") / "http_cache.sqlite")
     queue: asyncio.Queue[str] = asyncio.Queue()
     for n in pending:

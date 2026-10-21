@@ -12,7 +12,7 @@ from typing import TYPE_CHECKING, Any
 import pyarrow as pa
 import pyarrow.parquet as pq
 
-from metricas.schemas import Release, _parse_datetime
+from metricas.schemas import Release, _parse_datetime, parse_window_end
 from pipeline.commits import ComparisonStatus, ReleaseCommits
 
 if TYPE_CHECKING:
@@ -220,9 +220,12 @@ def filter_window(
     window_end: datetime | str,
     include_prerelease: bool = False,
 ) -> WindowReleases:
-    """Select the deploy units inside [window_start, window_end]."""
+    """Select the deploy units inside [window_start, window_end].
+
+    A date-only `window_end` includes the whole day (see `parse_window_end`).
+    """
     start = _parse_datetime(window_start)
-    end = _parse_datetime(window_end)
+    end = parse_window_end(window_end)
     units = deploy_units(releases, include_prerelease=include_prerelease)
 
     before = [r for r in units if r.published_at < start]  # type: ignore

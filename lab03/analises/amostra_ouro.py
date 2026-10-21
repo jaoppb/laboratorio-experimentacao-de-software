@@ -39,7 +39,7 @@ from openpyxl.worksheet.datavalidation import DataValidation
 import pandas as pd
 import pyarrow.parquet as pq
 
-from metricas.schemas import _parse_datetime
+from metricas.schemas import _parse_datetime, parse_window_end
 
 logger = logging.getLogger(__name__)
 
@@ -537,7 +537,7 @@ def executar_sorteio_amostra_ouro(
     output_dir = Path(output_dir)
 
     window_start = _parse_datetime(window_start_str)
-    window_end = _parse_datetime(window_end_str)
+    window_end = parse_window_end(window_end_str)
 
     logger.info("1. Sorteando %d repositórios com seed=%d...", num_repos, seed)
     sample_repos = sortear_repositorios(dataset_path=dataset_path, n=num_repos, seed=seed)

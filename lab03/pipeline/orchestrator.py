@@ -11,7 +11,7 @@ import asyncio
 import csv
 import json
 import logging
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from collections.abc import Sequence
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -25,7 +25,7 @@ from metricas.dora import (
 )
 from metricas.cfr_b import DEFAULT_HEURISTIC, HEURISTICS, calculate_cfr_b
 from metricas.lead_time import calculate_lead_time
-from metricas.schemas import _parse_datetime
+from metricas.schemas import _parse_datetime, parse_window_end, window_length
 from metricas.stability import (
     calculate_cfr_a,
     calculate_recovery_time,
@@ -306,9 +306,14 @@ class PipelineOrchestrator:
         self.window_start: datetime = _parse_datetime(
             janela.get("inicio", "2025-10-01")
         ) or datetime(2025, 10, 1)
-        self.window_end: datetime = _parse_datetime(
+        # `fim` date-only = end of that day (inclusive), see `parse_window_end`.
+        self.window_end: datetime = parse_window_end(
             janela.get("fim", "2026-09-30")
-        ) or datetime(2026, 9, 30)
+        ) or datetime(2026, 9, 30, 23, 59, 59, 999999, tzinfo=timezone.utc)
+        # Window length in weeks (365 days = 52.14 weeks for the official window).
+        self.window_weeks: float = (
+            window_length(self.window_start, self.window_end) / timedelta(weeks=1)
+        )
 
         config_limit = amostra.get("tamanho_final", 100)
         self.target_size: int = limit if limit is not None else config_limit
@@ -568,7 +573,7 @@ class PipelineOrchestrator:
         # Calculate DORA Metrics (C1 Reference)
         dep_freq = calculate_deployment_frequency(
             releases=releases,
-            window_weeks=52.1,
+            window_weeks=self.window_weeks,
             start_date=self.window_start,
             end_date=self.window_end,
         )
@@ -595,11 +600,11 @@ class PipelineOrchestrator:
         )
 
         # C2 Metrics (Official Releases + Pre-releases)
-        c2_dep_freq = window_releases_c2.count / 52.1
+        c2_dep_freq = window_releases_c2.count / self.window_weeks
         c2_lead_time_b = lead_time_result_c2.median_b_hours
 
         # C3 Metrics (Git Tags)
-        c3_dep_freq = window_tags_c3.count / 52.1
+        c3_dep_freq = window_tags_c3.count / self.window_weeks
         c3_lead_time_b = lead_time_result_c3.median_b_hours
 
         # Additional counts

@@ -19,7 +19,7 @@ from enum import Enum
 from typing import TYPE_CHECKING
 
 from metricas.dora import DORATier, classify_change_failure_rate
-from metricas.schemas import _parse_datetime
+from metricas.schemas import _parse_datetime, parse_window_end
 
 if TYPE_CHECKING:
     from metricas.schemas import Commit, Release
@@ -182,7 +182,9 @@ def calculate_cfr_b(
     the window, in any order.
 
     Rules:
-    - a release published after `window_end − horizon` is censored;
+    - a release published after `window_end − horizon` is censored (a date-only
+      `window_end` is the end of that day: for `2026-09-30` and a 7-day horizon
+      the cutoff is `2026-09-23T23:59:59.999999Z`);
     - a release is failed when the next release comes within `horizon` and the
       heuristic marks it as corrective;
     - if the next release comes within `horizon` but its commits are unknown,
@@ -191,7 +193,7 @@ def calculate_cfr_b(
 
     Censored and skipped releases are left out of the denominator.
     """
-    end = _parse_datetime(window_end)
+    end = parse_window_end(window_end)
     if end is None:
         raise ValueError("window_end must not be None")
     cutoff = end - horizon

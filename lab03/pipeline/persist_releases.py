@@ -25,7 +25,7 @@ from typing import Any
 import pyarrow.parquet as pq
 import yaml
 
-from metricas.schemas import _parse_datetime
+from metricas.schemas import _parse_datetime, parse_window_end
 from pipeline.commits import collect_release_commits
 from pipeline.git_clone import temporary_git_clone
 from pipeline.http_client import GitHubClient
@@ -87,7 +87,7 @@ async def persist_all(
     janela = config.get("janela", {})
     dirs = config.get("diretorios", {})
     window_start = _parse_datetime(janela.get("inicio", "2025-10-01"))
-    window_end = _parse_datetime(janela.get("fim", "2026-09-30"))
+    window_end = parse_window_end(janela.get("fim", "2026-09-30"))
     dados_dir = Path(dirs.get("dados", "dados"))
     releases_dir = dados_dir / "releases"
     git_cache_dir = Path(dirs.get("git_cache", "cache/git_repos"))

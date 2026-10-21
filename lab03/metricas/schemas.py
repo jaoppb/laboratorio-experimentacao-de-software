@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from typing import Any
 
 
@@ -32,6 +33,44 @@ def _parse_datetime(dt_val: datetime | str | None) -> datetime | None:
             return dt.replace(tzinfo=timezone.utc)
         return dt
     raise TypeError(f"Expected datetime or str, got {type(dt_val).__name__}")
+
+
+_DATE_ONLY_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+_ONE_MICROSECOND = timedelta(microseconds=1)
+
+
+def parse_window_end(dt_val: datetime | date | str | None) -> datetime | None:
+    """Parse the upper bound of the observation window (`janela.fim`).
+
+    A date-only bound (`"2026-09-30"` or a `datetime.date`) means the END of that
+    day: it resolves to the last instant of the day, `2026-09-30T23:59:59.999999Z`,
+    so every timestamp of the whole day is inside the window (inclusive bound,
+    equivalent to the exclusive bound `2026-10-01T00:00:00Z`). A bound that
+    already carries a time (`"2026-09-30T00:00:00Z"`, a `datetime`) is kept as-is.
+
+    This is the single place that interprets `janela.fim`; every consumer of the
+    window (releases, workflow runs, CFR (b) censoring cutoff, deployment
+    frequency denominator) must go through it. `janela.inicio` keeps using
+    `_parse_datetime` (a date-only start is 00:00:00Z).
+    """
+    if dt_val is None:
+        return None
+    if isinstance(dt_val, datetime):
+        return _parse_datetime(dt_val)
+    if isinstance(dt_val, date):
+        day_start = datetime(dt_val.year, dt_val.month, dt_val.day, tzinfo=timezone.utc)
+        return day_start + timedelta(days=1) - _ONE_MICROSECOND
+    if isinstance(dt_val, str) and _DATE_ONLY_RE.match(dt_val.strip()):
+        return parse_window_end(date.fromisoformat(dt_val.strip()))
+    return _parse_datetime(dt_val)
+
+
+def window_length(start: datetime, end: datetime) -> timedelta:
+    """Length of the window [start, end] with `end` as the inclusive last instant.
+
+    For the official window (`2025-10-01` to `2026-09-30`) this is exactly 365 days.
+    """
+    return end + _ONE_MICROSECOND - start
 
 
 @dataclass
