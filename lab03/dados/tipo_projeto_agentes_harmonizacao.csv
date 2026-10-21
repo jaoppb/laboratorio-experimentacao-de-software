@@ -1,0 +1,10 @@
+full_name,tipo_antigo,tipo_novo,confianca,regra,rotulador_original
+nodejs/node,outro,ferramenta CLI,baixa,R2 (linguagem/runtime/compilador/interpretador com executável próprio → ferramenta CLI),agente-worker-tipo-label-0-110
+microsoft/TypeScript,outro,ferramenta CLI,baixa,R2 (linguagem/runtime/compilador/interpretador com executável próprio → ferramenta CLI),agente-worker-tipo-label-0-110
+denoland/deno,outro,ferramenta CLI,baixa,R2 (linguagem/runtime/compilador/interpretador com executável próprio → ferramenta CLI),agente-worker-tipo-label-0-110
+oven-sh/bun,outro,ferramenta CLI,baixa,R2 (linguagem/runtime/compilador/interpretador com executável próprio → ferramenta CLI),agente-worker-tipo-label-0-110
+laravel/laravel,biblioteca/framework,outro,media,"R4 (esqueleto de aplicação/template/boilerplate → outro; igual a full-stack-fastapi-template, AdminLTE, ant-design-pro)",agente-worker-tipo-label-0-110
+rust-lang/rust,outro,ferramenta CLI,baixa,R2 (linguagem/runtime/compilador/interpretador com executável próprio → ferramenta CLI),agente-worker-tipo-label-0-110
+code-yeongyu/oh-my-openagent,biblioteca/framework,ferramenta CLI,baixa,"R5 (harness/plugin de agentes com instalador e bin próprios, sem servidor → ferramenta CLI; igual a oh-my-claudecode, ruflo, OpenSpec)",agente-worker-tipo-label-110-220
+JuliaLang/julia,outro,ferramenta CLI,media,R2 (linguagem/runtime/compilador/interpretador com executável próprio → ferramenta CLI),agente-worker-tipo-label-110-220
+php/php-src,outro,ferramenta CLI,baixa,R2 (linguagem/runtime/compilador/interpretador com executável próprio → ferramenta CLI),agente-worker-tipo-220-330
