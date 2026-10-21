@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 import calendar
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 import logging
 from pathlib import Path
 from typing import Any
@@ -18,6 +18,11 @@ from metricas.stability import ConclusionCategory, classify_conclusion
 from pipeline.http_client import GitHubClient
 
 logger = logging.getLogger(__name__)
+
+# The Actions "list workflow runs" endpoint exposes at most 1,000 results per
+# query (10 pages x 100), no matter how large ``total_count`` is.
+RUNS_PER_PAGE = 100
+MAX_READABLE_PAGES = 10
 
 
 def _to_utc_datetime(val: datetime | str) -> datetime:
@@ -100,6 +105,16 @@ class WorkflowRunsCollectionResult:
     passed_t4: bool
     bisection_events: list[dict[str, Any]] = field(default_factory=list)
     parquet_path: Path | None = None
+    api_requests: int = 0
+    unsplittable_intervals: list[dict[str, Any]] = field(default_factory=list)
+
+
+@dataclass
+class _FetchStats:
+    """Per-repository counters shared by every (concurrent) interval fetch."""
+
+    api_requests: int = 0
+    unsplittable_intervals: list[dict[str, Any]] = field(default_factory=list)
 
 
 def save_runs_to_parquet(
@@ -233,6 +248,11 @@ async def _resolve_default_branch(
     return str(default_branch)
 
 
+def _floor_to_second(dt: datetime) -> datetime:
+    """Drop sub-second precision: the GitHub ``created`` filter has 1 s resolution."""
+    return dt.astimezone(timezone.utc).replace(microsecond=0)
+
+
 async def _fetch_runs_for_interval(
     client: GitHubClient,
     owner: str,
@@ -241,38 +261,51 @@ async def _fetch_runs_for_interval(
     start_dt: datetime,
     end_dt: datetime,
     threshold_ceiling: int,
-    min_interval_seconds: float,
     bisection_events: list[dict[str, Any]],
-    depth: int = 0,
-    max_depth: int = 3,
+    stats: _FetchStats | None = None,
 ) -> list[dict[str, Any]]:
-    """Fetch runs for a time interval with adaptive parallel slicing when total_count >= threshold_ceiling."""
+    """Fetch the runs of a closed ``[start_dt, end_dt]`` interval (whole seconds).
+
+    While ``total_count >= threshold_ceiling`` the interval is split in half and
+    both halves are queried in parallel, recursively, with no depth limit and no
+    minimum size in days. The halves are disjoint (``[start, mid]`` and
+    ``[mid + 1 s, end]``), so every split strictly shrinks the interval.
+
+    Residual case: an interval of a single second (cannot be split any further)
+    that still reports ``total_count >= threshold_ceiling`` is read as far as the
+    API allows (10 pages x 100 = 1,000 runs) and recorded in
+    ``stats.unsplittable_intervals``; the caller logs one warning per repository.
+    """
+    if stats is None:
+        stats = _FetchStats()
+
+    start_dt = _floor_to_second(start_dt)
+    end_dt = _floor_to_second(end_dt)
     start_str = _format_iso(start_dt)
     end_str = _format_iso(end_dt)
     date_filter = f"{start_str}..{end_str}"
 
     url = f"/repos/{owner}/{repo}/actions/runs"
-    params = {
-        "branch": branch,
-        "event": "push",
-        "created": date_filter,
-        "per_page": 100,
-        "page": 1,
-    }
 
-    first_resp = await client.get(url, params=params)
+    def page_params(page: int) -> dict[str, Any]:
+        return {
+            "branch": branch,
+            "event": "push",
+            "created": date_filter,
+            "per_page": RUNS_PER_PAGE,
+            "page": page,
+        }
+
+    stats.api_requests += 1
+    first_resp = await client.get(url, params=page_params(1))
     data = first_resp.json()
     total_count = data.get("total_count", 0)
     page_runs = data.get("workflow_runs", [])
 
-    interval_duration = (end_dt - start_dt).total_seconds()
+    saturated = total_count >= threshold_ceiling
+    interval_seconds = int((end_dt - start_dt).total_seconds())
 
-    # If ceiling reached, interval is long enough, and under max_depth:
-    if (
-        total_count >= threshold_ceiling
-        and interval_duration > min_interval_seconds
-        and depth < max_depth
-    ):
+    if saturated and interval_seconds >= 1:
         logger.info(
             "Interval %s..%s for %s/%s exceeded limit (total_count=%d). Applying parallel adaptive slicing.",
             start_str,
@@ -289,10 +322,10 @@ async def _fetch_runs_for_interval(
             }
         )
 
-        mid_dt = start_dt + (end_dt - start_dt) / 2
+        mid_dt = start_dt + timedelta(seconds=interval_seconds // 2)
         sub_intervals: list[tuple[datetime, datetime]] = [
             (start_dt, mid_dt),
-            (mid_dt, end_dt),
+            (mid_dt + timedelta(seconds=1), end_dt),
         ]
 
         # Query all sub-intervals in parallel!
@@ -305,10 +338,8 @@ async def _fetch_runs_for_interval(
                 start_dt=s,
                 end_dt=e,
                 threshold_ceiling=threshold_ceiling,
-                min_interval_seconds=min_interval_seconds,
                 bisection_events=bisection_events,
-                depth=depth + 1,
-                max_depth=max_depth,
+                stats=stats,
             )
             for s, e in sub_intervals
         ]
@@ -319,30 +350,28 @@ async def _fetch_runs_for_interval(
             combined.extend(res)
         return combined
 
-    # Under ceiling or reached max depth: paginate remaining pages in parallel
+    # Paginate the remaining pages in parallel (the API serves at most 10 pages)
     all_runs = list(page_runs)
-    num_pages = (total_count + 99) // 100
+    num_pages = (total_count + RUNS_PER_PAGE - 1) // RUNS_PER_PAGE
 
     if num_pages > 1:
-        max_page = min(num_pages, 10 if total_count >= threshold_ceiling else num_pages)
-        page_tasks = [
-            client.get(
-                url,
-                params={
-                    "branch": branch,
-                    "event": "push",
-                    "created": date_filter,
-                    "per_page": 100,
-                    "page": p,
-                },
-            )
-            for p in range(2, max_page + 1)
-        ]
-        if page_tasks:
-            page_responses = await asyncio.gather(*page_tasks)
-            for resp in page_responses:
-                runs_on_page = resp.json().get("workflow_runs", [])
-                all_runs.extend(runs_on_page)
+        max_page = min(num_pages, MAX_READABLE_PAGES)
+        stats.api_requests += max_page - 1
+        page_tasks = [client.get(url, params=page_params(p)) for p in range(2, max_page + 1)]
+        page_responses = await asyncio.gather(*page_tasks)
+        for resp in page_responses:
+            all_runs.extend(resp.json().get("workflow_runs", []))
+
+    if saturated:
+        # Smallest unit (1 s) and still >= ceiling: read what is readable and report.
+        stats.unsplittable_intervals.append(
+            {
+                "start": start_str,
+                "end": end_str,
+                "total_count": total_count,
+                "runs_read": len(all_runs),
+            }
+        )
 
     return all_runs
 
@@ -357,8 +386,6 @@ async def collect_workflow_runs(
     save_to_parquet: bool = True,
     output_dir: str | Path = "dados/runs",
     threshold_ceiling: int = 1000,
-    min_interval_seconds: float = 86400.0 * 2,  # 2 days min slice
-    max_depth: int = 3,
 ) -> WorkflowRunsCollectionResult:
     """Collect push workflow runs for the default branch across observation window in parallel."""
     owns_client = False
@@ -381,6 +408,7 @@ async def collect_workflow_runs(
 
         monthly_intervals = split_window_into_months(start_dt, end_dt)
         bisection_events: list[dict[str, Any]] = []
+        stats = _FetchStats()
 
         # Fetch all monthly intervals concurrently!
         month_tasks = [
@@ -392,15 +420,29 @@ async def collect_workflow_runs(
                 start_dt=slice_start,
                 end_dt=slice_end,
                 threshold_ceiling=threshold_ceiling,
-                min_interval_seconds=min_interval_seconds,
                 bisection_events=bisection_events,
-                depth=0,
-                max_depth=max_depth,
+                stats=stats,
             )
             for slice_start, slice_end in monthly_intervals
         ]
 
         monthly_results = await asyncio.gather(*month_tasks)
+
+        if stats.unsplittable_intervals:
+            # Once per repository: residual case, intervals of 1 s with >= ceiling runs.
+            logger.warning(
+                "%s/%s: %d one-second interval(s) still report total_count >= %d and "
+                "cannot be split further; only the first %d runs of each are readable "
+                "(sum of total_count=%d, runs read=%d). First: %s",
+                owner,
+                repo,
+                len(stats.unsplittable_intervals),
+                threshold_ceiling,
+                MAX_READABLE_PAGES * RUNS_PER_PAGE,
+                sum(e["total_count"] for e in stats.unsplittable_intervals),
+                sum(e["runs_read"] for e in stats.unsplittable_intervals),
+                stats.unsplittable_intervals[0]["start"],
+            )
 
         # Deduplicate runs by id
         raw_runs_by_id: dict[int | str, dict[str, Any]] = {}
@@ -453,6 +495,8 @@ async def collect_workflow_runs(
             passed_t4=passed_t4,
             bisection_events=bisection_events,
             parquet_path=parquet_path,
+            api_requests=stats.api_requests,
+            unsplittable_intervals=stats.unsplittable_intervals,
         )
 
     finally:
