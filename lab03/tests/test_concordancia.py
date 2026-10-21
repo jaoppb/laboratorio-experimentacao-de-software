@@ -14,6 +14,7 @@ import pytest
 
 from analises.amostra_ouro import TAG_PLACEHOLDER
 from analises.concordancia import (
+    AVISO_ROTULOS_IA,
     DIMENSOES,
     SUFIXO_LINHAS_INVALIDAS,
     ArquivosAusentesError,
@@ -22,14 +23,19 @@ from analises.concordancia import (
     calcular_kappa_matriz,
     calcular_kappas,
     carregar_avaliadores,
+    carregar_origem_validada,
+    carregar_origens,
     carregar_csv,
     carregar_linhas_invalidas,
     carregar_rotulos_validados,
+    formatar_proveniencia,
+    gerar_consenso_automatico,
     gerar_modelo_consenso,
     interpretar_landis_koch,
     listar_divergencias,
     main,
     rotulos_por_unidade,
+    resumir_proveniencia,
     validar_consenso,
     validar_planilha_referencia,
     validar_rotulos,
@@ -715,3 +721,284 @@ def test_cli_verificar_consenso(ambiente, capsys):
     assert main(["verificar-consenso", *_base(ambiente), "--consenso", str(destino)]) == 0
 
     assert main(["verificar-consenso", *_base(ambiente), "--consenso", str(ambiente["tmp"] / "nada.csv")]) == 1
+
+
+# --------------------------------------------------------------------------- #
+# Proveniência (avaliadores IA) e consenso automático — fixtures sintéticas
+# --------------------------------------------------------------------------- #
+def make_origem(
+    df: pd.DataFrame, origem: str = "ia", modelo: str = "modelo-x", esforco: str = "high"
+) -> pd.DataFrame:
+    """Arquivo auxiliar `rotulos_<id>_origem.csv` sintético para um DataFrame de rótulos."""
+    return pd.DataFrame(
+        {
+            "repo_idx": df["repo_idx"],
+            "release_idx": df["release_idx"],
+            "origem": origem,
+            "modelo": modelo,
+            "esforco": esforco,
+            "data_utc": "2026-01-01T00:00:00Z",
+        }
+    )
+
+
+@pytest.fixture
+def origens_ia(rotulos_divergentes) -> dict[str, pd.DataFrame]:
+    return {a: make_origem(df) for a, df in rotulos_divergentes.items()}
+
+
+@pytest.fixture
+def ambiente_ia(ambiente, origens_ia) -> dict[str, Path]:
+    for avaliador, df in origens_ia.items():
+        gravar(df, ambiente["validacao"] / f"rotulos_{avaliador}_origem.csv")
+    return ambiente
+
+
+def test_resumo_de_proveniencia_por_avaliador_origem_modelo_esforco(rotulos_divergentes):
+    marcela = rotulos_divergentes["marcela"]
+    origem = make_origem(marcela)
+    origem.loc[origem["repo_idx"] == "1", ["origem", "modelo", "esforco"]] = ["humano", "", ""]
+
+    resumo = resumir_proveniencia({"marcela": origem, "joao": make_origem(marcela, modelo="m2", esforco="low")})
+    linhas = {(r.avaliador, r.origem, r.modelo, r.esforco): r.n_linhas for r in resumo.itertuples()}
+    assert linhas == {
+        ("marcela", "humano", "", ""): 2,
+        ("marcela", "ia", "modelo-x", "high"): 4,
+        ("joao", "ia", "m2", "low"): 6,
+    }
+
+
+def test_formatar_proveniencia_avisa_quando_ha_ia(rotulos_divergentes):
+    ia = {"joao": make_origem(rotulos_divergentes["joao"])}
+    texto = formatar_proveniencia(ia)
+    assert "joao: ia/modelo-x/high: 6" in texto
+    assert AVISO_ROTULOS_IA in texto
+    assert "não entre pessoas" in texto
+
+    humano = {"joao": make_origem(rotulos_divergentes["joao"], "humano", "", "")}
+    assert AVISO_ROTULOS_IA not in formatar_proveniencia(humano)
+    assert "joao: humano/-/-: 6" in formatar_proveniencia(humano)
+
+
+def _carregar_origem(tmp_path: Path, origem: pd.DataFrame, rotulos: pd.DataFrame) -> pd.DataFrame:
+    return carregar_origem_validada(gravar(origem, tmp_path / "o.csv"), rotulos)
+
+
+def test_origem_aceita_arquivo_correto(tmp_path, rotulos_divergentes):
+    rotulos = rotulos_divergentes["joao"]
+    assert len(_carregar_origem(tmp_path, make_origem(rotulos), rotulos)) == 6
+
+
+@pytest.mark.parametrize(
+    "mutacao,trecho",
+    [
+        (lambda o: o.drop(columns=["modelo"]), "colunas ausentes: modelo"),
+        (lambda o: o.iloc[:-1], "sem origem (chaves ausentes): 3/2"),
+        (lambda o: pd.concat([o, o.iloc[[0]]], ignore_index=True), "duplicadas: 1/1"),
+        (
+            lambda o: pd.concat([o, o.iloc[[0]].assign(repo_idx="9")], ignore_index=True),
+            "chaves inexistentes nos rótulos: 9/1",
+        ),
+        (lambda o: o.assign(origem=o["origem"].where(o.index != 0, "robo")), "origem fora de ['ia', 'humano']"),
+        (lambda o: o.assign(modelo=o["modelo"].where(o.index != 1, "")), "origem=ia sem modelo (linhas): 3"),
+        (lambda o: o.assign(origem=o["origem"].where(o.index != 0, "humano")), "diverge entre as releases"),
+    ],
+)
+def test_origem_invalida(tmp_path, rotulos_divergentes, mutacao, trecho):
+    rotulos = rotulos_divergentes["joao"]
+    origem = mutacao(make_origem(rotulos))
+    with pytest.raises(RotulosInvalidosError) as exc:
+        _carregar_origem(tmp_path, origem, rotulos)
+    assert trecho in str(exc.value)
+
+
+def test_origem_humano_nao_exige_modelo(tmp_path, rotulos_divergentes):
+    rotulos = rotulos_divergentes["joao"]
+    assert len(_carregar_origem(tmp_path, make_origem(rotulos, "humano", "", ""), rotulos)) == 6
+
+
+def test_origem_cobre_so_as_linhas_validas_do_avaliador(tmp_path, ref, rotulos_divergentes):
+    # avaliador com lista de linhas inválidas: o arquivo de origem cobre só o que sobrou
+    invalidas = ref[ref["repo_idx"] == "3"][["repo_idx", "release_idx"]]
+    gravar(rotulos_divergentes["marcela"], tmp_path / "rotulos_marcela.csv")
+    gravar(invalidas, tmp_path / f"marcela{SUFIXO_LINHAS_INVALIDAS}")
+    rotulos = carregar_avaliadores(tmp_path, ref, ["marcela"])
+    assert len(rotulos["marcela"]) == 4
+    gravar(make_origem(rotulos["marcela"]), tmp_path / "rotulos_marcela_origem.csv")
+    assert len(carregar_origens(tmp_path, rotulos)["marcela"]) == 4
+
+
+def test_carregar_origens_arquivo_ausente(tmp_path, rotulos_divergentes):
+    with pytest.raises(ConcordanciaError, match="rotulos_joao_origem.csv"):
+        carregar_origens(tmp_path, {"joao": rotulos_divergentes["joao"]})
+
+
+def test_cli_sem_origens_nao_muda_a_saida(ambiente, capsys):
+    assert main(["kappa", *_base(ambiente)]) == 0
+    saida = capsys.readouterr().out
+    assert "proveniência" not in saida and "AVISO" not in saida
+
+
+@pytest.mark.parametrize("comando", ["validar", "kappa", "divergencias"])
+def test_cli_origens_reporta_resumo_e_aviso_em_cada_saida(ambiente_ia, capsys, comando):
+    assert main([comando, *_base(ambiente_ia), "--origens"]) == 0
+    saida = capsys.readouterr().out
+    assert "proveniência dos rótulos" in saida
+    assert "gabriel: ia/modelo-x/high: 6" in saida
+    assert AVISO_ROTULOS_IA in saida
+
+
+def test_cli_consenso_modelo_com_origens_reporta_proveniencia(ambiente_ia, capsys):
+    destino = ambiente_ia["tmp"] / "consenso_modelo.csv"
+    assert main(["consenso", *_base(ambiente_ia), "--origens", "--saida", str(destino)]) == 0
+    assert AVISO_ROTULOS_IA in capsys.readouterr().out
+    assert "consenso_modo" not in carregar_csv(destino).columns  # modelo da reunião, sem alteração
+
+
+def test_cli_kappa_json_com_origens_inclui_proveniencia(ambiente_ia):
+    destino = ambiente_ia["tmp"] / "kappa.json"
+    assert main(["kappa", *_base(ambiente_ia), "--origens", "--json", str(destino)]) == 0
+    dados = json.loads(destino.read_text(encoding="utf-8"))
+    assert [d["dimensao"] for d in dados["resultados"]] == ["tipo_projeto", "entrega_real", "release_corretiva"]
+    assert dados["proveniencia"]["aviso"] == AVISO_ROTULOS_IA
+    assert {r["avaliador"] for r in dados["proveniencia"]["resumo"]} == {"marcela", "gabriel", "joao"}
+
+
+def test_cli_validar_origens_humanos_nao_emite_aviso(ambiente, rotulos_divergentes, capsys):
+    for avaliador, df in rotulos_divergentes.items():
+        gravar(make_origem(df, "humano", "", ""), ambiente["validacao"] / f"rotulos_{avaliador}_origem.csv")
+    assert main(["validar", *_base(ambiente), "--origens"]) == 0
+    saida = capsys.readouterr().out
+    assert "humano/-/-: 6" in saida and AVISO_ROTULOS_IA not in saida
+
+
+def test_cli_origens_ausente_ou_invalida_retorna_1(ambiente_ia, capsys):
+    caminho = ambiente_ia["validacao"] / "rotulos_joao_origem.csv"
+    origem = carregar_csv(caminho)
+    gravar(origem.iloc[:-1], caminho)
+    assert main(["kappa", *_base(ambiente_ia), "--origens"]) == 1
+    assert "rotulos_joao_origem.csv" in capsys.readouterr().err
+
+    caminho.unlink()
+    assert main(["kappa", *_base(ambiente_ia), "--origens"]) == 1
+    assert "origem ausentes" in capsys.readouterr().err
+
+
+# ---- consenso automático ---------------------------------------------------- #
+def test_consenso_automatico_maioria_e_desempate(ref, rotulos_divergentes, origens_ia):
+    consenso = gerar_consenso_automatico(rotulos_divergentes, origens_ia, ref)
+
+    assert len(consenso) == 6
+    assert (consenso["consenso_modo"] == "automatico_maioria").all()
+    repo = consenso.drop_duplicates("repo_idx").set_index("repo_idx")
+    # repo 1: unânime; repo 2: 2-1; repo 3: 1-1-1 -> outro / incerto
+    assert (repo.loc["1", "tipo_projeto"], repo.loc["1", "tipo_projeto_origem"]) == ("biblioteca/framework", "unanimidade")
+    assert (repo.loc["2", "tipo_projeto"], repo.loc["2", "tipo_projeto_origem"]) == ("aplicação/serviço", "maioria")
+    assert (repo.loc["3", "tipo_projeto"], repo.loc["3", "tipo_projeto_origem"]) == ("outro", "desempate_automatico")
+    assert (repo.loc["3", "entrega_real"], repo.loc["3", "entrega_real_origem"]) == ("incerto", "desempate_automatico")
+    assert "desempate automático" in repo.loc["3", "notas_consenso"]
+    assert repo.loc["1", "notas_consenso"] == ""
+    # release_corretiva é binária: nunca pendente nem desempate; por release
+    assert set(consenso["release_corretiva_origem"]) <= {"unanimidade", "maioria"}
+    assert consenso.iloc[-1]["release_corretiva"] == "não"
+    assert not consenso.filter(like="_origem").isin(["pendente"]).any().any()
+
+
+def test_consenso_automatico_conta_votos_ia_e_humano(ref, rotulos_divergentes):
+    origens = {
+        "marcela": make_origem(rotulos_divergentes["marcela"], "humano", "", ""),
+        "gabriel": make_origem(rotulos_divergentes["gabriel"]),
+        "joao": make_origem(rotulos_divergentes["joao"]),
+    }
+    consenso = gerar_consenso_automatico(rotulos_divergentes, origens, ref)
+
+    assert (consenso["tipo_projeto_votos_ia"] == 2).all()
+    assert (consenso["tipo_projeto_votos_humano"] == 1).all()
+    assert (consenso["entrega_real_votos_ia"] + consenso["entrega_real_votos_humano"] == 3).all()
+    assert (consenso["release_corretiva_votos_ia"] == 2).all()
+    assert (consenso["release_corretiva_votos_humano"] == 1).all()
+
+
+def test_consenso_automatico_votos_por_unidade_com_origem_mista_por_repo(ref, rotulos_divergentes, origens_ia):
+    # Marcela humana só no repo 1: nesse repo 1 voto humano; nos demais, 0
+    origens_ia["marcela"].loc[origens_ia["marcela"]["repo_idx"] == "1", ["origem", "modelo", "esforco"]] = ["humano", "", ""]
+    consenso = gerar_consenso_automatico(rotulos_divergentes, origens_ia, ref)
+    por_repo = consenso.groupby("repo_idx")["tipo_projeto_votos_humano"].first().to_dict()
+    assert por_repo == {"1": 1, "2": 0, "3": 0}
+
+
+def test_consenso_automatico_passa_em_verificar_consenso(ref, rotulos_divergentes, origens_ia):
+    consenso = gerar_consenso_automatico(rotulos_divergentes, origens_ia, ref)
+    assert validar_consenso(consenso, ref) == []
+
+
+def test_desempate_automatico_so_vale_com_consenso_modo(ref, rotulos_divergentes, origens_ia):
+    consenso = gerar_consenso_automatico(rotulos_divergentes, origens_ia, ref)
+    sem_modo = consenso.drop(columns=["consenso_modo"])
+    assert any("tipo_projeto_origem fora de" in e for e in validar_consenso(sem_modo, ref))
+    consenso["consenso_modo"] = "reuniao"
+    assert any("consenso_modo fora de" in e for e in validar_consenso(consenso, ref))
+
+
+def test_cli_consenso_automatico_exige_flag_e_origens(ambiente_ia):
+    destino = ambiente_ia["tmp"] / "consenso_auto.csv"
+    # sem --modo-automatico o comando continua gerando só o modelo (com pendências), nunca o automático
+    assert main(["consenso", *_base(ambiente_ia), "--origens", "--saida", str(destino)]) == 0
+    modelo = carregar_csv(destino)
+    assert "consenso_modo" not in modelo.columns and (modelo["tipo_projeto_origem"] == "pendente").any()
+
+    # --modo-automatico sem --origens é recusado e não grava nada
+    destino2 = ambiente_ia["tmp"] / "consenso_auto2.csv"
+    assert main(["consenso", *_base(ambiente_ia), "--modo-automatico", "--saida", str(destino2)]) == 1
+    assert not destino2.exists()
+
+
+def test_cli_consenso_automatico_gera_e_avisa(ambiente_ia, capsys):
+    destino = ambiente_ia["tmp"] / "consenso_auto.csv"
+    argv = ["consenso", *_base(ambiente_ia), "--modo-automatico", "--origens", "--saida", str(destino)]
+    assert main(argv) == 0
+    saida = capsys.readouterr().out
+    assert "tipo_projeto: unanimidade=2, maioria=2, desempate_automatico=2 (linhas)" in saida and "automatico_maioria" in saida
+    assert AVISO_ROTULOS_IA in saida
+
+    consenso = carregar_csv(destino)
+    assert set(consenso["consenso_modo"]) == {"automatico_maioria"}
+    assert {"tipo_projeto_votos_ia", "tipo_projeto_votos_humano"} <= set(consenso.columns)
+
+    assert main(argv) == 1  # não sobrescreve sem --forcar
+    assert main([*argv, "--forcar"]) == 0
+
+    assert main(["verificar-consenso", *_base(ambiente_ia), "--consenso", str(destino)]) == 0
+    assert "sem reunião" in capsys.readouterr().out
+
+
+def test_slot_gabriel_com_claude_code_e_independencia_parcial(rotulos_divergentes, tmp_path, ambiente, capsys):
+    # cenário real previsto: rótulos de IA feitos via Claude Code, esforço desconhecido,
+    # independência apenas parcial (o mesmo assistente implementou a heurística v1)
+    nota = "parcial: o mesmo assistente implementou a heurística v1"
+    origem = make_origem(rotulos_divergentes["gabriel"], modelo="claude-opus-5.5 (Claude Code)", esforco="desconhecido")
+    origem["independencia"] = nota
+    validada = _carregar_origem(tmp_path, origem, rotulos_divergentes["gabriel"])
+    assert validada["independencia"].eq(nota).all()
+
+    texto = formatar_proveniencia({"gabriel": validada})
+    assert "ia/claude-opus-5.5 (Claude Code)/desconhecido: 6" in texto
+    assert f"independência (gabriel): {nota}" in texto
+    assert AVISO_ROTULOS_IA in texto
+
+    # pela CLI: a ressalva acompanha o resumo, e o JSON a registra
+    for avaliador, df in rotulos_divergentes.items():
+        o = origem if avaliador == "gabriel" else make_origem(df)
+        gravar(o, ambiente["validacao"] / f"rotulos_{avaliador}_origem.csv")
+    destino = tmp_path / "k.json"
+    assert main(["kappa", *_base(ambiente), "--origens", "--json", str(destino)]) == 0
+    assert nota in capsys.readouterr().out
+    dados = json.loads(destino.read_text(encoding="utf-8"))
+    assert dados["proveniencia"]["independencia"] == {"gabriel": [nota]}
+
+
+def test_sidecar_sem_coluna_independencia_continua_valido(tmp_path, rotulos_divergentes):
+    rotulos = rotulos_divergentes["joao"]
+    validada = _carregar_origem(tmp_path, make_origem(rotulos), rotulos)
+    assert "independencia" not in validada.columns
+    assert "independência (" not in formatar_proveniencia({"joao": validada})
