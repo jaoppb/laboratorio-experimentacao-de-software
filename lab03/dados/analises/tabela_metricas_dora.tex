@@ -1,0 +1,20 @@
+% Tabela gerada automaticamente por analises/analise_rq01_rq04.py
+\begin{table*}[ht]
+\centering
+\caption{Estatísticas descritivas das métricas DORA mineradas (amostra de 330 repositórios).}
+\label{tab:metricas_dora_descritiva}
+\small
+\begin{tabular}{llcrrrrrrr}
+\toprule
+\textbf{Métrica} & \textbf{Dimensão/Variante} & \textbf{Unid.} & \textbf{n} & \textbf{Mediana} & \textbf{Q1} & \textbf{Q3} & \textbf{IQR} & \textbf{Mín.} & \textbf{Máx.} \\
+\midrule
+Frequência de Deploy (RQ 01) & deployment_frequency & rel/sem & 330 & 0.50 & 0.24 & 1.20 & 0.97 & 0.10 & 49.60 \\
+Lead Time (a) por Release (RQ 02) & lead_time_a_hours & horas & 269 & 165.88 & 41.39 & 454.72 & 413.34 & 0.01 & 78858.70 \\
+Lead Time (b) por Commit (RQ 02) & lead_time_b_hours & horas & 269 & 145.57 & 44.68 & 356.64 & 311.96 & 0.01 & 62894.49 \\
+CFR (a) Proxy de CI (RQ 03) & cfr_a & proporção & 330 & 0.05 & 0.02 & 0.11 & 0.09 & 0.00 & 1.00 \\
+CFR (b) Proxy de Entrega (RQ 03) & cfr_b & proporção & 328 & 0.19 & 0.04 & 0.41 & 0.37 & 0.00 & 0.98 \\
+Tempo de Recuperação (RQ 04) & recovery_hours & horas & 312 & 2.61 & 1.07 & 6.73 & 5.67 & 0.07 & 560.00 \\
+Taxa de Censura de Falhas (RQ 04) & censored_episodes_ratio & proporção & 330 & 0.00 & 0.00 & 0.01 & 0.01 & 0.00 & 1.00 \\
+\bottomrule
+\end{tabular}
+\end{table*}

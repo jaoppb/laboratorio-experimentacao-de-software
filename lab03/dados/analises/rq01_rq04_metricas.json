@@ -1,0 +1,244 @@
+{
+  "n_repositorios": 330,
+  "estatisticas": [
+    {
+      "metrica": "deployment_frequency",
+      "nome_exibicao": "Frequência de Deploy (RQ 01)",
+      "unidade": "rel/sem",
+      "n_total": 330,
+      "n_validos": 330,
+      "n_nulos": 0,
+      "media": 1.4966556156575348,
+      "desvio_padrao": 4.405173370276947,
+      "minimo": 0.0959692898272552,
+      "q1": 0.23512476007677538,
+      "mediana": 0.4990403071017274,
+      "q3": 1.2044145873320535,
+      "iqr": 0.9692898272552781,
+      "maximo": 49.59692898272553
+    },
+    {
+      "metrica": "lead_time_a_hours",
+      "nome_exibicao": "Lead Time (a) por Release (RQ 02)",
+      "unidade": "horas",
+      "n_total": 330,
+      "n_validos": 269,
+      "n_nulos": 61,
+      "media": 950.7316919661298,
+      "desvio_padrao": 5204.552712903826,
+      "minimo": 0.0083333333333333,
+      "q1": 41.38583333333333,
+      "mediana": 165.875,
+      "q3": 454.7216666666667,
+      "iqr": 413.33583333333337,
+      "maximo": 78858.69694444444
+    },
+    {
+      "metrica": "lead_time_b_hours",
+      "nome_exibicao": "Lead Time (b) por Commit (RQ 02)",
+      "unidade": "horas",
+      "n_total": 330,
+      "n_validos": 269,
+      "n_nulos": 61,
+      "media": 763.7453567740604,
+      "desvio_padrao": 4082.1070504061927,
+      "minimo": 0.0083333333333333,
+      "q1": 44.67638888888889,
+      "mediana": 145.57166666666666,
+      "q3": 356.6405555555556,
+      "iqr": 311.9641666666667,
+      "maximo": 62894.49236111112
+    },
+    {
+      "metrica": "cfr_a",
+      "nome_exibicao": "CFR (a) Proxy de CI (RQ 03)",
+      "unidade": "proporção",
+      "n_total": 330,
+      "n_validos": 330,
+      "n_nulos": 0,
+      "media": 0.09218621402039562,
+      "desvio_padrao": 0.1257965240621296,
+      "minimo": 0.0,
+      "q1": 0.024210536824975273,
+      "mediana": 0.04684243561184785,
+      "q3": 0.11187994528801698,
+      "iqr": 0.0876694084630417,
+      "maximo": 1.0
+    },
+    {
+      "metrica": "cfr_b",
+      "nome_exibicao": "CFR (b) Proxy de Entrega (RQ 03)",
+      "unidade": "proporção",
+      "n_total": 330,
+      "n_validos": 328,
+      "n_nulos": 2,
+      "media": 0.2508532987213692,
+      "desvio_padrao": 0.24721635019220747,
+      "minimo": 0.0,
+      "q1": 0.03838352585258525,
+      "mediana": 0.185615848406546,
+      "q3": 0.4074074074074074,
+      "iqr": 0.36902388155482213,
+      "maximo": 0.9803921568627452
+    },
+    {
+      "metrica": "recovery_hours",
+      "nome_exibicao": "Tempo de Recuperação (RQ 04)",
+      "unidade": "horas",
+      "n_total": 330,
+      "n_validos": 312,
+      "n_nulos": 18,
+      "media": 12.140514155982906,
+      "desvio_padrao": 39.11019577636437,
+      "minimo": 0.0652777777777777,
+      "q1": 1.0668055555555556,
+      "mediana": 2.6106944444444444,
+      "q3": 6.733055555555556,
+      "iqr": 5.66625,
+      "maximo": 560.0011111111111
+    },
+    {
+      "metrica": "censored_episodes_ratio",
+      "nome_exibicao": "Taxa de Censura de Falhas (RQ 04)",
+      "unidade": "proporção",
+      "n_total": 330,
+      "n_validos": 330,
+      "n_nulos": 0,
+      "media": 0.03274010241817558,
+      "desvio_padrao": 0.11718908019669169,
+      "minimo": 0.0,
+      "q1": 0.0,
+      "mediana": 0.0,
+      "q3": 0.014138943248532225,
+      "iqr": 0.014138943248532225,
+      "maximo": 1.0
+    }
+  ],
+  "distribuicao_tiers": {
+    "Frequência de Deploy (RQ 01)": {
+      "Elite": {
+        "quantidade": 9,
+        "percentual": 2.727272727272727
+      },
+      "High": {
+        "quantidade": 86,
+        "percentual": 26.060606060606062
+      },
+      "Medium": {
+        "quantidade": 163,
+        "percentual": 49.3939393939394
+      },
+      "Low": {
+        "quantidade": 72,
+        "percentual": 21.818181818181817
+      }
+    },
+    "Lead Time for Changes (RQ 02)": {
+      "Elite": {
+        "quantidade": 55,
+        "percentual": 16.666666666666664
+      },
+      "High": {
+        "quantidade": 80,
+        "percentual": 24.242424242424242
+      },
+      "Medium": {
+        "quantidade": 83,
+        "percentual": 25.151515151515152
+      },
+      "Low": {
+        "quantidade": 112,
+        "percentual": 33.939393939393945
+      }
+    },
+    "Change Failure Rate (a) - CI": {
+      "Elite": {
+        "quantidade": 274,
+        "percentual": 83.03030303030303
+      },
+      "High": {
+        "quantidade": 37,
+        "percentual": 11.212121212121213
+      },
+      "Medium": {
+        "quantidade": 11,
+        "percentual": 3.3333333333333335
+      },
+      "Low": {
+        "quantidade": 8,
+        "percentual": 2.4242424242424243
+      }
+    },
+    "Change Failure Rate (b) - Entrega": {
+      "Elite": {
+        "quantidade": 149,
+        "percentual": 45.151515151515156
+      },
+      "High": {
+        "quantidade": 68,
+        "percentual": 20.606060606060606
+      },
+      "Medium": {
+        "quantidade": 48,
+        "percentual": 14.545454545454545
+      },
+      "Low": {
+        "quantidade": 63,
+        "percentual": 19.090909090909093
+      }
+    },
+    "Tempo de Recuperação (RQ 04)": {
+      "Elite": {
+        "quantidade": 76,
+        "percentual": 23.03030303030303
+      },
+      "High": {
+        "quantidade": 200,
+        "percentual": 60.60606060606061
+      },
+      "Medium": {
+        "quantidade": 34,
+        "percentual": 10.303030303030303
+      },
+      "Low": {
+        "quantidade": 20,
+        "percentual": 6.0606060606060606
+      }
+    },
+    "Classificação Geral DORA (C1)": {
+      "Elite": {
+        "quantidade": 22,
+        "percentual": 6.666666666666667
+      },
+      "High": {
+        "quantidade": 143,
+        "percentual": 43.333333333333336
+      },
+      "Medium": {
+        "quantidade": 146,
+        "percentual": 44.24242424242424
+      },
+      "Low": {
+        "quantidade": 19,
+        "percentual": 5.757575757575758
+      }
+    }
+  },
+  "arquivos_gerados": {
+    "figuras": [
+      "dados\\analises\\figuras\\rq01_frequencia_deploy.png",
+      "dados\\analises\\figuras\\rq01_frequencia_deploy.pdf",
+      "dados\\analises\\figuras\\rq02_lead_time_comparacao.png",
+      "dados\\analises\\figuras\\rq02_lead_time_comparacao.pdf",
+      "dados\\analises\\figuras\\rq03_cfr_comparacao.png",
+      "dados\\analises\\figuras\\rq03_cfr_comparacao.pdf",
+      "dados\\analises\\figuras\\rq04_recuperacao_censura.png",
+      "dados\\analises\\figuras\\rq04_recuperacao_censura.pdf",
+      "dados\\analises\\figuras\\dora_overall_tiers.png",
+      "dados\\analises\\figuras\\dora_overall_tiers.pdf"
+    ],
+    "tabela_markdown": "dados\\analises\\tabela_metricas_dora.md",
+    "tabela_latex": "dados\\analises\\tabela_metricas_dora.tex",
+    "tabela_tiers_latex": "dados\\analises\\tabela_tiers_dora.tex"
+  }
+}
