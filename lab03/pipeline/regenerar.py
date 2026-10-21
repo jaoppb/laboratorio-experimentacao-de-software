@@ -103,6 +103,9 @@ class RegenSettings:
     min_releases: int
     min_workflow_runs: int
     cleanup_clones: bool = False
+    # repositories that, if they cannot be recollected (e.g. disabled upstream),
+    # keep their previous metric values instead of blocking the regeneration
+    keep_previous: frozenset[str] = frozenset()
     report_path: Path | None = Path(DEFAULT_REPORT)
 
     @classmethod
@@ -111,6 +114,7 @@ class RegenSettings:
         config: dict[str, Any],
         cleanup_clones: bool = False,
         report_path: Path | str | None = DEFAULT_REPORT,
+        keep_previous: Sequence[str] = (),
     ) -> RegenSettings:
         janela = config.get("janela", {})
         dirs = config.get("diretorios", {})
@@ -136,6 +140,9 @@ class RegenSettings:
             min_releases=amostra.get("min_releases", 5),
             min_workflow_runs=amostra.get("min_workflow_runs", 50),
             cleanup_clones=cleanup_clones,
+            keep_previous=frozenset(
+                [*config.get("regeneracao", {}).get("manter_valores_anteriores", []), *keep_previous]
+            ),
             report_path=Path(report_path) if report_path else None,
         )
 
@@ -333,6 +340,22 @@ async def regenerate_repository(
     return record, diagnostics
 
 
+def keep_previous_values(
+    settings: RegenSettings, old: dict[str, Any], reason: str
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    """Record of a repository that cannot be recollected: its previous values, unchanged.
+
+    The previous `runs/` file is staged so the published `runs/` keeps one file
+    per repository. Columns that did not exist before stay null.
+    """
+    previous_runs = settings.runs_dir / run_file_name(old["full_name"])
+    if not previous_runs.is_file():
+        raise FileNotFoundError(f"{previous_runs} not found; nothing to keep for {old['full_name']}")
+    _copy_atomic(previous_runs, settings.staged_runs_dir / previous_runs.name)
+    record = {col: old.get(col) for col in SCHEMA_COLUMNS}
+    return record, {"kept_previous": reason, "unsplittable_intervals": 0, "api_requests": 0}
+
+
 # ------------------------------------------------------------------ the run
 
 
@@ -348,6 +371,7 @@ class RegenSummary:
     finalized: bool = False
     problems: list[str] = field(default_factory=list)
     removed_orphans: list[str] = field(default_factory=list)
+    kept: dict[str, str] = field(default_factory=dict)
 
     @property
     def ok(self) -> bool:
@@ -406,9 +430,17 @@ async def collect_all(
             try:
                 record, diagnostics = await regenerate_repository(client, old, settings)
             except Exception as exc:
-                summary.failed[name] = redact(f"{type(exc).__name__}: {exc}")
-                logger.warning("Failed to regenerate %s: %s", name, summary.failed[name])
-                continue
+                reason = redact(f"{type(exc).__name__}: {exc}")
+                if name not in settings.keep_previous:
+                    summary.failed[name] = reason
+                    logger.warning("Failed to regenerate %s: %s", name, reason)
+                    continue
+                logger.warning("%s could not be recollected, keeping previous values: %s", name, reason)
+                try:
+                    record, diagnostics = keep_previous_values(settings, old, reason)
+                except Exception as keep_exc:
+                    summary.failed[name] = redact(f"{reason}; {type(keep_exc).__name__}: {keep_exc}")
+                    continue
             append_checkpoint(settings.checkpoint_path, fingerprint, record, diagnostics)
             done[name] = {"record": record, "diagnostics": diagnostics}
             summary.collected.append(name)
@@ -462,9 +494,12 @@ def finalize(
     unsplittable: dict[str, int],
     summary: RegenSummary,
     generated_on: str | None = None,
+    kept: dict[str, str] | None = None,
 ) -> None:
     """Check the invariants and publish datasets, runs and report (all or nothing)."""
-    problems = check_invariants(old_records, new_records, expected_rows=settings.expected_rows)
+    problems = check_invariants(
+        old_records, new_records, expected_rows=settings.expected_rows, kept=kept or ()
+    )
     missing_runs = [
         r["full_name"]
         for r in new_records
@@ -496,7 +531,9 @@ def finalize(
     )
 
     if settings.report_path is not None:
-        write_report(settings, old_records, new_records, unsplittable, problems, generated_on)
+        write_report(
+            settings, old_records, new_records, unsplittable, problems, generated_on, kept
+        )
     summary.finalized = True
 
 
@@ -507,6 +544,7 @@ def write_report(
     unsplittable: dict[str, int],
     problems: Sequence[str] = (),
     generated_on: str | None = None,
+    kept: dict[str, str] | None = None,
 ) -> Path:
     """Write the comparison report (old vs new) to `settings.report_path`."""
     assert settings.report_path is not None
@@ -522,6 +560,7 @@ def write_report(
         min_releases=settings.min_releases,
         min_workflow_runs=settings.min_workflow_runs,
         unsplittable=unsplittable,
+        kept=kept,
     )
     text = render_report(
         comparison,
@@ -585,8 +624,19 @@ async def run_regeneration(
         for name, entry in done.items()
         if entry.get("diagnostics", {}).get("unsplittable_intervals")
     }
-    finalize(settings, old_records, new_records, unsplittable, summary, generated_on)
+    kept = kept_from_checkpoint(done)
+    summary.kept = kept
+    finalize(settings, old_records, new_records, unsplittable, summary, generated_on, kept)
     return summary
+
+
+def kept_from_checkpoint(done: dict[str, dict[str, Any]]) -> dict[str, str]:
+    """Repositories that kept their previous values, with the reason."""
+    return {
+        name: entry["diagnostics"]["kept_previous"]
+        for name, entry in done.items()
+        if entry.get("diagnostics", {}).get("kept_previous")
+    }
 
 
 def format_summary(summary: RegenSummary) -> str:
@@ -599,6 +649,7 @@ def format_summary(summary: RegenSummary) -> str:
         f"Falhas: {len(summary.failed)}",
     ]
     lines += [f"  falha: {name}: {reason}" for name, reason in summary.failed.items()]
+    lines += [f"  mantido com valores anteriores: {n}: {r[:120]}" for n, r in summary.kept.items()]
     if summary.problems:
         lines.append("Invariantes violadas (nada foi publicado):")
         lines += [f"  - {p}" for p in summary.problems[:50]]
@@ -617,14 +668,15 @@ def report_only(settings: RegenSettings, generated_on: str | None = None) -> Pat
     new = load_repositories_dataset(settings.dataset_parquet)
     if not old or not new:
         raise FileNotFoundError("Baseline ou dataset atual ausente; execute a regeneração antes.")
-    problems = check_invariants(old, new, expected_rows=settings.expected_rows)
     fp = settings.fingerprint()
+    kept = kept_from_checkpoint(load_checkpoint(settings.checkpoint_path, fp))
+    problems = check_invariants(old, new, expected_rows=settings.expected_rows, kept=kept)
     unsplittable = {
         n: e["diagnostics"]["unsplittable_intervals"]
         for n, e in load_checkpoint(settings.checkpoint_path, fp).items()
         if e.get("diagnostics", {}).get("unsplittable_intervals")
     }
-    return write_report(settings, old, new, unsplittable, problems, generated_on)
+    return write_report(settings, old, new, unsplittable, problems, generated_on, kept)
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -653,6 +705,17 @@ def main(argv: Sequence[str] | None = None) -> int:
         action="store_true",
         help="Apaga cada clone bare após o uso (padrão: mantém, para retomar sem reclonar)",
     )
+    parser.add_argument(
+        "--manter-antigo",
+        action="append",
+        default=[],
+        metavar="OWNER/REPO",
+        help=(
+            "Se este repositório não puder ser recoletado (ex.: desabilitado no GitHub), "
+            "mantém seus valores anteriores em vez de falhar (repetível; soma-se a "
+            "regeneracao.manter_valores_anteriores do config)"
+        ),
+    )
     parser.add_argument("--relatorio", default=DEFAULT_REPORT, help="Caminho do relatório Markdown")
     parser.add_argument(
         "--somente-relatorio",
@@ -667,7 +730,10 @@ def main(argv: Sequence[str] | None = None) -> int:
     with open(args.config, encoding="utf-8") as f:
         config = yaml.safe_load(f) or {}
     settings = RegenSettings.from_config(
-        config, cleanup_clones=args.limpar_clones, report_path=args.relatorio
+        config,
+        cleanup_clones=args.limpar_clones,
+        report_path=args.relatorio,
+        keep_previous=args.manter_antigo,
     )
 
     if args.somente_relatorio:

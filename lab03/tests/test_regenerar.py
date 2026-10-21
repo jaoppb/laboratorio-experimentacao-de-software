@@ -606,3 +606,50 @@ def test_schema_has_cfr_b_columns_for_c2():
                    "_censored_releases", "_skipped_releases"):
         assert f"c2_cfr_b{suffix}" in names
     assert set(METADATA_COLUMNS) <= set(names)
+
+
+# ------------------------------------------------- unavailable repositories
+
+
+def test_unavailable_repository_keeps_previous_values(env, fakes, client):
+    import dataclasses
+
+    fakes.fail.add("acme/beta")
+    old_beta = [r for r in load_repositories_dataset(env.dataset_parquet) if r["name"] == "beta"][0]
+    old_run = (env.runs_dir / "acme__beta.parquet").read_bytes()
+    settings = dataclasses.replace(env, keep_previous=frozenset({"acme/beta"}))
+
+    summary = _run(settings, client)
+
+    assert summary.ok and summary.finalized
+    assert list(summary.kept) == ["acme/beta"] and "RuntimeError" in summary.kept["acme/beta"]
+    assert "ghp_" not in summary.kept["acme/beta"]
+    records = {r["name"]: r for r in load_repositories_dataset(env.dataset_parquet)}
+    # previous values untouched (including nulls the new schema cannot fill), the other one regenerated
+    assert records["beta"] == old_beta
+    assert records["alpha"]["c2_cfr_b_evaluated_releases"] == 6
+    assert (env.runs_dir / "acme__beta.parquet").read_bytes() == old_run
+    report = env.report_path.read_text(encoding="utf-8")
+    assert "## Repositórios mantidos com os valores anteriores" in report
+    assert "| acme/beta | RuntimeError" in report
+
+
+def test_unavailable_repository_outside_the_keep_list_still_fails(env, fakes, client):
+    fakes.fail.add("acme/beta")
+    summary = _run(env, client)
+    assert list(summary.failed) == ["acme/beta"] and not summary.kept
+
+
+def test_keep_list_comes_from_config_and_cli_flag():
+    settings = RegenSettings.from_config(
+        {"regeneracao": {"manter_valores_anteriores": ["a/a"]}}, keep_previous=["b/b"]
+    )
+    assert settings.keep_previous == frozenset({"a/a", "b/b"})
+
+
+def test_check_invariants_exempts_kept_repositories_from_the_null_check():
+    old = _ok_records()
+    new = [dict(r) for r in old]
+    new[1]["c2_cfr_b_evaluated_releases"] = None
+    assert check_invariants(old, new)
+    assert check_invariants(old, new, kept={"b/b"}) == []

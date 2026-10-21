@@ -48,3 +48,9 @@ coleta:
   # bare local (git for-each-ref) com zero consumo de cota de API do GitHub.
   max_tags: 100
 
+# Regeneração final (#56): repositórios que, se não puderem ser recoletados, mantêm os valores
+# anteriores em vez de bloquear a publicação. `MadsLorentzen/ai-job-search` foi movido para
+# `ai-job-search-dev/ai-job-search` e está desabilitado no GitHub (git clone falha).
+regeneracao:
+  manter_valores_anteriores:
+    - "MadsLorentzen/ai-job-search"

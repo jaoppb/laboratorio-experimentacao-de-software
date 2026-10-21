@@ -12,7 +12,7 @@ from __future__ import annotations
 import csv
 import math
 from collections import Counter
-from collections.abc import Sequence
+from collections.abc import Collection, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -88,8 +88,14 @@ def check_invariants(
     old: Sequence[dict[str, Any]],
     new: Sequence[dict[str, Any]],
     expected_rows: int | None = None,
+    kept: Collection[str] = (),
 ) -> list[str]:
-    """Invariants of the regeneration of a frozen sample; empty list when all hold."""
+    """Invariants of the regeneration of a frozen sample; empty list when all hold.
+
+    Repositories in `kept` could not be recollected and keep their previous
+    values: they must still have the full schema and unchanged metadata, but
+    their metric columns may be null.
+    """
     problems: list[str] = []
     if expected_rows is not None:
         if len(old) != expected_rows:
@@ -132,7 +138,7 @@ def check_invariants(
                 if not same_value(before.get(col), rec.get(col)):
                     problems.append(f"{name}: coluna de metadados {col} mudou")
         for col in NEVER_NULL_COLUMNS:
-            if rec.get(col) is None:
+            if name not in kept and rec.get(col) is None:
                 problems.append(f"{name}: {col} nulo")
     return problems
 
@@ -203,6 +209,8 @@ class Comparison:
     new_columns: list[str] = field(default_factory=list)
     below_selection_criteria: list[tuple[str, int, int]] = field(default_factory=list)
     unsplittable: dict[str, int] = field(default_factory=dict)
+    # repositories that could not be recollected and kept their previous values
+    kept_previous: dict[str, str] = field(default_factory=dict)
 
     @property
     def changed_columns(self) -> list[ColumnComparison]:
@@ -216,10 +224,13 @@ def compare_datasets(
     min_releases: int = 5,
     min_workflow_runs: int = 50,
     unsplittable: dict[str, int] | None = None,
+    kept: dict[str, str] | None = None,
 ) -> Comparison:
     """Compare the dataset before and after the regeneration, row by row (by `full_name`)."""
     old_by_name = {r["full_name"]: r for r in old}
-    comparison = Comparison(rows=len(new), unsplittable=dict(unsplittable or {}))
+    comparison = Comparison(
+        rows=len(new), unsplittable=dict(unsplittable or {}), kept_previous=dict(kept or {})
+    )
     pairs = [(old_by_name.get(r["full_name"], {}), r) for r in new]
 
     if baseline_columns is not None:
@@ -386,6 +397,23 @@ def render_report(
             add(f"| {name} | {releases} | {runs} |")
     else:
         add("Nenhum.")
+    add("")
+
+    add("## Repositórios mantidos com os valores anteriores")
+    add("")
+    if comparison.kept_previous:
+        add(
+            "Não foi possível recoletar estes repositórios (por exemplo, repositório "
+            "desabilitado no GitHub). Eles continuam entre os 330 com os valores de métricas "
+            "do dataset anterior, inalterados (as colunas novas ficam nulas) e o `runs/` anterior."
+        )
+        add("")
+        add("| Repositório | Motivo |")
+        add("|---|---|")
+        for name, reason in sorted(comparison.kept_previous.items()):
+            add(f"| {name} | {reason.replace('|', '/')[:200]} |")
+    else:
+        add("Nenhum: todos os repositórios foram recoletados.")
     add("")
 
     add("## Diagnóstico da coleta de runs")
