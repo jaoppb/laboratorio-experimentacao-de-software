@@ -149,7 +149,7 @@ do congelamento, nem colunas de desfecho de `repositorios.*`.
 ## 8. Etapa 2: comparação com a referência humana
 
 Referência: `validacao/rotulos_marcela.csv`, **uma só avaliadora**. Para 30 dos 60 repositórios os rótulos foram dados
-sobre linhas que a PR #82 declarou nulas (`marcela_linhas_invalidas.csv`); por isso (b) é referência mais fraca.
+sobre linhas que a PR #82 declarou nulas (`historico/marcela_linhas_invalidas.csv`); por isso (b) é referência mais fraca.
 Comandos: `uv run python -m analises.comparar_tipo_agentes_humano --saida-divergencias <arquivo>`.
 
 | Subconjunto | n | Concordância | Kappa de Cohen |
