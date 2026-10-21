@@ -27,6 +27,9 @@
 * **Consenso automático** (`consenso --modo-automatico --origens`): maioria simples por unidade;
   empate 1-1-1 vira `tipo_projeto = outro` / `entrega_real = incerto` (origem `desempate_automatico`);
   `release_corretiva` é binária e não empata. Não houve reunião.
+* **A reunião de consenso foi dispensada por falta de tempo** (decisão de 2026-10-21); portanto os
+  empates e as divergências 2-1 não foram deliberados por pessoas e o `consenso.csv` deve ser
+  descrito como automático.
 * Dados lidos como estão em `main`; nenhum arquivo de rótulos foi alterado. Execução em 2026-10-21.
 
 ## 2. Kappa de Fleiss: três slots (`joao`, `gabriel`, `marcela`)

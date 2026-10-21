@@ -251,7 +251,7 @@ release_corretiva release       300    x.xxx      xx.x%  ...
   `rotulos_<slot>_origem.csv`. Nenhum slot é "três avaliadores humanos"; use o modo da seção 7.
 * A execução extra `validacao/extra/rotulos_gabriel_execucao2_ia.csv` não ocupa slot e só serve para medir
   a confiabilidade entre execuções de IA.
-* O kappa real e o consenso automático (seção 7) estão em [`resultados_concordancia.md`](./resultados_concordancia.md) e `validacao/consenso.csv`. Continuam pendentes, como trabalho humano, a reunião de consenso e a rotulação por uma segunda pessoa (seção 7.3).
+* O kappa real e o consenso automático (seção 7) estão em [`resultados_concordancia.md`](./resultados_concordancia.md) e `validacao/consenso.csv`. A reunião de consenso foi **dispensada por falta de tempo** (decisão de 2026-10-21): o `consenso.csv` é o automático da seção 7, sem deliberação entre pessoas. Uma rotulação por pessoas (seção 7.3) continua possível, mas não é pré-requisito.
 
 ## 7. Modo com avaliadores IA (desvio documentado)
 
