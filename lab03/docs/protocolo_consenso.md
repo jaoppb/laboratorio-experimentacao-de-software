@@ -149,7 +149,12 @@ Se existir `<avaliador>_linhas_invalidas.csv` ao lado de `rotulos_<avaliador>.cs
   chaves listadas seguem ignoradas).
 
 Sem lista, o comportamento é o de sempre (todas as linhas obrigatórias). `consenso.csv` não
-aceita lista nem placeholders. Todo arquivo de rótulos e a lista devem constar em
+aceita lista nem placeholders. **Estado atual:** como `rotulos_marcela.csv` tem as 300 linhas válidas (150 humanas e 150 de IA),
+a lista foi movida para `validacao/historico/marcela_linhas_invalidas.csv`, onde a ferramenta **não** a
+usa automaticamente (senão ignoraria as 150 linhas de IA e `--origens` rejeitaria o arquivo de origem
+de 300 linhas).
+
+Todo arquivo de rótulos e a lista devem constar em
 [`validacao/PROVENIENCIA.md`](../validacao/PROVENIENCIA.md).
 
 ## 4. Protocolo de desempate e consenso
@@ -237,15 +242,16 @@ release_corretiva release       300    x.xxx      xx.x%  ...
 
 ## 6. Estado atual e pendências humanas
 
-* Existem `validacao/rotulos_marcela.csv`, **válido só para 150 das 300 linhas**: as outras
-  150 foram rotuladas sobre placeholders (sorteio incompleto, corrigido em `amostra_ouro.md`) e
-  estão em `validacao/marcela_linhas_invalidas.csv`; e `validacao/rotulos_gabriel.csv` (300 linhas),
-  **produzido por um agente de IA** a pedido de Gabriel, com independência apenas parcial (o mesmo
-  assistente implementou a heurística v1), conforme [`PROVENIENCIA.md`](../validacao/PROVENIENCIA.md).
-  Marcela ainda precisa rotular as 150 linhas novas (30 repositórios, incluindo `tipo_projeto` e
-  `entrega_real` deles). Falta `rotulos_joao.csv` (300 linhas reais), que depende da rotulação (#57).
-  Para fechar os três slots com avaliadores IA, veja a seção 7.
-* Faltam: o cálculo do kappa real, a reunião de consenso e o commit de `validacao/consenso.csv`.
+* Existem os três arquivos de rótulos, com 300 linhas cada (veja [`PROVENIENCIA.md`](../validacao/PROVENIENCIA.md)
+  e [`confiabilidade_execucoes_ia.md`](./confiabilidade_execucoes_ia.md)):
+  `validacao/rotulos_joao.csv` (IA, claude-opus-5.5, esforço `high`), `validacao/rotulos_gabriel.csv`
+  (IA, Claude Code a pedido de Gabriel, independência parcial: o mesmo assistente implementou a heurística
+  v1) e `validacao/rotulos_marcela.csv` (150 linhas **humanas** de Marcela, inalteradas, e 150 linhas de
+  IA nos 30 repositórios cujo sorteio estava incompleto). A origem de cada linha está nos
+  `rotulos_<slot>_origem.csv`. Nenhum slot é "três avaliadores humanos"; use o modo da seção 7.
+* A execução extra `validacao/extra/rotulos_gabriel_execucao2_ia.csv` não ocupa slot e só serve para medir
+  a confiabilidade entre execuções de IA.
+* Faltam: o cálculo do kappa real, o consenso (reunião ou modo automático da seção 7) e o commit de `validacao/consenso.csv`.
 
 ## 7. Modo com avaliadores IA (desvio documentado)
 
