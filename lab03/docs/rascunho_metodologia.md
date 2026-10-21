@@ -693,18 +693,33 @@ falharam, e o seu F1 entram no artigo.**
 **Estado atual da validação manual** (concluído em 21/10/2026 no repositório):
 
 * o sorteio e as planilhas estão completos: 60 repositórios × 5 releases reais (Issue #63);
-* `validacao/rotulos_marcela.csv`: 300 linhas completas (150 linhas originais de rotulação humana da Marcela e 150 linhas completadas e registradas com procedência);
-* `validacao/rotulos_gabriel.csv` (Issue #61): 300 linhas, produzidas por agente de IA com procedência declarada;
-* `validacao/rotulos_joao.csv` (Issue #65): 300 linhas, produzidas por execução independente de agente de IA com procedência declarada;
+* `validacao/rotulos_marcela.csv`: 300 linhas. **150 são rotulação humana (Marcela)**, mantidas sem
+  alteração (as dos 30 repositórios que tinham release real na primeira etapa do sorteio) e **150 são de
+  uma execução de IA** (claude-opus-5.5, esforço `high`) para os outros 30 repositórios, listados em
+  `validacao/historico/marcela_linhas_invalidas.csv`; a origem de cada linha está em
+  `validacao/rotulos_marcela_origem.csv`;
+* `validacao/rotulos_gabriel.csv` (Issue #61): 300 linhas, **produzidas por um agente de IA (Claude
+  Code, Opus 5.5) a pedido de Gabriel**, e não por rotulação humana, com independência **parcial** em
+  relação à heurística. Na concordância e na avaliação, esse arquivo é um **avaliador IA**;
+* `validacao/rotulos_joao.csv` (Issue #57): 300 linhas, **produzidas por uma execução de IA**
+  (claude-opus-5.5, esforço `high`), independente e cega à heurística, e não por rotulação humana;
+* `validacao/extra/rotulos_gabriel_execucao2_ia.csv`: segunda execução de IA para o slot `gabriel`, fora
+  dos slots, usada só para medir a confiabilidade entre execuções (`docs/confiabilidade_execucoes_ia.md`);
 * todos os três arquivos possuem seus respectivos sidecars de rastreabilidade (`rotulos_*_origem.csv`);
-* **Concordância (Kappa de Fleiss):**
-  - `tipo_projeto` ($N = 60$): $\kappa = 0,618$ (concordância unânime: 65,0%, classificação de Landis & Koch: **substancial**);
-  - `entrega_real` ($N = 60$): $\kappa = 0,494$ (concordância unânime: 98,3%, classificação de Landis & Koch: **moderada**);
-  - `release_corretiva` ($N = 300$): $\kappa = 0,722$ (concordância unânime: 79,3%, classificação de Landis & Koch: **substancial**).
-* **Consenso (`validacao/consenso.csv`):** consolidado em modo automático (`automatico_maioria`, validado por `verificar-consenso`), com 0 casos necessitando de desempate forçado (todas as decisões foram obtidas por unanimidade ou maioria 2-1). Distribuição dos votos:
-  - `tipo_projeto`: unanimidade = 195 linhas (65%), maioria = 105 linhas (35%), desempate = 0;
-  - `entrega_real`: unanimidade = 295 linhas (98,3%), maioria = 5 linhas (1,7%), desempate = 0;
-  - `release_corretiva`: unanimidade = 238 linhas (79,3%), maioria = 62 linhas (20,7%), desempate = 0.
+
+Portanto, **os três arquivos existem, mas não são três avaliadores humanos**: `joao` e `gabriel` são
+100% IA (mesmo modelo, erros correlacionados) e `marcela` mistura 150 linhas humanas e 150 de IA. O texto
+final explicita essa metodologia. Um **aviso de validade** (`docs/confiabilidade_execucoes_ia.md`, seção 3): a
+concordância bruta das execuções de IA com as 150 linhas humanas de Marcela é de ≈58% em
+`release_corretiva` (kappa de Cohen ≈ 0,11 a 0,13) e ≈70% em `tipo_projeto`.
+
+* **Concordância e Confiabilidade (Kappa de Fleiss entre os 3 slots):**
+  - `tipo_projeto` ($N = 60$): $\kappa = 0,792$ (concordância unânime: 80,0%, substancial);
+  - `entrega_real` ($N = 60$): $\kappa = 0,494$ (concordância bruta unânime: 96,7%, dimensão dominada por prevalência de `sim`);
+  - `release_corretiva` ($N = 300$): $\kappa = 0,634$ (concordância unânime: 72,3%, substancial).
+* **Consenso (`validacao/consenso.csv`):** consolidado em modo automático (`automatico_maioria`, validado por `verificar-consenso`), com 0 casos necessitando de desempate forçado em `release_corretiva` e `entrega_real`, e apenas 1 em `tipo_projeto` (resolvido como `outro`). Todas as decisões foram registradas com transparência de votos de IA vs. votos humanos.
+
+`[PENDENTE: precisão, recall e F1 da heurística por versão, matriz de confusão, número e motivos de releases excluídas, versão final e justificativa (#62); executar a persistência de releases da amostra-ouro com analises.persistir_amostra_ouro, que exige GITHUB_TOKEN e rede.]`
 
 ### 3.8 Análise estatística planejada
 
@@ -1030,11 +1045,11 @@ Todos os caminhos são relativos a `lab03/`, salvo indicação.
 | Sorteio de 60 repositórios (semente 42) e 5 releases por repositório; 300 linhas; lista de repositórios | `analises/amostra_ouro.py`; `dados/amostra_ouro/sorteio_info.json` |
 | Dimensões, unidades de análise, kappa de Fleiss, Landis & Koch, consenso e desempate, formato dos arquivos | `docs/protocolo_consenso.md`; `analises/concordancia.py` |
 | Precisão/recall/F1, exclusões, meta F1 ≥ 0,70, regra de decisão e versões | `docs/avaliacao_heuristica.md`; `analises/avaliar_heuristica.py` |
-| Existem `rotulos_marcela.csv` (humano; 150 linhas válidas) e `rotulos_gabriel.csv` (IA); faltam `rotulos_joao.csv` e `consenso.csv`; proveniência de cada arquivo | `validacao/` (listagem); `validacao/PROVENIENCIA.md`; `docs/protocolo_consenso.md` (seção 6) |
+| Existem `rotulos_joao.csv` (IA), `rotulos_gabriel.csv` (IA) e `rotulos_marcela.csv` (150 linhas humanas + 150 de IA); falta `consenso.csv`; proveniência de cada arquivo; confiabilidade entre execuções de IA e aviso de validade | `validacao/` (listagem); `validacao/PROVENIENCIA.md`; `docs/confiabilidade_execucoes_ia.md`; `docs/protocolo_consenso.md` (seção 6) |
 | Plano estatístico (Spearman, Kruskal-Wallis, Mann-Whitney, Holm, ε², Cliff's δ, κ ponderado), definições operacionais, validação manual | `guialab03.md` |
 | Opções (a), (b) e (c) para o fator "tipo do projeto" e evidência de poder estatístico | Issue #69 (GitHub); `docs/decisao_rq06_tipo_projeto.md` |
 | Impacto estimado da janela, dos nulos, do truncamento de runs e do assunto do commit | `docs/impacto_limitacoes_conhecidas.md` |
-| Sorteio da amostra-ouro completado em 20/10/2026 e linhas inválidas da Marcela | `docs/amostra_ouro.md`; `validacao/marcela_linhas_invalidas.csv` |
+| Sorteio da amostra-ouro completado em 20/10/2026 e linhas inválidas da Marcela | `docs/amostra_ouro.md`; `validacao/historico/marcela_linhas_invalidas.csv` |
 | Python 3.14 | `.python-version` |
 | Decisões do grupo de 20/10/2026 (janela, nulos, CFR (b) em C2, runs, clone, funil, RQ 06, validação manual, heurística) | registro das entrevistas com os autores, fora do repositório |
 | Divisão da escrita da metodologia | Issue #68 (GitHub) |

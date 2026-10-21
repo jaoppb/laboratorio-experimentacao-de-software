@@ -58,11 +58,11 @@ sorteio pendente).
 
 ## 4. Impacto nos rótulos
 
-* **Marcela:** `rotulos_marcela.csv` não foi alterado. As 150 linhas void estão em
-  `validacao/marcela_linhas_invalidas.csv`. Resta ela rotular as **150 linhas novas** (30
-  repositórios; inclui `tipo_projeto` e `entrega_real` desses repositórios) na planilha
-  regenerada `amostra_ouro_marcela.csv`. Quando terminar, o `rotulos_marcela.csv` completo
-  (300 linhas reais) passa a valer e `marcela_linhas_invalidas.csv` deve ser **removido**
-  (senão as chaves listadas continuariam sendo ignoradas). Ver `docs/protocolo_consenso.md`,
-  seção 3.3.
-* **João e Gabriel:** ainda não rotularam; devem usar as planilhas completas (300 linhas reais).
+* **Marcela:** as 150 linhas void foram rotuladas por uma execução de IA (claude-opus-5.5, `high`) e
+  gravadas em `rotulos_marcela.csv`, que agora tem as 300 linhas válidas: 150 humanas de Marcela
+  (inalteradas) e 150 de IA, distinguidas em `rotulos_marcela_origem.csv`. A lista das linhas antigas
+  void está em `validacao/historico/marcela_linhas_invalidas.csv` (registro histórico, fora de
+  `validacao/` para que a ferramenta não a use). Se Marcela vier a rotular as 150 linhas, basta
+  substituí-las e marcar `origem=humano` (`docs/protocolo_consenso.md`, seção 7.3).
+* **João e Gabriel:** `rotulos_joao.csv` (IA) foi adicionado e `rotulos_gabriel.csv` (IA) já existia;
+  ambos usam as planilhas completas (300 linhas reais). Proveniência em `validacao/PROVENIENCIA.md`.

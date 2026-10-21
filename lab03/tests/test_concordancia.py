@@ -338,22 +338,26 @@ def test_csv_ilegivel_vira_erro_de_formato(tmp_path, ref):
 
 
 def test_rotulos_marcela_reais_tem_formato_valido():
+    """`rotulos_marcela.csv` tem as 300 linhas válidas (150 humanas + 150 de IA, #64/#57).
+
+    A lista histórica das 150 linhas antigas void fica em `validacao/historico/` para que a
+    ferramenta não a use automaticamente (ela ignoraria as 150 linhas agora válidas).
+    """
     rotulos = LAB03 / "validacao" / "rotulos_marcela.csv"
-    invalidas = LAB03 / "validacao" / f"marcela{SUFIXO_LINHAS_INVALIDAS}"
+    historico = LAB03 / "validacao" / "historico" / f"marcela{SUFIXO_LINHAS_INVALIDAS}"
     planilha = LAB03 / "dados" / "amostra_ouro" / "amostra_ouro_template.csv"
-    if not (rotulos.is_file() and planilha.is_file() and invalidas.is_file()):
+    if not (rotulos.is_file() and planilha.is_file() and historico.is_file()):
         pytest.skip("arquivos reais ausentes")
     referencia = carregar_csv(planilha)
     validar_planilha_referencia(referencia)  # sorteio completo: sem placeholders
-    # Sem a lista explícita, as 150 linhas void de Marcela são rejeitadas.
-    with pytest.raises(RotulosInvalidosError, match="placeholder"):
-        carregar_rotulos_validados(rotulos, referencia)
-    lista = carregar_linhas_invalidas(invalidas, referencia)
-    assert len(lista) == 150
-    df = carregar_rotulos_validados(rotulos, referencia, linhas_invalidas=lista)
-    assert len(df) == 150
+    df = carregar_rotulos_validados(rotulos, referencia)
+    assert len(df) == 300
     assert (df["tag_name"] != TAG_PLACEHOLDER).all()
-    assert df["repo_idx"].nunique() == 30
+    assert df["repo_idx"].nunique() == 60
+    lista = carregar_linhas_invalidas(historico, referencia)
+    assert len(lista) == 150
+    # com a lista (uso antigo), só as 150 linhas humanas são consideradas
+    assert len(carregar_rotulos_validados(rotulos, referencia, linhas_invalidas=lista)) == 150
 
 
 # --------------------------------------------------------------------------- #

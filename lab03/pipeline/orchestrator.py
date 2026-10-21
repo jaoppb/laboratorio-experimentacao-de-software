@@ -11,8 +11,9 @@ import asyncio
 import csv
 import json
 import logging
-from datetime import datetime, timedelta, timezone
 from collections.abc import Sequence
+from dataclasses import dataclass
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -25,7 +26,7 @@ from metricas.dora import (
 )
 from metricas.cfr_b import DEFAULT_HEURISTIC, HEURISTICS, calculate_cfr_b
 from metricas.lead_time import calculate_lead_time
-from metricas.schemas import _parse_datetime, parse_window_end, window_length
+from metricas.schemas import Release, _parse_datetime, parse_window_end, window_length
 from metricas.stability import (
     calculate_cfr_a,
     calculate_recovery_time,
@@ -52,7 +53,9 @@ from pipeline.repo_selector import iter_candidates_by_stars
 from pipeline.workflow_runs import collect_workflow_runs, save_runs_to_parquet
 
 if TYPE_CHECKING:
+    from metricas.schemas import WorkflowRun
     from pipeline.commits import ReleaseCommits
+    from pipeline.releases import WindowReleases
 
 logger = logging.getLogger(__name__)
 
@@ -96,6 +99,12 @@ SCHEMA_REPOSITORIOS = pa.schema(
         ("cfr_b_evaluated_releases", pa.int64()),
         ("cfr_b_censored_releases", pa.int64()),
         ("cfr_b_skipped_releases", pa.int64()),
+        ("c2_cfr_b", pa.float64()),
+        ("c2_cfr_b_tier", pa.string()),
+        ("c2_cfr_b_failed_releases", pa.int64()),
+        ("c2_cfr_b_evaluated_releases", pa.int64()),
+        ("c2_cfr_b_censored_releases", pa.int64()),
+        ("c2_cfr_b_skipped_releases", pa.int64()),
     ]
 )
 
@@ -104,9 +113,12 @@ def compute_cfr_b_columns(
     release_commits: Sequence[ReleaseCommits],
     window_end: datetime | str,
     heuristic: str = DEFAULT_HEURISTIC,
+    prefix: str = "",
 ) -> dict[str, Any]:
-    """Compute the CFR (b) dataset columns from the C1 releases of a repository.
+    """Compute the CFR (b) dataset columns from the deploy units of a repository.
 
+    `release_commits` are the C1 releases for the `cfr_b*` columns and the C2
+    units (releases + pre-releases) for the `c2_cfr_b*` ones (`prefix="c2_"`).
     `cfr_b` and `cfr_b_tier` are None when no release could be evaluated
     (all censored or skipped); the counters are always filled.
     """
@@ -117,12 +129,172 @@ def compute_cfr_b_columns(
     )
     tier = result.tier
     return {
-        "cfr_b": result.cfr_b,
-        "cfr_b_tier": tier.value if tier is not None else None,
-        "cfr_b_failed_releases": result.failed_releases,
-        "cfr_b_evaluated_releases": result.evaluated_releases,
-        "cfr_b_censored_releases": result.censored_releases,
-        "cfr_b_skipped_releases": result.skipped_releases,
+        f"{prefix}cfr_b": result.cfr_b,
+        f"{prefix}cfr_b_tier": tier.value if tier is not None else None,
+        f"{prefix}cfr_b_failed_releases": result.failed_releases,
+        f"{prefix}cfr_b_evaluated_releases": result.evaluated_releases,
+        f"{prefix}cfr_b_censored_releases": result.censored_releases,
+        f"{prefix}cfr_b_skipped_releases": result.skipped_releases,
+    }
+
+
+def compute_metric_columns(
+    *,
+    releases: Sequence[Release],
+    window_releases: WindowReleases,
+    runs: Sequence[WorkflowRun],
+    valid_runs_count: int,
+    release_commits_c1: Sequence[ReleaseCommits],
+    units: C2C3Units,
+    window_start: datetime,
+    window_end: datetime,
+    window_weeks: float,
+    cfr_b_heuristic: str = DEFAULT_HEURISTIC,
+) -> dict[str, Any]:
+    """Compute every metric column of one repository (all but the metadata ones).
+
+    Shared by the pipeline (`evaluate_candidate`) and the final regeneration
+    (`pipeline.regenerar`), so both apply the same definitions: C1 reference
+    metrics, CFR (a)/(b), recovery time, DORA tiers and the C2/C3 columns
+    (including CFR (b) over C2, Issue #56).
+    """
+    lead_time_c1 = calculate_lead_time(
+        [(rc.release, rc.commits_or_none) for rc in release_commits_c1]
+    )
+    dep_freq = calculate_deployment_frequency(
+        releases=releases,
+        window_weeks=window_weeks,
+        start_date=window_start,
+        end_date=window_end,
+    )
+    cfr_a = calculate_cfr_a(runs)
+    recovery_result = calculate_recovery_time(runs)
+
+    lead_time_a = lead_time_c1.median_a_hours
+    lead_time_days = (lead_time_a / 24.0) if lead_time_a is not None else None
+    dora_eval = evaluate_repository_dora(
+        deployment_frequency=dep_freq,
+        lead_time_days=lead_time_days,
+        cfr=cfr_a,
+        recovery_hours=recovery_result.median_hours,
+        failure_episodes=recovery_result.total_episodes,
+    )
+
+    return {
+        "releases_count_window": window_releases.count,
+        "total_releases": len(releases),
+        "workflow_runs_count_window": valid_runs_count,
+        "total_workflow_runs": len(runs),
+        "deployment_frequency": dep_freq,
+        "deployment_tier": dora_eval.deployment_tier.value,
+        "lead_time_a_hours": lead_time_a,
+        "lead_time_b_hours": lead_time_c1.median_b_hours,
+        "lead_time_tier": (
+            dora_eval.lead_time_tier.value if dora_eval.lead_time_tier is not None else None
+        ),
+        "cfr_a": cfr_a,
+        "cfr_tier": dora_eval.cfr_tier.value,
+        "recovery_hours": recovery_result.median_hours,
+        "recovery_tier": dora_eval.recovery_tier.value,
+        "censored_episodes_ratio": recovery_result.censored_ratio,
+        "overall_dora_score": dora_eval.overall_score,
+        "overall_dora_tier": dora_eval.overall_tier.value,
+        **compute_c2_c3_columns(
+            units.release_commits_c2,
+            units.tag_commits_c3,
+            total_prereleases=len([r for r in releases if r.prerelease]),
+            total_tags=len(units.all_tags),
+            window_weeks=window_weeks,
+        ),
+        # CFR (b): delivery proxy (skipped = unknown commits). Over C1 (main
+        # definition) and over C2 for the C2 combination (group decision, Q8).
+        **compute_cfr_b_columns(
+            release_commits_c1, window_end=window_end, heuristic=cfr_b_heuristic
+        ),
+        **compute_cfr_b_columns(
+            units.release_commits_c2,
+            window_end=window_end,
+            heuristic=cfr_b_heuristic,
+            prefix="c2_",
+        ),
+    }
+
+
+@dataclass
+class C2C3Units:
+    """Deploy units of the C2 (releases + pre-releases) and C3 (tags) definitions."""
+
+    all_tags: list[Release]
+    release_commits_c2: list[ReleaseCommits]
+    tag_commits_c3: list[ReleaseCommits]
+
+
+async def collect_c2_c3_units(
+    git_dir: Path | str,
+    releases: Sequence[Release],
+    window_start: datetime | str,
+    window_end: datetime | str,
+) -> C2C3Units:
+    """Collect the C2 and C3 deploy units (and their commits) from a local clone.
+
+    C2 = published releases plus pre-releases in the window; C3 = every Git tag
+    (dated by the commit author date) in the window. Shared by the orchestrator
+    and the dataset backfill so both follow the exact same definition.
+    """
+    all_tags = await extract_tags_from_git(git_dir)
+    window_releases_c2 = filter_window(
+        releases=releases,
+        window_start=window_start,
+        window_end=window_end,
+        include_prerelease=True,
+    )
+    window_tags_c3 = filter_window(
+        releases=all_tags,
+        window_start=window_start,
+        window_end=window_end,
+        include_prerelease=False,
+    )
+    release_commits_c2 = await collect_release_commits_from_git(
+        git_dir=git_dir, window=window_releases_c2
+    )
+    tag_commits_c3 = await collect_release_commits_from_git(
+        git_dir=git_dir, window=window_tags_c3
+    )
+    return C2C3Units(all_tags, release_commits_c2, tag_commits_c3)
+
+
+def compute_c2_c3_columns(
+    release_commits_c2: Sequence[ReleaseCommits],
+    tag_commits_c3: Sequence[ReleaseCommits],
+    total_prereleases: int,
+    total_tags: int,
+    window_weeks: float,
+) -> dict[str, Any]:
+    """Compute the pre-release, tag, C2 and C3 dataset columns of a repository.
+
+    `release_commits_c2` and `tag_commits_c3` hold the in-window units (the
+    anchor is not included), so their lengths are the window counts.
+    `window_weeks` is the length of the observation window (the deployment
+    frequency denominator). `total_prereleases` is the number of pre-releases among the collected
+    releases and `total_tags` the number of tags of the clone.
+    """
+    lead_time_c2 = calculate_lead_time(
+        [(rc.release, rc.commits_or_none) for rc in release_commits_c2]
+    )
+    lead_time_c3 = calculate_lead_time(
+        [(rc.release, rc.commits_or_none) for rc in tag_commits_c3]
+    )
+    return {
+        "prereleases_count_window": len(
+            [rc for rc in release_commits_c2 if rc.release.prerelease]
+        ),
+        "total_prereleases": total_prereleases,
+        "tags_count_window": len(tag_commits_c3),
+        "total_tags": total_tags,
+        "c2_deployment_frequency": len(release_commits_c2) / window_weeks,
+        "c2_lead_time_b_hours": lead_time_c2.median_b_hours,
+        "c3_deployment_frequency": len(tag_commits_c3) / window_weeks,
+        "c3_lead_time_b_hours": lead_time_c3.median_b_hours,
     }
 
 
@@ -499,25 +671,10 @@ class PipelineOrchestrator:
                 auto_cleanup=self.limpeza_git_cache,
                 token_pool=client.token_pool,
             ) as git_dir:
-                # 1. Extract all tags from git clone
-                all_tags = await extract_tags_from_git(git_dir)
-
-                # 2. Window filters
+                # 1. C1 window (main definition: published releases only)
                 window_releases_c1 = window_releases
-                window_releases_c2 = filter_window(
-                    releases=releases,
-                    window_start=self.window_start,
-                    window_end=self.window_end,
-                    include_prerelease=True,
-                )
-                window_tags_c3 = filter_window(
-                    releases=all_tags,
-                    window_start=self.window_start,
-                    window_end=self.window_end,
-                    include_prerelease=False,
-                )
 
-                # 3. Collect commits between consecutive deploy units from git
+                # 2. Collect commits between consecutive C1 releases
                 release_commits_c1 = await collect_release_commits(
                     client=client,
                     owner=owner,
@@ -525,14 +682,16 @@ class PipelineOrchestrator:
                     window=window_releases_c1,
                     git_dir=git_dir,
                 )
-                release_commits_c2 = await collect_release_commits_from_git(
+
+                # 3. C2 (releases + pre-releases) and C3 (tags) from the local clone
+                c2_c3_units = await collect_c2_c3_units(
                     git_dir=git_dir,
-                    window=window_releases_c2,
+                    releases=releases,
+                    window_start=self.window_start,
+                    window_end=self.window_end,
                 )
-                tag_commits_c3 = await collect_release_commits_from_git(
-                    git_dir=git_dir,
-                    window=window_tags_c3,
-                )
+            release_commits_c2 = c2_c3_units.release_commits_c2
+            tag_commits_c3 = c2_c3_units.tag_commits_c3
 
             # Persist C1 releases (main definition: lead time, CFR b and gold
             # sample), C2 releases + pre-releases and C3 tags to Parquet
@@ -555,63 +714,22 @@ class PipelineOrchestrator:
                 repo=repo,
                 output_path=tags_path,
             )
-
-            # Lead time results
-            lead_time_result_c1 = calculate_lead_time(
-                [(rc.release, rc.commits_or_none) for rc in release_commits_c1]
-            )
-            lead_time_result_c2 = calculate_lead_time(
-                [(rc.release, rc.commits_or_none) for rc in release_commits_c2]
-            )
-            lead_time_result_c3 = calculate_lead_time(
-                [(rc.release, rc.commits_or_none) for rc in tag_commits_c3]
-            )
         except Exception as exc:
             logger.warning("Error calculating lead time or tags via git clone for %s: %s", full_name, exc)
             return None, "git_clone_error"
 
-        # Calculate DORA Metrics (C1 Reference)
-        dep_freq = calculate_deployment_frequency(
+        metric_columns = compute_metric_columns(
             releases=releases,
-            window_weeks=self.window_weeks,
-            start_date=self.window_start,
-            end_date=self.window_end,
-        )
-        cfr_a = calculate_cfr_a(runs_result.runs)
-        recovery_result = calculate_recovery_time(runs_result.runs)
-
-        lead_time_a = lead_time_result_c1.median_a_hours
-        lead_time_b = lead_time_result_c1.median_b_hours
-        lead_time_days = (lead_time_a / 24.0) if lead_time_a is not None else None
-
-        dora_eval = evaluate_repository_dora(
-            deployment_frequency=dep_freq,
-            lead_time_days=lead_time_days,
-            cfr=cfr_a,
-            recovery_hours=recovery_result.median_hours,
-            failure_episodes=recovery_result.total_episodes,
-        )
-
-        # CFR (b): delivery proxy on the C1 releases (skipped = unknown commits)
-        cfr_b_columns = compute_cfr_b_columns(
-            release_commits_c1,
+            window_releases=window_releases,
+            runs=runs_result.runs,
+            valid_runs_count=runs_result.valid_runs_count,
+            release_commits_c1=release_commits_c1,
+            units=c2_c3_units,
+            window_start=self.window_start,
             window_end=self.window_end,
-            heuristic=self.cfr_b_heuristic,
+            window_weeks=self.window_weeks,
+            cfr_b_heuristic=self.cfr_b_heuristic,
         )
-
-        # C2 Metrics (Official Releases + Pre-releases)
-        c2_dep_freq = window_releases_c2.count / self.window_weeks
-        c2_lead_time_b = lead_time_result_c2.median_b_hours
-
-        # C3 Metrics (Git Tags)
-        c3_dep_freq = window_tags_c3.count / self.window_weeks
-        c3_lead_time_b = lead_time_result_c3.median_b_hours
-
-        # Additional counts
-        prereleases_count_window = len([r for r in window_releases_c2.in_window if r.prerelease])
-        total_prereleases = len([r for r in releases if r.prerelease])
-        tags_count_window = window_tags_c3.count
-        total_tags = len(all_tags)
 
         record = {
             "owner": owner,
@@ -628,33 +746,7 @@ class PipelineOrchestrator:
                 else None
             ),
             "contributors_count": meta.contributors_count,
-            "releases_count_window": window_releases.count,
-            "total_releases": len(releases),
-            "workflow_runs_count_window": runs_result.valid_runs_count,
-            "total_workflow_runs": runs_result.total_runs,
-            "deployment_frequency": dep_freq,
-            "deployment_tier": dora_eval.deployment_tier.value,
-            "lead_time_a_hours": lead_time_a,
-            "lead_time_b_hours": lead_time_b,
-            "lead_time_tier": (
-                dora_eval.lead_time_tier.value if dora_eval.lead_time_tier is not None else None
-            ),
-            "cfr_a": cfr_a,
-            "cfr_tier": dora_eval.cfr_tier.value,
-            "recovery_hours": recovery_result.median_hours,
-            "recovery_tier": dora_eval.recovery_tier.value,
-            "censored_episodes_ratio": recovery_result.censored_ratio,
-            "overall_dora_score": dora_eval.overall_score,
-            "overall_dora_tier": dora_eval.overall_tier.value,
-            "prereleases_count_window": prereleases_count_window,
-            "total_prereleases": total_prereleases,
-            "tags_count_window": tags_count_window,
-            "total_tags": total_tags,
-            "c2_deployment_frequency": c2_dep_freq,
-            "c2_lead_time_b_hours": c2_lead_time_b,
-            "c3_deployment_frequency": c3_dep_freq,
-            "c3_lead_time_b_hours": c3_lead_time_b,
-            **cfr_b_columns,
+            **metric_columns,
         }
 
         return record, None
