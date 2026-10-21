@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import calendar
+import dataclasses
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
@@ -541,6 +542,17 @@ async def count_runs_in_interval(
     return int(resp.json().get("total_count", 0))
 
 
+def _with_api_workflow_id(run: WorkflowRun) -> WorkflowRun:
+    """Give a stored run the `workflow_id` type the API returns (int).
+
+    Parquet keeps `workflow_id` as a string while the API payload has an integer; mixing
+    both would split one workflow in two groups in the CFR/recovery calculations.
+    """
+    if isinstance(run.workflow_id, str) and run.workflow_id.isdigit():
+        return dataclasses.replace(run, workflow_id=int(run.workflow_id))
+    return run
+
+
 def _in_interval(run: WorkflowRun, start_dt: datetime, end_dt: datetime) -> bool:
     started = _floor_to_second(_to_utc_datetime(run.run_started_at))
     return _floor_to_second(start_dt) <= started <= _floor_to_second(end_dt)
@@ -592,7 +604,11 @@ async def reconcile_workflow_runs(
         tail = (tail_start, end_dt)
 
     async def handle(slice_start: datetime, slice_end: datetime) -> tuple[list[WorkflowRun], list[dict[str, Any]], dict[str, Any]]:
-        committed = [r for r in previous_runs if _in_interval(r, slice_start, slice_end)]
+        committed = [
+            _with_api_workflow_id(r)
+            for r in previous_runs
+            if _in_interval(r, slice_start, slice_end)
+        ]
         stats.api_requests += 1
         api_count = await count_runs_in_interval(client, owner, repo, branch, slice_start, slice_end)
         entry: dict[str, Any] = {

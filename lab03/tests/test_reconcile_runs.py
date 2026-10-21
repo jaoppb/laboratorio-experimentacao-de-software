@@ -216,3 +216,38 @@ def test_refetch_reason(previous, api, needle):
     from pipeline.regeneracao_relatorio import refetch_reason
 
     assert needle in refetch_reason(previous, api)
+
+
+def test_kept_runs_get_the_workflow_id_type_of_the_api_so_metrics_match_a_full_collection():
+    """Parquet stores workflow_id as a string; the API gives an int. Mixing them split one
+    workflow in two groups (an extra censored failure episode at the tail boundary)."""
+    from metricas.stability import calculate_recovery_time
+
+    # a failure on the last day before the tail, fixed by a success inside the tail
+    runs = [
+        raw_run(1, "2026-03-30T10:00:00Z"),
+        raw_run(2, "2026-03-30T12:00:00Z", "failure"),
+        raw_run(3, "2026-03-31T09:00:00Z"),
+    ]
+    previous = [dataclasses_replace_str_workflow(r) for r in to_previous(runs)]
+    assert all(isinstance(r.workflow_id, str) for r in previous)
+
+    recon = reconcile(FakeRunsApi(runs), previous)
+    full = asyncio.run(
+        collect_workflow_runs(
+            "o", "r", FakeRunsApi(runs), START, NEW_END, "main", save_to_parquet=False  # type: ignore[arg-type]
+        )
+    )
+
+    assert {type(r.workflow_id) for r in recon.runs} == {int}
+    a, b = calculate_recovery_time(recon.runs), calculate_recovery_time(full.runs)
+    assert (a.total_episodes, a.censored_episodes, a.median_hours) == (
+        b.total_episodes, b.censored_episodes, b.median_hours
+    )
+    assert a.censored_episodes == 0
+
+
+def dataclasses_replace_str_workflow(run):
+    import dataclasses
+
+    return dataclasses.replace(run, workflow_id=str(run.workflow_id))
