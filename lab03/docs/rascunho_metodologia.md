@@ -69,11 +69,14 @@ assíncrono sobre `httpx`), sem bibliotecas prontas de acesso à API do GitHub.
 
 **Janela.** A janela de observação tem 12 meses, de **01/10/2025 a 30/09/2026** (`janela.inicio` e
 `janela.fim` em `config.yaml`). Entram nos cálculos apenas releases publicadas e *workflow runs*
-criados dentro da janela. Para a frequência de deploy, a janela equivale a **52,1 semanas**.
-`[VERIFICAR: o config.yaml diz que as datas são "ajustáveis caso o professor defina janela específica"; confirmar que 01/10/2025-30/09/2026 é a janela oficial da turma.]`
-`[VERIFICAR: "2026-09-30" é lido como 2026-09-30T00:00:00Z (metricas/schemas.py::_parse_datetime), então releases e runs de 30/09 depois de 00:00 UTC ficam de fora do limite superior; decidir se isso é aceitável ou se o limite deve ser o fim do dia.]`
+criados dentro da janela. Para a frequência de deploy, divide-se a contagem de releases por **52,1
+semanas** (≈ 365/7, constante `DEFAULT_WINDOW_WEEKS` em `metricas/dora.py`, valor indicado pelo guia
+para 12 meses). Como o limite superior é lido como 30/09/2026 às 00:00 UTC (ver abaixo), o intervalo
+efetivo tem 364 dias (52,0 semanas); a diferença no denominador é de cerca de 0,2%.
+`[VERIFICAR: o config.yaml diz que as datas foram "fixadas para a Sprint 01 conforme o enunciado" e são "ajustáveis caso o professor defina janela específica", e o guialab03.md só diz que o professor fixa as datas na abertura do Lab03S01, sem trazê-las; confirmar com o professor/enunciado que 01/10/2025-30/09/2026 é a janela oficial da turma.]`
+`[VERIFICAR: "2026-09-30" é lido como 2026-09-30T00:00:00Z (metricas/schemas.py::_parse_datetime). Verificado no código que isso vale para as duas pontas: releases entram se start <= published_at <= end (pipeline/releases.py::filter_window) e o último intervalo mensal de runs termina em 2026-09-30T00:00:00Z (pipeline/workflow_runs.py::split_window_into_months), então releases e runs de 30/09 depois de 00:00 UTC ficam de fora do limite superior; decidir se isso é aceitável ou se o limite deve ser o fim do dia.]`
 
-**Data da coleta.** `[PENDENTE: data(s) exata(s) da coleta e da regeneração final do dataset, a registrar na consolidação do dataset (#56). Indício: o commit da amostra de 330 repositórios (#53) é de 14/10/2026.]`
+**Data da coleta.** `[PENDENTE: data(s) exata(s) da coleta e da regeneração final do dataset, a registrar na consolidação do dataset (#56). Indício (histórico do git): as 100 primeiras linhas de repositorios.csv vêm do commit da refatoração #47, de 10/10/2026, e o commit da amostra de 330 repositórios (#53) é de 14/10/2026.]`
 Como a Search API e as contagens (estrelas, releases, runs) refletem o estado do GitHub no momento
 da coleta, uma nova execução pode produzir uma amostra ligeiramente diferente.
 
@@ -85,7 +88,11 @@ da coleta, uma nova execução pode produzir uma amostra ligeiramente diferente.
 teto de 1.000 resultados por consulta: `>10000`, `5001..10000`, `2501..5000`, `1501..2500` e
 `1000..1500`. Cada consulta usa os qualificadores `archived:false`, `mirror:false` e `size:>1000`,
 ordenação por estrelas decrescente e até 10 páginas de 100 resultados. Duplicatas entre faixas são
-unificadas por `owner/name`.
+unificadas por `owner/name`. As faixas são percorridas na ordem acima e os candidatos são avaliados
+na ordem em que chegam; como o funil avaliou menos de 1.000 candidatos (653 na Tabela 2), a primeira
+faixa (`>10000`) basta para explicar a amostra, e as demais não devem ter sido alcançadas (inferência
+a partir da contagem do funil e do teto de 1.000 resultados por consulta; o log da execução não está
+versionado).
 
 **Critérios de inclusão (aplicados nesta ordem a cada candidato).**
 
@@ -96,16 +103,29 @@ unificadas por `owner/name`.
 3. **≥ 50 *workflow runs* válidos no default branch na janela:** runs do evento `push` cuja
    conclusão é `success` ou falha (`failure`, `timed_out`, `startup_failure`); as demais conclusões
    não contam.
-4. **Integridade do clone local:** repositórios cujo `git clone` falha de forma irrecuperável são
-   descartados.
+4. **Integridade do clone local:** repositórios cuja etapa de clone local falha de forma irrecuperável
+   são descartados (no código, qualquer exceção nessa etapa, que inclui o `git clone`, a leitura das
+   tags e dos commits e a gravação dos Parquet de releases).
+
+Erros de coleta são contados na etapa em que ocorrem: uma falha ao obter as releases (inclusive na
+rota de contingência REST) entra no descarte "menos de 5 releases", e uma falha ao obter os *runs*
+entra no descarte "menos de 50 runs" (`pipeline/orchestrator.py::evaluate_candidate`). Esses
+descartes por erro não são distinguidos dos descartes por critério no `funil.csv`.
 
 **Seleção da amostra final.** Os candidatos são avaliados em ordem decrescente de estrelas, por
-trabalhadores assíncronos concorrentes, e a avaliação **para ao atingir 330 repositórios
-aceitos** (`amostra.tamanho_final`). Na prática, a amostra é composta dos repositórios mais populares
-que cumprem todos os critérios. Como há concorrência, a ordem de aceitação pode divergir levemente
-da ordem estrita de estrelas.
+4 trabalhadores assíncronos concorrentes (padrão de `PipelineOrchestrator`), e a avaliação **para ao
+atingir 330 repositórios aceitos** (`amostra.tamanho_final`). Na prática, a amostra é composta dos
+repositórios mais populares que cumprem todos os critérios. Como há concorrência, a ordem de aceitação
+pode divergir levemente da ordem estrita de estrelas.
 
-**Tabela 2.** Funil de seleção, exatamente como está em `dados/funil.csv`.
+A amostra atual resulta de **duas execuções** do pipeline com retomada: as 100 primeiras linhas de
+`dados/repositorios.csv` são exatamente os 100 repositórios aceitos na execução da Issue #47 (commit
+de 10/10/2026), e as 230 seguintes foram acrescentadas no commit que escalou a coleta (Issue #53,
+14/10/2026).
+Na retomada, os repositórios já aceitos são pulados. Por isso o arquivo não está ordenado por
+estrelas, e as estrelas dos dois blocos foram medidas em momentos diferentes.
+
+**Tabela 2.** Funil de seleção: valores de `dados/funil.csv` (rótulos das etapas abreviados).
 
 | Etapa | Restantes | Descartados | Motivo |
 |---|---:|---:|---|
@@ -116,13 +136,13 @@ da ordem estrita de estrelas.
 | Integridade do clone local | 230 | 2 | falha irrecuperável no `git clone` |
 | **Amostra final** | **330** | — | — |
 
-`[VERIFICAR: a coluna "restantes" do funil.csv não fecha. 653 − 56 − 315 − 50 − 2 = 230, mas a amostra final é 330. A soma dos descartes (423) mais as 330 aceitas dá 753, ou seja, exatamente 100 a mais que o 653 da primeira linha, e as quatro linhas intermediárias ficariam 697, 382, 332 e 330. Hipótese, NÃO verificada: 100 repositórios aceitos em uma coleta anterior (Sprint 01) não entraram no contador total_evaluated do estado salvo (pipeline/orchestrator.py, estado em .pipeline_state.json). Antes de publicar a Tabela 2, a Marcela (#31/#66) deve confirmar a causa e corrigir o funil.csv; este rascunho não altera o arquivo.]`
+`[VERIFICAR: a coluna "restantes" do funil.csv não fecha. 653 − 56 − 315 − 50 − 2 = 230, mas a amostra final é 330. A soma dos descartes (423) mais as 330 aceitas dá 753, ou seja, exatamente 100 a mais que o 653 da primeira linha, e as quatro linhas intermediárias ficariam 697, 382, 332 e 330. Evidências já conferidas: (i) as 100 primeiras linhas de repositorios.csv são exatamente os 100 repositórios do repositorios.csv do commit da Issue #47; (ii) 230 + 100 = 330; (iii) no código, o contador total_evaluated parte de 0 quando não há .pipeline_state.json (pipeline/orchestrator.py::_load_state) e os 100 aceitos anteriores só entram em accepted_records/evaluated_names, não no contador. Isso torna provável que o funil conte apenas a segunda execução, mas NÃO está confirmado, porque o .pipeline_state.json e o log da execução não são versionados. Antes de publicar a Tabela 2, a Marcela (#31/#66) deve confirmar a causa e corrigir o funil.csv (o funil completo seria 753 → 697 → 382 → 332 → 330 se os 100 aceitos antes forem somados a todas as etapas); este rascunho não altera o arquivo.]`
 
 A primeira linha conta os candidatos **avaliados**, e não todos os resultados que a Search API
 devolveria, porque a avaliação para ao atingir a meta (`docs/criterios_selecao_e_funil.md`).
 
 **Caracterização da amostra.** Valores calculados sobre as 330 linhas de `dados/repositorios.csv`
-(colunas disponíveis nessa versão do arquivo; estrelas medidas no momento da coleta):
+(24 colunas nessa versão do arquivo; estrelas medidas no momento da coleta de cada bloco de repositórios):
 
 | Característica | Valor |
 |---|---|
@@ -382,10 +402,12 @@ julgamento humano, e rotular o tipo do projeto (fator da RQ 06).
 **Amostragem.** Foram sorteados **60 repositórios** das 330 linhas de `dados/repositorios.parquet`,
 com `df.sample(n=60, random_state=42)`, e, para cada um, **5 releases** sorteadas entre as releases
 publicadas da janela (C1, sem pré-releases), com semente determinística por repositório
-(`42 × 1000 + índice do repositório`). Resultam **300 linhas** (60 × 5). O sorteio e a lista exata de
-repositórios e releases estão em `dados/amostra_ouro/sorteio_info.json` (gerado em 15/10/2026), e
-o código está em `analises/amostra_ouro.py`.
-`[VERIFICAR: o sorteio usou a ordem das linhas do dataset de 15/10/2026. Se o dataset for regenerado (#56) e a composição das 330 mudar, a lista de 60 repositórios pode deixar de pertencer à amostra final. O sorteio_info.json é o registro oficial dos 60.]`
+(`42 × 1000 + índice`, em que o índice vai de 1 a 60 na ordem do sorteio dos repositórios). O desenho
+prevê **300 linhas** (60 × 5). A lista dos 60 repositórios está em `dados/amostra_ouro/sorteio_info.json`
+(gerado em 15/10/2026) e o código está em `analises/amostra_ouro.py`. Reexecutar o sorteio sobre o
+`repositorios.parquet` e o `repositorios.csv` versionados reproduz exatamente os mesmos 60 repositórios.
+`[VERIFICAR: o sorteio de releases só foi feito para 30 dos 60 repositórios. Para os outros 30, o arquivo dados/releases/ do repositório não existia no momento do sorteio (analises/amostra_ouro.py::carregar_releases_repositorio devolve lista vazia), então releases_sorteadas está vazia no sorteio_info.json e as 5 linhas de cada um (150 das 300) saíram na planilha com tag_name = "(pendente de persistência)" e sem data. Hoje só 150 releases reais estão identificadas. Antes de a rotulação seguir, é preciso persistir as releases desses 30 repositórios (analises.persistir_amostra_ouro) e gerar de novo as planilhas (analises.amostra_ouro), e as 150 linhas já rotuladas em validacao/rotulos_marcela.csv precisam ser refeitas, porque não apontam para uma release identificável.]`
+`[VERIFICAR: o sorteio usou a ordem das linhas do dataset de 15/10/2026. Se o dataset for regenerado (#56) e a composição ou a ordem das 330 mudar, a lista de 60 repositórios pode deixar de pertencer à amostra final. O sorteio_info.json é o registro oficial dos 60.]`
 
 **Rotulação independente.** Cada um dos três autores preenche, **sem consultar os demais e sem ver a
 saída da heurística**, sua própria planilha (CSV/XLSX com *links* diretos para a página de cada
@@ -403,7 +425,7 @@ arquivos com valores diferentes entre as linhas do mesmo repositório são rejei
 
 **Concordância entre avaliadores.** Para cada dimensão, calculamos o **kappa de Fleiss** (`[REF: Fleiss, 1971]`)
 entre os 3 avaliadores com `statsmodels` (`aggregate_raters` com `n_cat` fixo, seguido de
-`fleiss_kappa`):
+`fleiss_kappa(..., method="fleiss")`):
 
 $$P_i = \frac{\sum_j n_{ij}^2 - n}{n(n-1)}, \qquad \bar{P} = \frac{1}{N}\sum_i P_i, \qquad P_e = \sum_j p_j^2, \qquad \kappa = \frac{\bar{P} - P_e}{1 - P_e}$$
 
@@ -412,7 +434,7 @@ $i$, e $p_j$ a proporção global da categoria $j$. Reportamos também a concord
 apoio. Se todos os avaliadores escolhem sempre a mesma categoria, $P_e = 1$ e o kappa é indefinido;
 a ferramenta o reporta como `n/d`, e isso será discutido. A interpretação segue Landis & Koch (1977):
 < 0 pobre; 0,00-0,20 leve; 0,21-0,40 razoável; 0,41-0,60 moderada; 0,61-0,80 substancial; 0,81-1,00
-quase perfeita. Um kappa baixo indica que o próprio critério é ambíguo, o que é um achado e será
+quase perfeita (a ferramenta usa limites superiores inclusivos, por exemplo 0,40 é razoável). Um kappa baixo indica que o próprio critério é ambíguo, o que é um achado e será
 discutido. O kappa é calculado **antes** da reunião de consenso e os arquivos de rótulos individuais
 **não são editados depois**.
 
@@ -443,9 +465,11 @@ releases), e reavalia-se. **Cada versão testada, mesmo as que falharam, e o seu
 
 **Estado atual da validação manual** (verificado nesta data no repositório):
 
-* o sorteio e as planilhas em branco existem (`dados/amostra_ouro/`; Issue #63);
+* o sorteio e as planilhas em branco existem (`dados/amostra_ouro/`; Issue #63), mas só 30 dos 60
+  repositórios têm as 5 releases identificadas (ver o `[VERIFICAR]` em "Amostragem");
 * **apenas um** dos três arquivos de rótulos existe: `validacao/rotulos_marcela.csv`, que passa na
-  validação de formato da ferramenta (300 linhas válidas);
+  validação de formato da ferramenta (300 linhas válidas; essa validação compara `repo_name` e
+  `tag_name` com a planilha e, por isso, não detecta que 150 linhas têm `tag_name` pendente);
 * **não existem** `validacao/rotulos_joao.csv`, `validacao/rotulos_gabriel.csv` nem
   `validacao/consenso.csv`. Rodar `python -m analises.concordancia kappa` termina com código 2,
   informando os arquivos ausentes.
@@ -461,16 +485,20 @@ afirmar o contrário até que os arquivos existam.
 ### 3.8 Análise estatística planejada
 
 Esta subseção descreve o plano do guia. **Nenhum script das RQ 05, 06 e 07 existe ainda no
-repositório** (a pasta `analises/` tem apenas amostra-ouro, concordância, avaliação da heurística e
-diagnóstico de lead time), e nenhum resultado é reportado.
-`[PENDENTE: scripts e resultados das RQ 01 a 07 (Sprint 03); issues ainda não abertas no repositório.]`
+repositório** (a pasta `analises/` tem apenas amostra-ouro, concordância, avaliação da heurística,
+diagnóstico de lead time e persistência das releases da amostra-ouro; uma busca por `spearmanr`,
+`kruskal`, `mannwhitneyu`, `multipletests` e `cohen_kappa` no código Python não encontra nada), e
+nenhum resultado é reportado.
+`[PENDENTE: scripts e resultados das RQ 01 a 07 (Sprint 03); não há issue aberta para isso até a #69.]`
 
 * **Estatística descritiva (RQ 01 a 04).** Mediana e IQR de cada métrica entre os repositórios,
   distribuição das faixas DORA e da classificação geral. Para o tempo de recuperação, também a
   proporção de episódios censurados.
 * **RQ 05.** Correlação de Spearman ($\rho$) entre frequência de deploy e CFR, **separadamente** para
   CFR (a) e CFR (b), reportando $\rho$, p-valor e $n$ (`[REF: Spearman]`). Spearman foi escolhida por
-  não exigir normalidade nem linearidade. Correlação não implica causalidade.
+  não exigir normalidade nem relação linear (mede associação monotônica, a partir dos postos). O $n$
+  pode diferir entre as duas variantes, porque o CFR (b) é nulo quando nenhuma release do repositório
+  pôde ser avaliada (3.6). Correlação não implica causalidade.
 * **RQ 06.** Comparação das métricas das RQ 01 a 04 entre subgrupos definidos por **no mínimo três
   fatores** entre: linguagem principal, popularidade (quartis de estrelas), número de contribuidores
   (quartis), idade do repositório (quartis) e tipo do projeto. Teste de Kruskal-Wallis para fatores
@@ -481,18 +509,20 @@ diagnóstico de lead time), e nenhum resultado é reportado.
   delta) para dois grupos, interpretado por |δ| < 0,147 desprezível, < 0,33 pequeno, < 0,474 médio e
   ≥ 0,474 grande (Romano et al., 2006).
   `[PENDENTE: fatores efetivamente usados. Decisão aberta na Issue #69, ver abaixo.]`
+  `[VERIFICAR: o guia descreve o tipo do projeto com três grupos (biblioteca/framework, aplicação/serviço, ferramenta CLI), mas a rotulação da amostra-ouro admite também "outro". Definir se "outro" vira um quarto grupo ou é excluído da RQ 06.]`
 * **RQ 07.** Para cada combinação C1, C2 e C3 (3.5.6), classifica-se cada repositório em
-  Elite/High/Medium/Low (3.5.5). Para cada par (C1×C2, C1×C3, C2×C3) calcula-se a **porcentagem de
+  Elite/High/Medium/Low (3.5.5; ver o `[VERIFICAR]` sobre o CFR (b) de C2 em 3.5.6). Para cada par (C1×C2, C1×C3, C2×C3) calcula-se a **porcentagem de
   repositórios que mudaram de categoria** e o **kappa de Cohen ponderado linear**
   (`sklearn.metrics.cohen_kappa_score(..., weights='linear')`; `[REF: Cohen, 1968]`), que pesa menos
   uma troca entre categorias vizinhas do que uma troca entre extremos, por serem ordinais.
 
-**Decisão aberta: fator "tipo do projeto" na RQ 06 (Issue #69).** O tipo do projeto só é rotulado nos
+**Decisão aberta: fator "tipo do projeto" na RQ 06 (Issue #69, aberta).** O tipo do projeto só é rotulado nos
 60 repositórios da amostra-ouro. Se ele for um dos fatores da RQ 06, essa análise terá $n = 60$,
-contra $n = 330$ nos demais fatores. As opções registradas na issue são: **(a)** não usar o tipo;
-**(b)** rotular o tipo nos 330 repositórios (uma dimensão só, mas com mais carga de rotulação); ou
-**(c)** usar com $n = 60$ e registrar como ameaça à validade. A decisão e a justificativa ainda não
-foram tomadas.
+contra até $n = 330$ nos demais fatores (o $n$ de cada teste ainda varia com os valores nulos de cada
+métrica). As opções registradas na issue são: **(a)** não usar o tipo; **(b)** rotular o tipo nos
+330 repositórios (uma dimensão só, o que é mais rápido que a rotulação completa, mas aumenta a carga
+de rotulação da sprint); ou **(c)** usar com $n = 60$ e registrar como ameaça à validade. A decisão
+e a justificativa ainda não foram tomadas.
 `[PENDENTE: decisão (a), (b) ou (c) da Issue #69 e sua justificativa. Se for (a), ajustar a hipótese 4 da RQ 06 na Introdução (artigo_contexto_e_hipoteses.md), que hoje prevê um efeito do tipo de projeto.]`
 
 ### 3.9 Ameaças à validade e limitações conhecidas
