@@ -223,7 +223,9 @@ def test_columns_from_files_equal_columns_from_memory(units, tmp_path):
 
     for name, data in units.items():
         record: dict = {}
-        backfill_c2_c3.apply_c2_c3(record, backfill_c2_c3.repo_paths(tmp_path, name))
+        assert backfill_c2_c3.apply_c2_c3(
+            record, backfill_c2_c3.repo_paths(tmp_path, name)
+        ) == (True, True)
         expected = compute_c2_c3_columns(
             data["c2"],
             data["c3"],
@@ -363,7 +365,28 @@ async def test_backfill_flags_count_mismatch_with_dataset(config, units, tmp_pat
     report = await backfill_c2_c3.backfill_c2_c3(config, offline=True)
 
     assert report.count_mismatch == ["org/full"]
+    assert report.total_drift == []
     assert "divergente: org/full" in backfill_c2_c3.format_report(report)
+
+
+async def test_backfill_flags_total_releases_drift_and_keeps_dataset_value(
+    config, units, tmp_path
+):
+    dados = tmp_path / "dados"
+    # the dataset was collected before 3 new releases were published
+    save_repositories_dataset(
+        [_legacy_record("org/full", 2, 2)],
+        dados / "repositorios.parquet",
+        dados / "repositorios.csv",
+    )
+    _persist(units, dados, ["org/full"])
+
+    report = await backfill_c2_c3.backfill_c2_c3(config, offline=True)
+
+    assert report.count_mismatch == [] and report.total_drift == ["org/full"]
+    (row,) = _read_parquet(tmp_path)
+    assert row["total_releases"] == 2  # never rewritten
+    assert row["total_prereleases"] == 2
 
 
 async def test_backfill_limit_keeps_all_rows(config, units, dataset, tmp_path):
@@ -489,3 +512,32 @@ def test_main_offline_returns_exit_code(config, units, dataset, tmp_path, monkey
 
     assert backfill_c2_c3.main() == 0
     assert "Colunas C2/C3 preenchidas: 3" in capsys.readouterr().out
+
+
+async def test_files_removed_during_run_are_reported_not_fatal(
+    config, units, dataset, tmp_path, monkeypatch
+):
+    dados = tmp_path / "dados"
+    _persist(units, dados, units)
+
+    async def fake_collect(client, full_name, **kwargs):  # pragma: no cover - not reached
+        raise AssertionError
+
+    monkeypatch.setattr(backfill_c2_c3, "collect_repository_c2_c3", fake_collect)
+    original = backfill_c2_c3.repo_paths
+    calls = {"n": 0}
+
+    def flaky_repo_paths(dados_dir, full_name):
+        paths = original(dados_dir, full_name)
+        calls["n"] += 1
+        # complete at the pending check (first 3 calls), gone when applying
+        if calls["n"] > 3 and full_name == "org/nolt":
+            paths.meta.unlink(missing_ok=True)
+        return paths
+
+    monkeypatch.setattr(backfill_c2_c3, "repo_paths", flaky_repo_paths)
+
+    report = await backfill_c2_c3.backfill_c2_c3(config, client=_Client())
+
+    assert list(report.failed) == ["org/nolt"]
+    assert report.filled == 2

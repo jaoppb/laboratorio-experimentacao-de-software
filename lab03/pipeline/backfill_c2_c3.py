@@ -114,10 +114,7 @@ def load_tag_commits(path: str | Path) -> list[ReleaseCommits]:
         if row["previous_tag"] is None:
             result.append(ReleaseCommits(tag, None, ComparisonStatus.FIRST_RELEASE))
             continue
-        commits = [
-            Commit(sha=c["sha"], committed_at=c["committed_at"], message=c["message"])
-            for c in row["commits"] or []
-        ]
+        commits = [Commit.from_record(c) for c in row["commits"] or []]
         result.append(ReleaseCommits(tag, None, ComparisonStatus.OK, commits))
     return result
 
@@ -187,8 +184,11 @@ class BackfillC2C3Report:
     total: int = 0
     collected: list[str] = field(default_factory=list)
     failed: dict[str, str] = field(default_factory=dict)
-    # Repositories whose fresh C1 figures differ from the committed dataset
+    # Repositories whose fresh in-window C1 count differs from `releases_count_window`
     count_mismatch: list[str] = field(default_factory=list)
+    # Repositories whose fresh `total_releases` differs (releases published or
+    # removed since the original collection; the dataset value is kept)
+    total_drift: list[str] = field(default_factory=list)
     filled: int = 0
     with_prereleases: int = 0
     without_c2_lead_time: int = 0
@@ -200,12 +200,15 @@ class BackfillC2C3Report:
         return not self.failed
 
 
-def apply_c2_c3(record: dict[str, Any], paths: RepoPaths) -> bool:
+def apply_c2_c3(record: dict[str, Any], paths: RepoPaths) -> tuple[bool, bool]:
     """Fill the eight C2/C3 columns of `record` in place from the persisted files.
 
-    Returns False when the totals saved at collection time do not match
-    `releases_count_window`/`total_releases` of the dataset record (the
-    repository changed since the original collection).
+    Returns `(window_consistent, total_consistent)`: whether the C1 figures
+    saved at collection time match `releases_count_window` and `total_releases`
+    of the dataset record. `total_releases` drifts whenever releases are
+    published after the original collection (the fetch is newest first), which
+    also moves `total_prereleases`; the window count only changes if releases
+    inside the (closed) window were removed or re-dated.
     """
     meta = read_meta(paths.meta)
     record.update(
@@ -216,9 +219,9 @@ def apply_c2_c3(record: dict[str, Any], paths: RepoPaths) -> bool:
             total_tags=meta["total_tags"],
         )
     )
-    return all(
-        record.get(key) in (None, meta[key])
-        for key in ("releases_count_window", "total_releases")
+    return (
+        record.get("releases_count_window") in (None, meta["releases_count_window"]),
+        record.get("total_releases") in (None, meta["total_releases"]),
     )
 
 
@@ -297,8 +300,16 @@ async def backfill_c2_c3(
         name = record["full_name"]
         if name in report.failed:
             continue
-        if not apply_c2_c3(record, repo_paths(dados_dir, name)):
+        paths = repo_paths(dados_dir, name)
+        if not paths.complete():
+            # e.g. files removed while the run was in progress
+            report.failed[name] = "C2/C3 files missing"
+            continue
+        window_ok, total_ok = apply_c2_c3(record, paths)
+        if not window_ok:
             report.count_mismatch.append(name)
+        if not total_ok:
+            report.total_drift.append(name)
         report.filled += 1
         if record["total_prereleases"]:
             report.with_prereleases += 1
@@ -325,7 +336,8 @@ def format_report(report: BackfillC2C3Report) -> str:
         f"Sem nenhuma tag (total_tags = 0): {report.without_tags}",
         f"Sem lead time C2 (c2_lead_time_b_hours nulo): {report.without_c2_lead_time}",
         f"Sem lead time C3 (c3_lead_time_b_hours nulo): {report.without_c3_lead_time}",
-        f"Divergências com releases_count_window/total_releases: {len(report.count_mismatch)}",
+        f"Divergências com releases_count_window: {len(report.count_mismatch)}",
+        f"Deriva de total_releases desde a coleta original: {len(report.total_drift)}",
     ]
     lines += [f"  divergente: {name}" for name in report.count_mismatch]
     lines += [f"  falha: {name}: {reason}" for name, reason in report.failed.items()]
