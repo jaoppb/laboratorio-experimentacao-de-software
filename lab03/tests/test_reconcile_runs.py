@@ -251,3 +251,25 @@ def dataclasses_replace_str_workflow(run):
     import dataclasses
 
     return dataclasses.replace(run, workflow_id=str(run.workflow_id))
+
+
+def test_run_payloads_are_slimmed_to_the_fields_in_use():
+    """The API payload of a run embeds big repository/commit objects; they must not be kept."""
+    from pipeline.workflow_runs import _RUN_FIELDS, _fetch_runs_for_interval, _FetchStats
+
+    class FatApi(FakeRunsApi):
+        async def get(self, url, params=None):
+            resp = await super().get(url, params)
+            for r in resp._payload["workflow_runs"]:
+                r["repository"] = {"x": "y" * 5000}
+                r["head_commit"] = {"message": "m" * 5000}
+            return resp
+
+    api = FatApi(BASE_RUNS)
+    raw = asyncio.run(
+        _fetch_runs_for_interval(
+            api, "o", "r", "main", START, START + timedelta(days=31), 1000, [], _FetchStats()  # type: ignore[arg-type]
+        )
+    )
+    assert raw and all(set(r) <= set(_RUN_FIELDS) for r in raw)
+    assert {r["id"] for r in raw} == {0, 1, 2, 3, 4}

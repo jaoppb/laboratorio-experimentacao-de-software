@@ -503,14 +503,17 @@ def render_report(
         "A coleta roda em `jao-pc` (`~/regen-lab03`) sob um supervisor que não depende de quem a "
         "iniciou: `supervisor.sh` (instância única por `flock`, reinício com espera crescente de 60 s "
         "a 10 min) executa `python -m pipeline.regenerar --resume --runs-modo reconciliar`, é lançado por "
-        "`systemd-run --user --unit=regen-sup` (com `systemd-inhibit` quando permitido) e, ao concluir, "
+        "`systemd-run --user --unit=regen-sup` (com `systemd-inhibit` quando permitido e orçamento de memória "
+        "`MemoryHigh=5G`/`MemoryMax=7G`, `Nice=15`, E/S ociosa e `CPUWeight=20`, porque a máquina é compartilhada; "
+        "o próprio pipeline também não inicia novos repositórios com menos de 3 GiB de RAM disponível, processa "
+        "no máximo um repositório \"pesado\" por vez e usa 2 workers) e, ao concluir, "
         "ele mesmo gera `outputs-<data UTC>.tar.gz` (dataset, `runs/`, este relatório, resultado das "
         "invariantes, `git diff --stat` e `SHA256SUMS`) e o marcador `DONE`."
     )
     add("")
     add("Como conferir e retomar (todos os comandos em `~/regen-lab03`):")
     add("")
-    add("- Estado em uma chamada: `cat status.json` (`state`, `done/total`, requisições, cota restante e reinício da cota, repositórios em andamento, ETA e último erro; `updated_at` parado há mais de ~5 min indica travamento).")
+    add("- Estado em uma chamada: `cat status.json` (`state`, `done/total`, requisições, cota restante e reinício da cota, memória (`memory_mb`: RSS, pico, RAM disponível) e pico por repositório, repositórios em andamento, ETA e último erro; `updated_at` parado há mais de ~5 min indica travamento).")
     add("- Supervisor: `systemctl --user status regen-sup`; log em `supervisor.log`; log do pipeline em `regen.log`.")
     add("- Concluído quando existirem `DONE` e `outputs-*.tar.gz` (+ `.sha256`). Baixe o pacote e confira com `sha256sum -c`.")
     add("- Retomar manualmente: o progresso fica em `lab03/dados/.regenerar/checkpoint.jsonl`; `systemctl --user start regen-sup` (ou `bash supervisor.sh`) continua de onde parou. Nunca rode duas instâncias; o `flock` recusa a segunda.")

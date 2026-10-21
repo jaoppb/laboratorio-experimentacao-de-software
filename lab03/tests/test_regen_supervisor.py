@@ -95,3 +95,31 @@ def test_only_one_supervisor_runs_at_a_time(tmp_path):
         assert "another supervisor holds the lock" in (home / "supervisor.log").read_text()
     finally:
         lock.kill()
+
+
+def test_supervisor_drops_the_temporary_last_token_at_completion_without_logging_it(tmp_path):
+    env, home = _setup(tmp_path)
+    secret = "ghp_" + "Z" * 36
+    (home / "lab03" / ".env").write_text(
+        f"GITHUB_TOKENS='ghp_{'A' * 36},ghp_{'B' * 36},{secret}'\nOTHER=1\n", encoding="utf-8"
+    )
+    env["REGEN_DROP_LAST_TOKEN_IF_COUNT"] = "3"
+    proc = subprocess.run(["bash", str(SCRIPT)], env=env, capture_output=True, text=True, timeout=60)
+
+    assert proc.returncode == 0, proc.stderr
+    content = (home / "lab03" / ".env").read_text()
+    assert secret not in content and "A" * 36 in content and "OTHER=1" in content
+    assert content.count("ghp_") == 2
+    assert oct((home / "lab03" / ".env").stat().st_mode & 0o777) == "0o600"
+    logs = (home / "supervisor.log").read_text() + (home / "regen.log").read_text()
+    assert "last GITHUB_TOKENS entry removed" in logs and secret not in logs
+
+
+def test_token_cleanup_is_skipped_when_the_count_does_not_match(tmp_path):
+    env, home = _setup(tmp_path)
+    original = f"GITHUB_TOKENS=ghp_{'A' * 36},ghp_{'B' * 36}\n"
+    (home / "lab03" / ".env").write_text(original, encoding="utf-8")
+    env["REGEN_DROP_LAST_TOKEN_IF_COUNT"] = "3"
+    subprocess.run(["bash", str(SCRIPT)], env=env, capture_output=True, text=True, timeout=60, check=True)
+    assert (home / "lab03" / ".env").read_text() == original
+    assert "token cleanup skipped" in (home / "supervisor.log").read_text()

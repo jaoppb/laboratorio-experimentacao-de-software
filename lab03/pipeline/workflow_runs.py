@@ -274,6 +274,26 @@ def _runs_query_params(
     }
 
 
+# The only fields of a run payload that are used; the rest (full `repository`,
+# `head_repository`, `head_commit`, ... objects) is ~10x bigger and is dropped at once.
+_RUN_FIELDS = (
+    "id",
+    "workflow_id",
+    "conclusion",
+    "created_at",
+    "run_started_at",
+    "updated_at",
+    "name",
+    "event",
+    "head_branch",
+)
+
+
+def _slim_runs(raw_runs: Sequence[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Keep only the fields of `_RUN_FIELDS` of each run payload (bounded memory)."""
+    return [{k: r.get(k) for k in _RUN_FIELDS if k in r} for r in raw_runs]
+
+
 def _workflow_run_from_raw(r_dict: dict[str, Any]) -> WorkflowRun:
     """Convert a run of the API payload into a `WorkflowRun`."""
     started = r_dict.get("run_started_at") or r_dict.get("created_at")
@@ -337,7 +357,8 @@ async def _fetch_runs_for_interval(
     first_resp = await client.get(url, params=page_params(1))
     data = first_resp.json()
     total_count = data.get("total_count", 0)
-    page_runs = data.get("workflow_runs", [])
+    page_runs = _slim_runs(data.get("workflow_runs", []))
+    del data, first_resp  # the full payload is not needed any more
 
     saturated = total_count >= threshold_ceiling
     interval_seconds = int((end_dt - start_dt).total_seconds())
@@ -397,7 +418,8 @@ async def _fetch_runs_for_interval(
         page_tasks = [client.get(url, params=page_params(p)) for p in range(2, max_page + 1)]
         page_responses = await asyncio.gather(*page_tasks)
         for resp in page_responses:
-            all_runs.extend(resp.json().get("workflow_runs", []))
+            all_runs.extend(_slim_runs(resp.json().get("workflow_runs", [])))
+        del page_responses
 
     if saturated:
         # Smallest unit (1 s) and still >= ceiling: read what is readable and report.

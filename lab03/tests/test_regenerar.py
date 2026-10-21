@@ -769,6 +769,7 @@ def test_status_json_is_written_and_has_no_secrets(env, fakes, client, tmp_path,
     assert status["requests_this_run"] == 3 + 8
     assert status["quota"][0]["remaining"] == 4200 and status["quota"][0]["reset_at"]
     assert status["quota"][1]["disabled"] is True
+    assert (status["tokens_total"], status["tokens_usable"]) == (2, 1)
     assert status["current"] == [] and status["last_error"] is None and status["pid"] > 0
 
 
@@ -812,6 +813,7 @@ def test_bundle_has_everything_and_verifiable_checksums(env, fakes, client, tmp_
         ):
             assert expected in names
         assert not any("elastic" in n for n in names)  # the orphan is not part of the result
+        assert not any(".env" in n for n in names)  # secrets never go into the bundle
         assert tar.extractfile("outputs/INVARIANTES.txt").read().decode().startswith("OK")
         sums = tar.extractfile("outputs/SHA256SUMS").read().decode().splitlines()
         for line in sums:
@@ -863,3 +865,110 @@ def test_validate_reconciliation_compares_ids_and_derived_metrics(env, fakes, cl
     assert alpha["requests_full"] == 7 and alpha["requests_reconciled"] == 2
     assert (settings.state_dir / "validacao_reconciliacao.json").is_file()
     assert "acme/beta" in format_validation(results)
+
+
+# ------------------------------------------------------- memory budget
+
+
+def test_wait_for_memory_pauses_until_enough_ram_is_available():
+    import asyncio
+
+    readings = iter([1000, 1500, 4000])
+    calls = []
+
+    def reader():
+        value = next(readings)
+        calls.append(value)
+        return {"rss": 1, "peak_rss": 1, "available": value}
+
+    waited = asyncio.run(regenerar.wait_for_memory(3072, poll_seconds=0.01, reader=reader))
+    assert calls == [1000, 1500, 4000] and waited == pytest.approx(0.02)
+    # unknown memory (not Linux) never blocks
+    assert asyncio.run(
+        regenerar.wait_for_memory(3072, 0.01, reader=lambda: {"available": None})
+    ) == 0.0
+
+
+def test_read_memory_has_the_expected_keys():
+    mem = regenerar.read_memory()
+    assert set(mem) == {"rss", "peak_rss", "available"}
+    if Path("/proc/self/status").exists():
+        assert mem["rss"] > 0 and mem["peak_rss"] >= mem["rss"] and mem["available"] > 0
+
+
+def test_is_heavy_by_runs_or_releases():
+    assert regenerar.is_heavy({"total_workflow_runs": 50_000})
+    assert regenerar.is_heavy({"total_workflow_runs": 10, "releases_count_window": 2576})
+    assert not regenerar.is_heavy({"total_workflow_runs": 4_000, "releases_count_window": 28})
+    assert not regenerar.is_heavy({})
+
+
+def test_only_one_heavy_repository_at_a_time(env, fakes, client, monkeypatch):
+    import asyncio
+
+    # both repositories are heavy; four workers must still serialise them
+    old = load_repositories_dataset(env.dataset_parquet)
+    for r in old:
+        r["total_workflow_runs"] = 99_999
+    save_repositories_dataset(old, env.dataset_parquet, env.dataset_csv)
+    env.baseline_parquet.unlink(missing_ok=True)
+    env.baseline_csv.unlink(missing_ok=True)
+
+    active = {"now": 0, "max": 0}
+    original = fakes.fetch_releases
+
+    async def tracking(*a, **kw):
+        active["now"] += 1
+        active["max"] = max(active["max"], active["now"])
+        await asyncio.sleep(0.05)
+        try:
+            return await original(*a, **kw)
+        finally:
+            active["now"] -= 1
+
+    monkeypatch.setattr(regenerar, "fetch_releases", tracking)
+    summary = _run(env, client, num_workers=4)
+    assert summary.ok and summary.finalized
+    assert active["max"] == 1
+
+
+def test_light_repositories_run_in_parallel(env, fakes, client, monkeypatch):
+    import asyncio
+
+    active = {"now": 0, "max": 0}
+    original = fakes.fetch_releases
+
+    async def tracking(*a, **kw):
+        active["now"] += 1
+        active["max"] = max(active["max"], active["now"])
+        await asyncio.sleep(0.05)
+        try:
+            return await original(*a, **kw)
+        finally:
+            active["now"] -= 1
+
+    monkeypatch.setattr(regenerar, "fetch_releases", tracking)
+    assert _run(env, client, num_workers=2).ok
+    assert active["max"] == 2
+
+
+def test_status_reports_memory_and_the_peak_per_repository(env, fakes, client, tmp_path):
+    import dataclasses
+
+    settings = dataclasses.replace(env, status_path=tmp_path / "status.json")
+    _run(settings, client)
+    status = json.loads(settings.status_path.read_text(encoding="utf-8"))
+    assert set(status["memory_mb"]) == {"rss", "peak_rss", "available"}
+    done = load_checkpoint(env.checkpoint_path, env.fingerprint())
+    assert all("peak_rss_mb" in e["diagnostics"] for e in done.values())
+    if Path("/proc/self/status").exists():
+        assert status["memory_mb"]["rss"] > 0 and status["peak_rss_mb_per_repo"]
+
+
+def test_only_restricts_the_scope_and_publishes_nothing(env, fakes, client):
+    csv_before = env.dataset_csv.read_bytes()
+    summary = _run(env, client, only=["acme/beta"])
+    assert summary.collected == ["acme/beta"] and not summary.finalized
+    assert env.dataset_csv.read_bytes() == csv_before
+    with pytest.raises(RegenerationError, match="fora do dataset"):
+        _run(env, client, only=["nope/nope"], resume=True)

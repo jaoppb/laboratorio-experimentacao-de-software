@@ -30,6 +30,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import gc
 import hashlib
 import json
 import logging
@@ -90,6 +91,13 @@ STATE_DIR_NAME = ".regenerar"
 RUNS_MODE_FULL = "completo"
 RUNS_MODE_RECONCILE = "reconciliar"
 RUNS_MODES = (RUNS_MODE_FULL, RUNS_MODE_RECONCILE)
+# A repository with this many previous runs / window releases is "heavy": at most one
+# heavy repository is processed at a time, so the peak memory stays bounded.
+HEAVY_RUNS = 20_000
+HEAVY_RELEASES = 500
+# New repositories are not started while the system has less available RAM than this (MiB).
+MIN_AVAILABLE_MB = 3072
+MEMORY_POLL_SECONDS = 10
 STATUS_EVERY = 25  # repositories between two status.json writes
 HEARTBEAT_SECONDS = 120
 DEFAULT_REPORT = "docs/regeneracao_final.md"
@@ -489,6 +497,57 @@ def reset_state(settings: RegenSettings) -> None:
         shutil.rmtree(settings.staged_runs_dir)
 
 
+def read_memory() -> dict[str, int | None]:
+    """Memory figures in MiB from /proc (Linux); every value is None elsewhere.
+
+    `rss`/`peak_rss` are this process's resident / peak resident set, `available` is the
+    system's MemAvailable.
+    """
+    out: dict[str, int | None] = {"rss": None, "peak_rss": None, "available": None}
+    try:
+        for line in Path("/proc/self/status").read_text().splitlines():
+            if line.startswith("VmRSS:"):
+                out["rss"] = int(line.split()[1]) // 1024
+            elif line.startswith("VmHWM:"):
+                out["peak_rss"] = int(line.split()[1]) // 1024
+        for line in Path("/proc/meminfo").read_text().splitlines():
+            if line.startswith("MemAvailable:"):
+                out["available"] = int(line.split()[1]) // 1024
+    except (OSError, ValueError, IndexError):
+        pass
+    return out
+
+
+async def wait_for_memory(
+    min_available_mb: int = MIN_AVAILABLE_MB,
+    poll_seconds: float = MEMORY_POLL_SECONDS,
+    reader: Any = read_memory,
+) -> float:
+    """Block while the system's available RAM is below `min_available_mb`.
+
+    Other people use the machine: a new repository is not started while memory is short.
+    Returns the seconds waited (0 when memory is fine or unknown).
+    """
+    waited = 0.0
+    while True:
+        available = reader()["available"]
+        if available is None or available >= min_available_mb:
+            return waited
+        if waited == 0.0:
+            logger.warning(
+                "Only %d MiB of RAM available (< %d): pausing new repositories", available, min_available_mb
+            )
+        await asyncio.sleep(poll_seconds)
+        waited += poll_seconds
+
+
+def is_heavy(old: dict[str, Any]) -> bool:
+    """Repositories with very many runs or releases (they get a worker of their own)."""
+    return (old.get("total_workflow_runs") or 0) >= HEAVY_RUNS or (
+        old.get("releases_count_window") or 0
+    ) >= HEAVY_RELEASES
+
+
 @dataclass
 class RunStatus:
     """Machine-readable state of the run (`status.json`), for anyone reconnecting later."""
@@ -504,6 +563,8 @@ class RunStatus:
     last_error: str | None = None
     failed: int = 0
     state: str = "running"
+    # process peak RSS (MiB) observed when each repository finished (the largest few)
+    peak_rss_by_repo: dict[str, int] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         self.started_done = self.done
@@ -530,6 +591,9 @@ class RunStatus:
                 }
             )
         return {
+            # counts only, never the values: usable = not disabled (e.g. by a 401)
+            "tokens_total": len(quota),
+            "tokens_usable": sum(1 for q in quota if not q["disabled"]),
             "state": self.state,
             "updated_at": datetime.now(timezone.utc).isoformat(),
             "pid": os.getpid(),
@@ -548,6 +612,8 @@ class RunStatus:
                 else None
             ),
             "last_error": self.last_error,
+            "memory_mb": read_memory(),
+            "peak_rss_mb_per_repo": self.peak_rss_by_repo,
         }
 
     def write(self, client: Any = None) -> None:
@@ -574,54 +640,78 @@ async def collect_all(
     num_workers: int,
     summary: RegenSummary,
     status: RunStatus | None = None,
+    min_available_mb: int = MIN_AVAILABLE_MB,
 ) -> None:
-    """Collect the repositories of `scope` that are not in the checkpoint yet."""
+    """Collect the repositories of `scope` that are not in the checkpoint yet.
+
+    Memory is bounded: each worker holds one repository at a time, only one *heavy*
+    repository (see `is_heavy`) runs at once, new repositories wait while the system is
+    short of RAM and the data of a repository is released (`gc`) as soon as it is done.
+    """
     fingerprint = settings.fingerprint()
     pending = [r for r in scope if r["full_name"] not in done]
-    queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue()
+    heavy_queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue()
+    light_queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue()
     for rec in pending:
-        queue.put_nowait(rec)
+        (heavy_queue if is_heavy(rec) else light_queue).put_nowait(rec)
     progress = {"n": 0}
 
-    async def worker() -> None:
-        while True:
-            try:
-                old = queue.get_nowait()
-            except asyncio.QueueEmpty:
-                return
-            name = old["full_name"]
-            if status:
-                status.in_flight.add(name)
-            try:
-                record, diagnostics = await regenerate_repository(client, old, settings)
-            except Exception as exc:
-                reason = redact(f"{type(exc).__name__}: {exc}")
-                if status:
-                    status.in_flight.discard(name)
-                    status.last_error = f"{name}: {reason}"[:500]
-                    status.failed += 1
-                    status.write(client)
-                if name not in settings.keep_previous:
-                    summary.failed[name] = reason
-                    logger.warning("Failed to regenerate %s: %s", name, reason)
-                    continue
-                logger.warning("%s could not be recollected, keeping previous values: %s", name, reason)
-                try:
-                    record, diagnostics = keep_previous_values(settings, old, reason)
-                except Exception as keep_exc:
-                    summary.failed[name] = redact(f"{reason}; {type(keep_exc).__name__}: {keep_exc}")
-                    continue
-            append_checkpoint(settings.checkpoint_path, fingerprint, record, diagnostics)
-            done[name] = {"record": record, "diagnostics": diagnostics}
-            summary.collected.append(name)
-            progress["n"] += 1
-            logger.info("[%d/%d] %s regenerated", progress["n"], len(pending), name)
+    async def process(old: dict[str, Any]) -> None:
+        name = old["full_name"]
+        await wait_for_memory(min_available_mb)
+        if status:
+            status.in_flight.add(name)
+        try:
+            record, diagnostics = await regenerate_repository(client, old, settings)
+        except Exception as exc:
+            reason = redact(f"{type(exc).__name__}: {exc}")
             if status:
                 status.in_flight.discard(name)
-                status.done += 1
-                status.requests += diagnostics.get("api_requests", 0)
-                if progress["n"] % STATUS_EVERY == 0 or status.done >= status.total:
-                    status.write(client)
+                status.last_error = f"{name}: {reason}"[:500]
+                status.failed += 1
+                status.write(client)
+            if name not in settings.keep_previous:
+                summary.failed[name] = reason
+                logger.warning("Failed to regenerate %s: %s", name, reason)
+                return
+            logger.warning("%s could not be recollected, keeping previous values: %s", name, reason)
+            try:
+                record, diagnostics = keep_previous_values(settings, old, reason)
+            except Exception as keep_exc:
+                summary.failed[name] = redact(f"{reason}; {type(keep_exc).__name__}: {keep_exc}")
+                return
+        memory = read_memory()
+        diagnostics["peak_rss_mb"] = memory["peak_rss"]
+        append_checkpoint(settings.checkpoint_path, fingerprint, record, diagnostics)
+        done[name] = {"record": record, "diagnostics": diagnostics}
+        summary.collected.append(name)
+        progress["n"] += 1
+        logger.info(
+            "[%d/%d] %s regenerated (rss %s MiB, peak %s MiB)",
+            progress["n"], len(pending), name, memory["rss"], memory["peak_rss"],
+        )
+        if status:
+            status.in_flight.discard(name)
+            status.done += 1
+            status.requests += diagnostics.get("api_requests", 0)
+            if memory["peak_rss"] is not None:
+                status.peak_rss_by_repo[name] = memory["peak_rss"]
+                # keep the file small: only the five highest
+                top = sorted(status.peak_rss_by_repo.items(), key=lambda kv: -kv[1])[:5]
+                status.peak_rss_by_repo = dict(top)
+            if progress["n"] % STATUS_EVERY == 0 or status.done >= status.total:
+                status.write(client)
+        gc.collect()  # release this repository's runs/commits before the next one
+
+    async def heavy_worker() -> None:
+        # The only worker that takes heavy repositories; then helps with the light ones.
+        while not heavy_queue.empty():
+            await process(heavy_queue.get_nowait())
+        await light_worker()
+
+    async def light_worker() -> None:
+        while not light_queue.empty():
+            await process(light_queue.get_nowait())
 
     async def heartbeat() -> None:
         # Rewrites the status periodically so a stalled run is visible (old `updated_at`)
@@ -635,7 +725,8 @@ async def collect_all(
     try:
         if status:
             status.write(client)
-        await asyncio.gather(*(worker() for _ in range(max(1, num_workers))))
+        workers = [heavy_worker()] + [light_worker() for _ in range(max(0, num_workers - 1))]
+        await asyncio.gather(*workers)
     finally:
         beat.cancel()
 
@@ -779,8 +870,13 @@ async def run_regeneration(
     fresh: bool = False,
     num_workers: int = 4,
     generated_on: str | None = None,
+    only: Sequence[str] | None = None,
+    min_available_mb: int = MIN_AVAILABLE_MB,
 ) -> RegenSummary:
-    """Regenerate the metric columns of the frozen sample and publish the result."""
+    """Regenerate the metric columns of the frozen sample and publish the result.
+
+    `limit` / `only` restrict the run to some repositories (tests); nothing is published then.
+    """
     old_records = prepare_baseline(settings)
     summary = RegenSummary(total=len(old_records))
     fingerprint = settings.fingerprint()
@@ -794,6 +890,11 @@ async def run_regeneration(
         )
 
     scope = list(old_records if limit is None else old_records[:limit])
+    if only:
+        unknown = set(only) - {r["full_name"] for r in old_records}
+        if unknown:
+            raise RegenerationError(f"repositórios fora do dataset: {sorted(unknown)}")
+        scope = [r for r in old_records if r["full_name"] in set(only)]
     summary.scope = len(scope)
     done = load_checkpoint(settings.checkpoint_path, fingerprint)
     summary.reused = len([r for r in scope if r["full_name"] in done])
@@ -811,7 +912,9 @@ async def run_regeneration(
         mode=settings.runs_mode,
     )
     try:
-        await collect_all(settings, scope, done, client, num_workers, summary, status)
+        await collect_all(
+            settings, scope, done, client, num_workers, summary, status, min_available_mb
+        )
     except BaseException:
         status.state = "interrupted"
         status.write(client)
@@ -820,7 +923,7 @@ async def run_regeneration(
         if owns_client:
             await client.close()
 
-    if summary.failed or limit is not None:
+    if summary.failed or limit is not None or only:
         status.state = "failed" if summary.failed else "partial"
         status.write(client)
         return summary
@@ -1107,6 +1210,18 @@ def main(argv: Sequence[str] | None = None) -> int:
         ),
     )
     parser.add_argument(
+        "--apenas",
+        nargs="+",
+        metavar="OWNER/REPO",
+        help="Coleta só estes repositórios (teste de memória/tempo); não publica nada",
+    )
+    parser.add_argument(
+        "--mem-min-disponivel-mb",
+        type=int,
+        default=MIN_AVAILABLE_MB,
+        help="Não inicia novos repositórios enquanto a RAM disponível do sistema for menor (MiB)",
+    )
+    parser.add_argument(
         "--runs-modo",
         choices=RUNS_MODES,
         default=RUNS_MODE_FULL,
@@ -1179,6 +1294,8 @@ def main(argv: Sequence[str] | None = None) -> int:
                 resume=args.resume,
                 fresh=args.fresh,
                 num_workers=args.workers,
+                only=args.apenas,
+                min_available_mb=args.mem_min_disponivel_mb,
             )
         )
     except RegenerationError as exc:
