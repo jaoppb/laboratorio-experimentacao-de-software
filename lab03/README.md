@@ -5,7 +5,7 @@ Este projeto implementa um pipeline reprodutível para mineração e análise em
 ---
 
 ## 📄 Artigo Científico (Template SBC)
-- **Link do projeto no Overleaf:** `[Inserir link do projeto Overleaf compartilhado]`
+- **Link do projeto no Overleaf:** [Projeto Overleaf do artigo](https://www.overleaf.com/project/6ad80e8b111a56d5da88ff1c)
 - O artigo segue o modelo da SBC (Sociedade Brasileira de Computação) e inclui a introdução com as hipóteses teóricas e empíricas da Sprint 01.
 
 ---

@@ -457,7 +457,7 @@ repositórios mais antigos têm mais releases)
 amostras pequenas em alguns subgrupos)
 6. **Replicação cruzada:** o relato da seção 9.
 7. Link do repositório/GitHub Projects do grupo.
-Link do repositório/GitHub Projects: `<preencher>`
+Link do repositório/GitHub Projects: [Repositório](https://github.com/jaoppb/laboratorio-experimentacao-de-software) | [Quadro Kanban (GitHub Projects)](https://github.com/users/jaoppb/projects/3/views/1)
 ### 9. Replicação cruzada (entrega final)
 Um resultado científico só é confiável se outra pessoa conseguir reproduzi-lo. Na
 entrega final, o professor sorteia para cada grupo o pipeline de **outro grupo** da
