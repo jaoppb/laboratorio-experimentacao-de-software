@@ -1,7 +1,8 @@
 # Configuração do Pipeline Lab03 - Mineração de Métricas DORA
 
-# Janela de observação (12 meses)
-# Datas fixadas para a Sprint 01 conforme o enunciado (ajustáveis caso o professor defina janela específica)
+# Janela de observação (12 meses = 365 dias = 52,14 semanas)
+# Datas fixadas pelo grupo. `inicio` só com data vale 00:00:00Z; `fim` só com data vale o FIM do dia
+# (2026-09-30 inclui até 2026-09-30T23:59:59.999999Z). Ver metricas/schemas.py::parse_window_end.
 janela:
   inicio: "2025-10-01"
   fim: "2026-09-30"
