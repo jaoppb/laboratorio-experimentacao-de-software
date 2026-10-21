@@ -11,8 +11,11 @@ rotulação independente das Issues #57, #61 e #64)
 
 ## 1. Planilha e unidades de análise
 
-A planilha de rotulação (`dados/amostra_ouro/amostra_ouro_template.csv`) tem **300 linhas**:
-60 repositórios sorteados (semente 42) × 5 releases sorteadas por repositório. Cada
+A planilha de rotulação (`dados/amostra_ouro/amostra_ouro_template.csv`) tem **300 linhas
+reais**: 60 repositórios sorteados (semente 42) × 5 releases sorteadas por repositório (método
+e conclusão do sorteio pendente em [`amostra_ouro.md`](./amostra_ouro.md)). Nenhuma linha tem
+tag-placeholder `(pendente de persistência)`: a planilha de referência que as contiver é
+rejeitada. Cada
 dimensão é um julgamento de natureza diferente, e por isso a **unidade de análise muda**:
 
 | Dimensão            | Categorias                                                                   | Natureza do julgamento | Unidade de análise | N     |
@@ -86,7 +89,7 @@ mão: concordância perfeita (κ = 1), um caso binário com 4 unidades (κ = 1/3
 ### 3.1 `validacao/rotulos_<avaliador>.csv`
 
 `<avaliador>` ∈ {`joao`, `gabriel`, `marcela`}. CSV UTF-8 (com ou sem BOM), mesmas 11
-colunas e **mesmas 300 linhas** da planilha em branco:
+colunas e **mesmas 300 linhas** da planilha em branco (exceção explícita: seção 3.3):
 
 ```
 repo_idx,repo_name,repo_url,tipo_projeto,entrega_real,release_idx,tag_name,published_at,release_url,release_corretiva,notas_justificativa
@@ -99,7 +102,10 @@ A ferramenta rejeita o arquivo (com mensagem indicando linhas/chaves) se:
   `repo_name`/`tag_name` não baterem com a planilha sorteada;
 * `tipo_projeto`, `entrega_real` ou `release_corretiva` estiverem em branco ou fora das
   categorias permitidas (`incerto` **não** é permitido em `release_corretiva`);
-* `tipo_projeto`/`entrega_real` variarem entre as releases do mesmo repositório.
+* `tipo_projeto`/`entrega_real` variarem entre as releases do mesmo repositório;
+* houver linhas com a tag-placeholder `(pendente de persistência)` (sorteio incompleto): o erro
+  lista as chaves e orienta a usar a lista explícita de linhas inválidas (seção 3.3). Essas
+  linhas não têm release real, então o rótulo nelas não vale.
 
 ### 3.2 `validacao/consenso.csv`
 
@@ -114,6 +120,37 @@ repo_idx,repo_name,repo_url,tipo_projeto,tipo_projeto_origem,entrega_real,entreg
 gerado pela ferramenta e **não pode restar** no arquivo final (`verificar-consenso` falha).
 O consenso de `tipo_projeto` e `entrega_real` é por repositório, portanto repetido nas 5
 linhas dele; o consenso de `release_corretiva` é por linha.
+
+### 3.3 Linhas inválidas de um avaliador (`validacao/<avaliador>_linhas_invalidas.csv`)
+
+Quando um avaliador rotulou linhas que depois se mostraram inválidas (hoje: as 150 linhas
+de Marcela rotuladas sobre placeholders), o arquivo de rótulos **não é editado**. Em vez
+disso, uma lista explícita registra as linhas void, com as colunas `repo_idx` e `release_idx`
+(outras colunas, como `repo_name` e `chave_placeholder_antiga`, são só informativas):
+
+```
+repo_idx,release_idx,repo_name,chave_placeholder_antiga
+6,1,rust-lang/rust,6/1/(pendente de persistência)
+```
+
+Se existir `<avaliador>_linhas_invalidas.csv` ao lado de `rotulos_<avaliador>.csv`:
+
+* as linhas com essas chaves são **ignoradas** se estiverem no arquivo (não precisam sequer
+  existir nele);
+* o arquivo só precisa cobrir **as demais linhas** da planilha de referência (as válidas); as
+  demais regras (valores permitidos, consistência por repositório, chaves e identificação)
+  continuam valendo; uma linha-placeholder **fora** da lista ainda é rejeitada;
+* a lista é rejeitada se tiver chaves inexistentes na planilha, duplicadas ou sem as colunas
+  `repo_idx`/`release_idx`;
+* `validar` informa quantas linhas ficaram de fora; `kappa`, `divergencias` e `consenso`
+  **falham com erro claro** (unidades sem rótulo por avaliador) enquanto faltarem rótulos,
+  pois o kappa exige os 3 avaliadores em todas as unidades. Para fechar, o avaliador rotula as
+  linhas que faltam no `rotulos_<avaliador>.csv` completo e **remove** a lista (senão as
+  chaves listadas seguem ignoradas).
+
+Sem lista, o comportamento é o de sempre (todas as linhas obrigatórias). `consenso.csv` não
+aceita lista nem placeholders. Todo arquivo de rótulos e a lista devem constar em
+[`validacao/PROVENIENCIA.md`](../validacao/PROVENIENCIA.md).
 
 ## 4. Protocolo de desempate e consenso
 
@@ -165,7 +202,8 @@ rótulos, os comandos terminam com código de saída 2 e uma mensagem listando o
 ```bash
 cd lab03 && uv sync
 
-# 1. Validar o formato (todos os 3; ou só os que já existem, ex.: --avaliadores marcela)
+# 1. Validar o formato (todos os 3; ou só os que já existem, ex.: --avaliadores marcela).
+#    Usa validacao/<id>_linhas_invalidas.csv automaticamente se existir (seção 3.3)
 uv run python -m analises.concordancia validar
 uv run python -m analises.concordancia validar --avaliadores marcela
 
@@ -199,6 +237,10 @@ release_corretiva release       300    x.xxx      xx.x%  ...
 
 ## 6. Estado atual e pendências humanas
 
-* Existe apenas `validacao/rotulos_marcela.csv` (formato validado pela ferramenta). Faltam
-  `rotulos_joao.csv` e `rotulos_gabriel.csv`, que dependem da rotulação manual (#57/#61).
+* Existe apenas `validacao/rotulos_marcela.csv`, **válido só para 150 das 300 linhas**: as outras
+  150 foram rotuladas sobre placeholders (sorteio incompleto, corrigido em `amostra_ouro.md`) e
+  estão em `validacao/marcela_linhas_invalidas.csv`. Marcela ainda precisa rotular as 150
+  linhas novas (30 repositórios, incluindo `tipo_projeto` e `entrega_real` deles). Faltam
+  `rotulos_joao.csv` e `rotulos_gabriel.csv` (300 linhas reais cada), que dependem da
+  rotulação manual (#57/#61).
 * Faltam: o cálculo do kappa real, a reunião de consenso e o commit de `validacao/consenso.csv`.

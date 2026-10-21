@@ -11,9 +11,15 @@ Este módulo implementa o protocolo de validação manual do Lab03 (Seção 6 do
    de dados (dropdowns), totalmente cega para qualquer saída da heurística.
 4. Exporta metadados do sorteio (`sorteio_info.json`) para rastreabilidade científica.
 
+Sorteio incompleto (correção da Issue #63): se a primeira execução ocorreu antes de as
+releases de todos os repositórios estarem persistidas, os repositórios sem releases saem
+com linhas-placeholder (`TAG_PLACEHOLDER`). `completar_sorteio_pendente` conclui apenas
+esses repositórios, com a mesma semente, método e janela, sem tocar nos já sorteados.
+
 Execução (a partir de `lab03/`):
     uv run python -m analises.amostra_ouro
     uv run python -m analises.amostra_ouro --seed 42 --output-dir dados/amostra_ouro
+    uv run python -m analises.amostra_ouro --completar-pendentes
 """
 
 from __future__ import annotations
@@ -23,7 +29,7 @@ import json
 import logging
 from collections.abc import Sequence
 from dataclasses import asdict, dataclass
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -43,6 +49,10 @@ DEFAULT_NUM_REPOS = 60
 DEFAULT_RELEASES_PER_REPO = 5
 DEFAULT_WINDOW_START = "2025-10-01"
 DEFAULT_WINDOW_END = "2026-09-30"
+
+# Tag gravada nas planilhas quando o repositório ainda não tinha releases persistidas.
+# Linhas com esta tag NÃO são rotuláveis (não há release real por trás delas).
+TAG_PLACEHOLDER = "(pendente de persistência)"
 
 AVALIADORES = [
     {"id": "marcela", "nome": "Marcela Campos"},
@@ -256,7 +266,7 @@ def gerar_dataframe_rotulacao(itens: list[RepoSampleItem]) -> pd.DataFrame:
                         "tipo_projeto": "",
                         "entrega_real": "",
                         "release_idx": r_idx,
-                        "tag_name": "(pendente de persistência)",
+                        "tag_name": TAG_PLACEHOLDER,
                         "published_at": "",
                         "release_url": f"{item.repo_url}/releases",
                         "release_corretiva": "",
@@ -476,8 +486,12 @@ def exportar_planilhas(
     df_rotulacao: pd.DataFrame,
     output_dir: Path,
     avaliadores: list[dict[str, str]] | None = None,
+    lineterminator: str | None = None,
 ) -> dict[str, list[Path]]:
-    """Exporta as planilhas por avaliador em CSV e Excel (.xlsx)."""
+    """Exporta as planilhas por avaliador em CSV e Excel (.xlsx).
+
+    `lineterminator` permite preservar o fim de linha de CSVs já versionados (CRLF).
+    """
     output_dir.mkdir(parents=True, exist_ok=True)
     avals = avaliadores or AVALIADORES
 
@@ -486,7 +500,7 @@ def exportar_planilhas(
     # Template em branco
     template_csv = output_dir / "amostra_ouro_template.csv"
     template_xlsx = output_dir / "amostra_ouro_template.xlsx"
-    df_rotulacao.to_csv(template_csv, index=False, encoding="utf-8-sig")
+    df_rotulacao.to_csv(template_csv, index=False, encoding="utf-8-sig", lineterminator=lineterminator)
     salvar_planilha_excel(df_rotulacao, template_xlsx, avaliador_nome="Template")
     arquivos_gerados["template"] = [template_csv, template_xlsx]
 
@@ -498,7 +512,7 @@ def exportar_planilhas(
         csv_path = output_dir / f"amostra_ouro_{av_id}.csv"
         xlsx_path = output_dir / f"amostra_ouro_{av_id}.xlsx"
 
-        df_rotulacao.to_csv(csv_path, index=False, encoding="utf-8-sig")
+        df_rotulacao.to_csv(csv_path, index=False, encoding="utf-8-sig", lineterminator=lineterminator)
         salvar_planilha_excel(df_rotulacao, xlsx_path, avaliador_nome=av_nome)
 
         arquivos_gerados[av_id] = [csv_path, xlsx_path]
@@ -584,6 +598,147 @@ def executar_sorteio_amostra_ouro(
     }
 
 
+def _fim_de_linha(path: Path) -> str:
+    """Retorna CRLF se o arquivo versionado usa CRLF; senão LF."""
+    return "\r\n" if b"\r\n" in path.read_bytes() else "\n"
+
+
+class SorteioInconsistenteError(Exception):
+    """O sorteio registrado não pode ser completado de forma segura e determinística."""
+
+
+def completar_sorteio_pendente(
+    dataset_path: Path | str = "dados/repositorios.parquet",
+    releases_dir: Path | str = "dados/releases",
+    output_dir: Path | str = "dados/amostra_ouro",
+    agora: datetime | None = None,
+) -> dict[str, Any]:
+    """Completa o sorteio dos repositórios sem releases sorteadas (placeholders).
+
+    Lê `sorteio_info.json` e reaplica, **com os parâmetros ali registrados** (semente,
+    releases por repositório e janela), exatamente o método original
+    (`construir_dados_amostra_ouro`: semente por repositório `seed * 1000 + repo_idx`).
+    Garante que:
+
+    * o conjunto e a ordem dos repositórios coincidem com o registrado;
+    * as releases já sorteadas são reproduzidas idênticas pelas releases persistidas
+      (se alguma divergir, nada é gravado e `SorteioInconsistenteError` é levantado);
+    * as linhas já reais da planilha permanecem idênticas (apenas placeholders mudam);
+    * todo repositório pendente tem releases persistidas (senão, nada é gravado).
+
+    É idempotente: sem repositórios pendentes, não reescreve nenhum arquivo.
+    Retorna um resumo com os índices completados.
+    """
+    dataset_path = Path(dataset_path)
+    releases_dir = Path(releases_dir)
+    output_dir = Path(output_dir)
+    info_path = output_dir / "sorteio_info.json"
+    template_path = output_dir / "amostra_ouro_template.csv"
+
+    info = json.loads(info_path.read_text(encoding="utf-8"))
+    registrados = info["repositorios"]
+    pendentes = [r["idx"] for r in registrados if not r["releases_sorteadas"]]
+    if not pendentes:
+        logger.info("Nenhum repositório pendente em %s; nada a completar.", info_path)
+        return {"pendentes_completados": [], "total_linhas": info["total_linhas_planilha"], "alterado": False}
+
+    seed = int(info["seed"])
+    releases_per_repo = int(info["releases_per_repo"])
+    window_start = _parse_datetime(info["window_start"])
+    window_end = _parse_datetime(info["window_end"])
+
+    sample_repos = sortear_repositorios(dataset_path, n=int(info["num_repos"]), seed=seed)
+    if sample_repos["full_name"].tolist() != [r["full_name"] for r in registrados]:
+        raise SorteioInconsistenteError(
+            "Os repositórios sorteados com a semente registrada diferem de sorteio_info.json; "
+            "o conjunto de repositórios não pode mudar."
+        )
+
+    itens = construir_dados_amostra_ouro(
+        sample_repos=sample_repos,
+        releases_dir=releases_dir,
+        window_start=window_start,
+        window_end=window_end,
+        releases_per_repo=releases_per_repo,
+        base_seed=seed,
+    )
+
+    divergentes = [
+        r["full_name"]
+        for r, item in zip(registrados, itens)
+        if r["releases_sorteadas"] and [x.tag_name for x in item.releases] != r["releases_sorteadas"]
+    ]
+    if divergentes:
+        raise SorteioInconsistenteError(
+            "As releases persistidas não reproduzem o sorteio já registrado em: "
+            f"{', '.join(divergentes[:5])}. O sorteio original não será alterado."
+        )
+
+    sem_releases = [item.full_name for item in itens if item.repo_idx in pendentes and not item.releases]
+    if sem_releases:
+        raise SorteioInconsistenteError(
+            "Repositórios pendentes sem releases persistidas na janela em "
+            f"{releases_dir}: {', '.join(sem_releases[:5])}. Rode analises.persistir_amostra_ouro."
+        )
+
+    df_novo = gerar_dataframe_rotulacao(itens)
+
+    # Linhas já reais da planilha atual devem permanecer idênticas, conteúdo a conteúdo.
+    atual = pd.read_csv(template_path, dtype=str, keep_default_na=False, encoding="utf-8-sig")
+    reais = atual[atual["tag_name"] != TAG_PLACEHOLDER]
+    novo_str = df_novo.astype(str)
+    chave = ["repo_idx", "release_idx"]
+    esperado = novo_str.merge(reais[chave], on=chave, how="inner")
+    if len(reais) != len(esperado) or not (
+        esperado.sort_values(chave, key=lambda c: c.astype(int)).reset_index(drop=True)
+        .equals(reais.sort_values(chave, key=lambda c: c.astype(int)).reset_index(drop=True))
+    ):
+        raise SorteioInconsistenteError(
+            "As linhas reais da planilha atual não coincidem com o sorteio reproduzido; "
+            "nada foi gravado."
+        )
+
+    # Preserva o fim de linha dos arquivos versionados (o diff mostra só o que mudou).
+    fim_csv = _fim_de_linha(template_path)
+    fim_json = _fim_de_linha(info_path)
+    arquivos = exportar_planilhas(df_novo, output_dir, lineterminator=fim_csv)
+
+    for registro, item in zip(registrados, itens):
+        if registro["idx"] in pendentes:
+            registro["releases_sorteadas"] = [r.tag_name for r in item.releases]
+    agora = agora or datetime.now(timezone.utc)
+    info["total_linhas_planilha"] = len(df_novo)
+    info["conclusao_sorteio_pendente"] = {
+        "timestamp_utc": agora.isoformat(),
+        "repos_completados_idx": pendentes,
+        "metodo": (
+            "Conclusão do sorteio pendente: mesmo método do sorteio original "
+            "(construir_dados_amostra_ouro; df.sample com random_state = seed*1000 + repo_idx), "
+            "mesma semente, janela e releases por repositório registradas neste arquivo, "
+            "aplicado apenas aos repositórios que estavam sem releases sorteadas. "
+            "Os demais repositórios e o conjunto de 60 repositórios não foram alterados."
+        ),
+        "nota": (
+            "Completa o sorteio pendente: na geração original (timestamp_utc acima) as releases "
+            "destes repositórios ainda não estavam persistidas e as planilhas continham linhas "
+            "'(pendente de persistência)'. Comando: "
+            "uv run python -m analises.amostra_ouro --completar-pendentes"
+        ),
+    }
+    texto = json.dumps(info, indent=2, ensure_ascii=False).replace("\n", fim_json)
+    with open(info_path, "w", encoding="utf-8", newline="") as f:
+        f.write(texto)
+
+    logger.info("Sorteio pendente completado para %d repositórios.", len(pendentes))
+    return {
+        "pendentes_completados": pendentes,
+        "total_linhas": len(df_novo),
+        "alterado": True,
+        "arquivos": {k: [str(p) for p in v] for k, v in arquivos.items()},
+        "info_json": str(info_path),
+    }
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(
         description="Sorteia amostra-ouro e gera planilhas de rotulação por avaliador (Issue #63)"
@@ -595,9 +750,30 @@ def main() -> int:
     parser.add_argument("--releases-per-repo", type=int, default=DEFAULT_RELEASES_PER_REPO, help="Releases por repositório (default: 5)")
     parser.add_argument("--seed", type=int, default=DEFAULT_SEED, help="Semente pseudoaleatória (default: 42)")
 
+    parser.add_argument(
+        "--completar-pendentes",
+        action="store_true",
+        help="Completa apenas o sorteio dos repositórios sem releases sorteadas (placeholders), "
+        "sem alterar os já sorteados (idempotente)",
+    )
+
     args = parser.parse_args()
 
     logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
+
+    if args.completar_pendentes:
+        res = completar_sorteio_pendente(
+            dataset_path=args.dataset,
+            releases_dir=args.releases_dir,
+            output_dir=args.output_dir,
+        )
+        if res["alterado"]:
+            print(f"[*] Sorteio completado para {len(res['pendentes_completados'])} repositórios pendentes")
+            print(f"[*] Linhas na planilha: {res['total_linhas']}")
+            print(f"[*] Metadados: {res['info_json']}")
+        else:
+            print("[*] Nenhum repositório pendente; nada a fazer")
+        return 0
 
     res = executar_sorteio_amostra_ouro(
         dataset_path=args.dataset,

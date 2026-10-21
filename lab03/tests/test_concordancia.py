@@ -12,8 +12,10 @@ from pathlib import Path
 import pandas as pd
 import pytest
 
+from analises.amostra_ouro import TAG_PLACEHOLDER
 from analises.concordancia import (
     DIMENSOES,
+    SUFIXO_LINHAS_INVALIDAS,
     ArquivosAusentesError,
     ConcordanciaError,
     RotulosInvalidosError,
@@ -21,6 +23,7 @@ from analises.concordancia import (
     calcular_kappas,
     carregar_avaliadores,
     carregar_csv,
+    carregar_linhas_invalidas,
     carregar_rotulos_validados,
     gerar_modelo_consenso,
     interpretar_landis_koch,
@@ -330,13 +333,158 @@ def test_csv_ilegivel_vira_erro_de_formato(tmp_path, ref):
 
 def test_rotulos_marcela_reais_tem_formato_valido():
     rotulos = LAB03 / "validacao" / "rotulos_marcela.csv"
+    invalidas = LAB03 / "validacao" / f"marcela{SUFIXO_LINHAS_INVALIDAS}"
     planilha = LAB03 / "dados" / "amostra_ouro" / "amostra_ouro_template.csv"
-    if not (rotulos.is_file() and planilha.is_file()):
+    if not (rotulos.is_file() and planilha.is_file() and invalidas.is_file()):
         pytest.skip("arquivos reais ausentes")
     referencia = carregar_csv(planilha)
-    df = carregar_rotulos_validados(rotulos, referencia)
-    assert len(df) == 300
-    assert df["repo_idx"].nunique() == 60
+    validar_planilha_referencia(referencia)  # sorteio completo: sem placeholders
+    # Sem a lista explícita, as 150 linhas void de Marcela são rejeitadas.
+    with pytest.raises(RotulosInvalidosError, match="placeholder"):
+        carregar_rotulos_validados(rotulos, referencia)
+    lista = carregar_linhas_invalidas(invalidas, referencia)
+    assert len(lista) == 150
+    df = carregar_rotulos_validados(rotulos, referencia, linhas_invalidas=lista)
+    assert len(df) == 150
+    assert (df["tag_name"] != TAG_PLACEHOLDER).all()
+    assert df["repo_idx"].nunique() == 30
+
+
+# --------------------------------------------------------------------------- #
+# Linhas-placeholder e lista explícita de linhas inválidas
+# --------------------------------------------------------------------------- #
+def _com_placeholders(df: pd.DataFrame, repos: tuple[str, ...]) -> pd.DataFrame:
+    """Simula o estado antigo: linhas dos `repos` viram placeholder (sem release real)."""
+    df = df.copy()
+    alvo = df["repo_idx"].isin(repos)
+    df.loc[alvo, "tag_name"] = TAG_PLACEHOLDER
+    df.loc[alvo, "published_at"] = ""
+    return df
+
+
+def _lista(df: pd.DataFrame) -> pd.DataFrame:
+    return df.loc[df["tag_name"] == TAG_PLACEHOLDER, ["repo_idx", "release_idx"]].reset_index(drop=True)
+
+
+def test_referencia_com_placeholder_e_rejeitada(ref):
+    antiga = _com_placeholders(ref, ("2",))
+    with pytest.raises(RotulosInvalidosError, match="placeholder.*--completar-pendentes"):
+        validar_planilha_referencia(antiga)
+
+
+def test_rotulos_com_placeholder_sao_rejeitados_com_erro_claro(ref):
+    rotulos = _com_placeholders(preencher(ref), ("2",))
+
+    erros = validar_rotulos(rotulos, ref)
+
+    assert any("2 linha(s) com tag placeholder" in e and "2/1, 2/2" in e for e in erros)
+    assert any("_linhas_invalidas.csv" in e for e in erros)
+
+
+def test_lista_de_invalidas_aceita_arquivo_completo_com_linhas_void(tmp_path, ref):
+    # O arquivo tem as 6 linhas (as do repo 2 são void); a planilha atual é real nas 6.
+    rotulos = _com_placeholders(preencher(ref), ("2",))
+    lista = _lista(rotulos)
+    caminho = gravar(rotulos, tmp_path / "rotulos_marcela.csv")
+
+    assert validar_rotulos(rotulos, ref, lista) == []
+    df = carregar_rotulos_validados(caminho, ref, linhas_invalidas=lista)
+    assert sorted(df["repo_idx"].unique()) == ["1", "3"]
+    assert len(df) == 4
+
+
+def test_lista_de_invalidas_aceita_arquivo_que_cobre_so_linhas_validas(ref):
+    lista = ref.loc[ref["repo_idx"] == "2", ["repo_idx", "release_idx"]]
+    apenas_validas = preencher(ref)[lambda d: d["repo_idx"] != "2"]
+
+    assert validar_rotulos(apenas_validas, ref, lista) == []
+
+
+def test_lista_de_invalidas_nao_dispensa_linhas_validas_faltantes(ref):
+    lista = ref.loc[ref["repo_idx"] == "2", ["repo_idx", "release_idx"]]
+    incompleto = preencher(ref)[lambda d: ~d["repo_idx"].isin(["2", "3"])]
+
+    erros = validar_rotulos(incompleto, ref, lista)
+
+    assert any("chaves ausentes" in e and "3/1" in e for e in erros)
+
+
+def test_lista_de_invalidas_nao_relaxa_demais_validacoes(ref):
+    rotulos = _com_placeholders(preencher(ref), ("2",))
+    lista = _lista(rotulos)
+    rotulos.loc[rotulos["repo_idx"] == "3", "entrega_real"] = "talvez"
+
+    erros = validar_rotulos(rotulos, ref, lista)
+
+    assert any("entrega_real com valor fora de" in e for e in erros)
+
+
+def test_placeholder_fora_da_lista_continua_rejeitado(ref):
+    rotulos = _com_placeholders(preencher(ref), ("2", "3"))
+    lista = _lista(rotulos[rotulos["repo_idx"] == "2"])
+
+    erros = validar_rotulos(rotulos, ref, lista)
+
+    assert any("2 linha(s) com tag placeholder" in e and "3/1" in e for e in erros)
+
+
+def test_lista_de_invalidas_com_chave_inexistente_e_rejeitada(tmp_path, ref):
+    caminho = tmp_path / "x_linhas_invalidas.csv"
+    caminho.write_text("repo_idx,release_idx\n99,1\n", encoding="utf-8")
+    with pytest.raises(RotulosInvalidosError, match="inexistentes.*99/1"):
+        carregar_linhas_invalidas(caminho, ref)
+
+
+def test_lista_de_invalidas_duplicada_ou_sem_colunas_e_rejeitada(tmp_path, ref):
+    dup = tmp_path / "dup.csv"
+    dup.write_text("repo_idx,release_idx\n1,1\n1,1\n", encoding="utf-8")
+    with pytest.raises(RotulosInvalidosError, match="duplicadas"):
+        carregar_linhas_invalidas(dup, ref)
+    sem = tmp_path / "sem.csv"
+    sem.write_text("repo_idx\n1\n", encoding="utf-8")
+    with pytest.raises(RotulosInvalidosError, match="colunas ausentes: release_idx"):
+        carregar_linhas_invalidas(sem, ref)
+
+
+def test_avaliador_parcial_usa_lista_ao_lado_do_arquivo_e_kappa_pede_linhas_faltantes(tmp_path, ref):
+    validacao = tmp_path / "validacao"
+    validacao.mkdir()
+    marcela = _com_placeholders(preencher(ref), ("2",))
+    gravar(marcela, validacao / "rotulos_marcela.csv")
+    _lista(marcela).assign(chave_placeholder_antiga="x").to_csv(
+        validacao / f"marcela{SUFIXO_LINHAS_INVALIDAS}", index=False
+    )
+    for a in ("gabriel", "joao"):
+        gravar(preencher(ref), validacao / f"rotulos_{a}.csv")
+
+    rotulos = carregar_avaliadores(validacao, ref)
+
+    assert len(rotulos["marcela"]) == 4 and len(rotulos["gabriel"]) == 6
+    with pytest.raises(ConcordanciaError, match="unidades sem rótulo.*marcela"):
+        calcular_kappas(rotulos, ref)
+
+
+def test_cli_validar_avaliador_parcial_informa_linhas_invalidas(tmp_path, ref, capsys):
+    validacao = tmp_path / "v"
+    validacao.mkdir()
+    marcela = _com_placeholders(preencher(ref), ("2",))
+    gravar(marcela, validacao / "rotulos_marcela.csv")
+    base = ["--validacao-dir", str(validacao), "--planilha", str(gravar(ref, tmp_path / "p.csv"))]
+
+    # Sem a lista: erro claro, código 1.
+    assert main(["validar", *base, "--avaliadores", "marcela"]) == 1
+    assert "placeholder" in capsys.readouterr().err
+
+    _lista(marcela).to_csv(validacao / f"marcela{SUFIXO_LINHAS_INVALIDAS}", index=False)
+    assert main(["validar", *base, "--avaliadores", "marcela"]) == 0
+    out = capsys.readouterr().out
+    assert "4 linhas válidas" in out and "2 inválidas" in out
+
+
+def test_consenso_com_placeholder_e_rejeitado(ref, rotulos_divergentes):
+    modelo = gerar_modelo_consenso(rotulos_divergentes, ref)
+    antigo = _com_placeholders(modelo, ("2",))
+    assert any("placeholder" in e for e in validar_consenso(antigo, ref))
 
 
 # --------------------------------------------------------------------------- #

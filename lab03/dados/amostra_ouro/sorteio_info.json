@@ -89,7 +89,13 @@
       "stars": 120036,
       "language": "Rust",
       "total_releases_window": 14,
-      "releases_sorteadas": []
+      "releases_sorteadas": [
+        "1.91.0",
+        "1.92.0",
+        "1.96.0",
+        "1.97.0",
+        "1.98.0"
+      ]
     },
     {
       "idx": 7,
@@ -111,7 +117,13 @@
       "stars": 40287,
       "language": "Python",
       "total_releases_window": 2576,
-      "releases_sorteadas": []
+      "releases_sorteadas": [
+        "agent-skills-v0.699.0",
+        "desktop-v0.61.126",
+        "agent-skills-v0.873.0",
+        "agent-skills-v0.1559.0",
+        "agent-skills-v0.2010.0"
+      ]
     },
     {
       "idx": 9,
@@ -455,7 +467,13 @@
       "stars": 49705,
       "language": "Python",
       "total_releases_window": 71,
-      "releases_sorteadas": []
+      "releases_sorteadas": [
+        "v0.1.1",
+        "v0.2.1",
+        "v0.4.2",
+        "v0.4.5",
+        "v0.9.0"
+      ]
     },
     {
       "idx": 34,
@@ -463,7 +481,13 @@
       "stars": 46867,
       "language": "JavaScript",
       "total_releases_window": 5,
-      "releases_sorteadas": []
+      "releases_sorteadas": [
+        "v0.54.0",
+        "v0.55.0",
+        "v0.55.1",
+        "v0.56.0",
+        "v0.57.0"
+      ]
     },
     {
       "idx": 35,
@@ -471,7 +495,13 @@
       "stars": 42821,
       "language": "Rust",
       "total_releases_window": 6,
-      "releases_sorteadas": []
+      "releases_sorteadas": [
+        "v25.12.29",
+        "v26.1.4",
+        "v26.1.22",
+        "v26.5.6",
+        "v26.9.1"
+      ]
     },
     {
       "idx": 36,
@@ -479,7 +509,13 @@
       "stars": 40086,
       "language": "Go",
       "total_releases_window": 13,
-      "releases_sorteadas": []
+      "releases_sorteadas": [
+        "v0.25.11",
+        "v0.27.0",
+        "v0.27.1",
+        "v0.27.2",
+        "v0.27.7"
+      ]
     },
     {
       "idx": 37,
@@ -487,7 +523,13 @@
       "stars": 54460,
       "language": "Python",
       "total_releases_window": 5,
-      "releases_sorteadas": []
+      "releases_sorteadas": [
+        "v2.33.0",
+        "v2.33.1",
+        "v2.34.0",
+        "v2.34.1",
+        "v2.34.2"
+      ]
     },
     {
       "idx": 38,
@@ -495,7 +537,13 @@
       "stars": 97844,
       "language": "TypeScript",
       "total_releases_window": 16,
-      "releases_sorteadas": []
+      "releases_sorteadas": [
+        "v4.1.14",
+        "v4.1.16",
+        "v4.2.1",
+        "v4.2.2",
+        "v4.3.2"
+      ]
     },
     {
       "idx": 39,
@@ -503,7 +551,13 @@
       "stars": 123251,
       "language": "C++",
       "total_releases_window": 181,
-      "releases_sorteadas": []
+      "releases_sorteadas": [
+        "v40.1.0",
+        "v42.4.0",
+        "v41.10.6",
+        "v43.5.1",
+        "v42.11.8"
+      ]
     },
     {
       "idx": 40,
@@ -511,7 +565,13 @@
       "stars": 96165,
       "language": "Rust",
       "total_releases_window": 18,
-      "releases_sorteadas": []
+      "releases_sorteadas": [
+        "bun-v1.3.12",
+        "bun-v1.3.13",
+        "bun-v1.3.14",
+        "bun-v1.4.0",
+        "bun-v1.4.1"
+      ]
     },
     {
       "idx": 41,
@@ -519,7 +579,13 @@
       "stars": 58100,
       "language": "C#",
       "total_releases_window": 14,
-      "releases_sorteadas": []
+      "releases_sorteadas": [
+        "v10.11.3",
+        "v10.11.4",
+        "v10.11.9",
+        "v10.11.11",
+        "v12.0"
+      ]
     },
     {
       "idx": 42,
@@ -527,7 +593,13 @@
       "stars": 40592,
       "language": "Go",
       "total_releases_window": 49,
-      "releases_sorteadas": []
+      "releases_sorteadas": [
+        "v10.3.1",
+        "v11.1.1",
+        "v11.3.1",
+        "v11.5.1",
+        "v11.5.4"
+      ]
     },
     {
       "idx": 43,
@@ -535,7 +607,13 @@
       "stars": 55728,
       "language": "C#",
       "total_releases_window": 23,
-      "releases_sorteadas": []
+      "releases_sorteadas": [
+        "v7.5.5",
+        "v7.5.6",
+        "v7.4.16",
+        "v7.5.11",
+        "v7.4.20"
+      ]
     },
     {
       "idx": 44,
@@ -543,7 +621,13 @@
       "stars": 74581,
       "language": "JavaScript",
       "total_releases_window": 48,
-      "releases_sorteadas": []
+      "releases_sorteadas": [
+        "v1.2.0",
+        "v1.5.0",
+        "career-ops-v1.7.1",
+        "career-ops-v1.20.0",
+        "web-v0.6.1"
+      ]
     },
     {
       "idx": 45,
@@ -551,7 +635,13 @@
       "stars": 42843,
       "language": "Kotlin",
       "total_releases_window": 8,
-      "releases_sorteadas": []
+      "releases_sorteadas": [
+        "v1.11.0",
+        "v1.11.1",
+        "v1.11.3",
+        "v1.11.4",
+        "v1.11.6"
+      ]
     },
     {
       "idx": 46,
@@ -559,7 +649,13 @@
       "stars": 105115,
       "language": "C++",
       "total_releases_window": 7,
-      "releases_sorteadas": []
+      "releases_sorteadas": [
+        "v1.23.13503.0",
+        "v1.23.20211.0",
+        "v1.24.10921.0",
+        "v1.24.11321.0",
+        "v1.24.11911.0"
+      ]
     },
     {
       "idx": 47,
@@ -567,7 +663,13 @@
       "stars": 48015,
       "language": "Go",
       "total_releases_window": 31,
-      "releases_sorteadas": []
+      "releases_sorteadas": [
+        "v2.8.7",
+        "v3.2.5",
+        "v3.2.6",
+        "v3.2.8",
+        "v3.4.1"
+      ]
     },
     {
       "idx": 48,
@@ -575,7 +677,13 @@
       "stars": 40102,
       "language": "TypeScript",
       "total_releases_window": 15,
-      "releases_sorteadas": []
+      "releases_sorteadas": [
+        "v7.0.0",
+        "v7.0.2",
+        "v7.0.4",
+        "v7.0.5",
+        "v7.0.6"
+      ]
     },
     {
       "idx": 49,
@@ -583,7 +691,13 @@
       "stars": 63796,
       "language": "Go",
       "total_releases_window": 12,
-      "releases_sorteadas": []
+      "releases_sorteadas": [
+        "v0.25.2",
+        "v0.25.3",
+        "v0.26.0",
+        "v0.27.0",
+        "v0.30.0"
+      ]
     },
     {
       "idx": 50,
@@ -591,7 +705,13 @@
       "stars": 62986,
       "language": "PHP",
       "total_releases_window": 70,
-      "releases_sorteadas": []
+      "releases_sorteadas": [
+        "v4.0.0-beta.437",
+        "v4.0.0-beta.468",
+        "v4.3.0",
+        "v4.3.5",
+        "v4.3.21"
+      ]
     },
     {
       "idx": 51,
@@ -599,7 +719,13 @@
       "stars": 81341,
       "language": "Python",
       "total_releases_window": 62,
-      "releases_sorteadas": []
+      "releases_sorteadas": [
+        "mineru-3.0.0-released",
+        "mineru-3.0.1-released",
+        "mineru-3.0.6-released",
+        "mineru-3.2.1-released",
+        "mineru-3.3.0-released"
+      ]
     },
     {
       "idx": 52,
@@ -607,7 +733,13 @@
       "stars": 141901,
       "language": "Rust",
       "total_releases_window": 44,
-      "releases_sorteadas": []
+      "releases_sorteadas": [
+        "v3.5.1",
+        "v3.18.0",
+        "v3.19.2",
+        "v3.20.3",
+        "v3.20.4"
+      ]
     },
     {
       "idx": 53,
@@ -615,7 +747,13 @@
       "stars": 90327,
       "language": "C++",
       "total_releases_window": 11,
-      "releases_sorteadas": []
+      "releases_sorteadas": [
+        "v30.0",
+        "v30.1",
+        "v29.3",
+        "v31.1",
+        "v30.3"
+      ]
     },
     {
       "idx": 54,
@@ -623,7 +761,13 @@
       "stars": 63723,
       "language": "TypeScript",
       "total_releases_window": 400,
-      "releases_sorteadas": []
+      "releases_sorteadas": [
+        "v0.6.6",
+        "v0.6.74",
+        "v0.6.96",
+        "v0.7.38",
+        "v0.8.53"
+      ]
     },
     {
       "idx": 55,
@@ -631,7 +775,13 @@
       "stars": 206837,
       "language": "TypeScript",
       "total_releases_window": 255,
-      "releases_sorteadas": []
+      "releases_sorteadas": [
+        "n8n@2.7.3",
+        "n8n@1.123.42",
+        "n8n@1.123.59",
+        "n8n@2.28.3",
+        "n8n@1.123.76"
+      ]
     },
     {
       "idx": 56,
@@ -639,7 +789,13 @@
       "stars": 88398,
       "language": "JavaScript",
       "total_releases_window": 113,
-      "releases_sorteadas": []
+      "releases_sorteadas": [
+        "svelte@5.41.1",
+        "svelte@5.41.3",
+        "svelte@5.48.0",
+        "svelte@5.51.4",
+        "svelte@5.55.2"
+      ]
     },
     {
       "idx": 57,
@@ -647,7 +803,13 @@
       "stars": 63052,
       "language": "TypeScript",
       "total_releases_window": 111,
-      "releases_sorteadas": []
+      "releases_sorteadas": [
+        "@upstash/context7-mcp@2.1.1",
+        "ctx7@0.3.1",
+        "ctx7@0.3.8",
+        "ctx7@0.4.3",
+        "ctx7@0.5.9"
+      ]
     },
     {
       "idx": 58,
@@ -655,7 +817,13 @@
       "stars": 40746,
       "language": "TypeScript",
       "total_releases_window": 15,
-      "releases_sorteadas": []
+      "releases_sorteadas": [
+        "v0.2.0",
+        "v0.2.1",
+        "v1.1.0",
+        "v1.1.1",
+        "v1.1.2"
+      ]
     },
     {
       "idx": 59,
@@ -663,7 +831,13 @@
       "stars": 41089,
       "language": "Rust",
       "total_releases_window": 138,
-      "releases_sorteadas": []
+      "releases_sorteadas": [
+        "v0.3.12",
+        "v0.3.24",
+        "v0.4.5",
+        "v0.9.0",
+        "v0.9.6"
+      ]
     },
     {
       "idx": 60,
@@ -671,7 +845,50 @@
       "stars": 59569,
       "language": "Rust",
       "total_releases_window": 61,
-      "releases_sorteadas": []
+      "releases_sorteadas": [
+        "v1.33.1",
+        "v1.34.1",
+        "v1.34.2",
+        "v1.35.0",
+        "v1.50.0"
+      ]
     }
-  ]
+  ],
+  "conclusao_sorteio_pendente": {
+    "timestamp_utc": "2026-10-21T00:32:59.798881+00:00",
+    "repos_completados_idx": [
+      6,
+      8,
+      33,
+      34,
+      35,
+      36,
+      37,
+      38,
+      39,
+      40,
+      41,
+      42,
+      43,
+      44,
+      45,
+      46,
+      47,
+      48,
+      49,
+      50,
+      51,
+      52,
+      53,
+      54,
+      55,
+      56,
+      57,
+      58,
+      59,
+      60
+    ],
+    "metodo": "Conclusão do sorteio pendente: mesmo método do sorteio original (construir_dados_amostra_ouro; df.sample com random_state = seed*1000 + repo_idx), mesma semente, janela e releases por repositório registradas neste arquivo, aplicado apenas aos repositórios que estavam sem releases sorteadas. Os demais repositórios e o conjunto de 60 repositórios não foram alterados.",
+    "nota": "Completa o sorteio pendente: na geração original (timestamp_utc acima) as releases destes repositórios ainda não estavam persistidas e as planilhas continham linhas '(pendente de persistência)'. Comando: uv run python -m analises.amostra_ouro --completar-pendentes"
+  }
 }
