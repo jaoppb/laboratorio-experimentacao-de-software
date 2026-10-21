@@ -7,9 +7,14 @@ agentes por causa da comparação.
 Referência humana: `validacao/rotulos_marcela.csv` (uma só avaliadora; o kappa entre
 humanos ainda não existe). `tipo_projeto` é por repositório e se repete nas 5 linhas.
 Para 30 dos 60 repositórios, os rótulos foram dados sobre linhas que a PR #82 declarou
-nulas (`validacao/marcela_linhas_invalidas.csv`); por isso o resultado é reportado em
+nulas (`validacao/historico/marcela_linhas_invalidas.csv`); por isso o resultado é reportado em
 separado para (a) os repositórios com linhas válidas, (b) os demais (referência mais
 fraca) e (c) os 60 juntos.
+
+ATENÇÃO: desde que `validacao/rotulos_marcela.csv` recebeu as 150 linhas de IA, os 30 repositórios
+do grupo (b) têm `tipo_projeto` **rotulado por IA**, não por Marcela (ver
+`validacao/PROVENIENCIA.md`); só o grupo (a) é referência humana. Este módulo não foi alterado
+além do caminho da lista histórica.
 
 Métricas: concordância simples, kappa de Cohen (agente × humana), matriz de confusão
 (linhas = humana, colunas = agente) e precisão/recall/F1 por classe do agente contra a
@@ -35,7 +40,7 @@ from analises.validar_tipo_projeto import TIPOS_PERMITIDOS, validar
 
 DEFAULT_AGENTES = "dados/tipo_projeto_agentes.csv"
 DEFAULT_HUMANO = "validacao/rotulos_marcela.csv"
-DEFAULT_INVALIDAS = "validacao/marcela_linhas_invalidas.csv"
+DEFAULT_INVALIDAS = "validacao/historico/marcela_linhas_invalidas.csv"
 DEFAULT_REPOSITORIOS = "dados/repositorios.csv"
 
 
