@@ -584,6 +584,7 @@ class PipelineOrchestrator:
             lead_time_days=lead_time_days,
             cfr=cfr_a,
             recovery_hours=recovery_result.median_hours,
+            failure_episodes=recovery_result.total_episodes,
         )
 
         # CFR (b): delivery proxy on the C1 releases (skipped = unknown commits)
@@ -630,7 +631,9 @@ class PipelineOrchestrator:
             "deployment_tier": dora_eval.deployment_tier.value,
             "lead_time_a_hours": lead_time_a,
             "lead_time_b_hours": lead_time_b,
-            "lead_time_tier": dora_eval.lead_time_tier.value,
+            "lead_time_tier": (
+                dora_eval.lead_time_tier.value if dora_eval.lead_time_tier is not None else None
+            ),
             "cfr_a": cfr_a,
             "cfr_tier": dora_eval.cfr_tier.value,
             "recovery_hours": recovery_result.median_hours,
