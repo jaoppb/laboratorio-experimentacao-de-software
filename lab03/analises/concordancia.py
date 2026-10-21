@@ -7,6 +7,10 @@ Implementa o passo 3 e 4 da Seção 6 do Guia do Lab03:
 * calcula o kappa de Fleiss (`aggregate_raters` + `fleiss_kappa`, do statsmodels)
   em cada uma das três dimensões, com a interpretação de Landis & Koch (1977);
 * lista as divergências (insumo da reunião de consenso);
+* rejeita linhas-placeholder (`(pendente de persistência)`) da planilha e dos rótulos;
+  um avaliador cujo arquivo tem linhas void (rotuladas sobre placeholders) só é aceito
+  com uma lista explícita de linhas inválidas (`validacao/<id>_linhas_invalidas.csv`), e
+  nesse caso cobre apenas as linhas válidas (veja `carregar_linhas_invalidas`);
 * gera um *modelo* de `consenso.csv` (maioria preenchida, empates 1-1-1 em branco)
   e verifica o `consenso.csv` final depois da reunião.
 
@@ -45,6 +49,7 @@ from statsmodels.stats.inter_rater import aggregate_raters, fleiss_kappa
 
 from analises.amostra_ouro import (
     AVALIADORES,
+    TAG_PLACEHOLDER,
     OPCOES_ENTREGA_REAL,
     OPCOES_RELEASE_CORRETIVA,
     OPCOES_TIPO_PROJETO,
@@ -58,6 +63,7 @@ UNIDADE_REPOSITORIO = "repositorio"
 UNIDADE_RELEASE = "release"
 
 COLUNAS_CHAVE_RELEASE = ["repo_idx", "release_idx"]
+SUFIXO_LINHAS_INVALIDAS = "_linhas_invalidas.csv"
 COLUNAS_IDENTIFICACAO = [
     "repo_idx",
     "repo_name",
@@ -179,6 +185,20 @@ def _chave_linha(df: pd.DataFrame) -> pd.Series:
     return df["repo_idx"] + "/" + df["release_idx"]
 
 
+def _chaves_placeholder(df: pd.DataFrame) -> list[str]:
+    """Chaves `repo_idx/release_idx` das linhas cuja tag é o placeholder do sorteio incompleto."""
+    return sorted(_chave_linha(df[df["tag_name"] == TAG_PLACEHOLDER]), key=_ordem_chave)
+
+
+def _mensagem_placeholder(chaves: Sequence[str], alvo: str) -> str:
+    return (
+        f"{len(chaves)} linha(s) com tag placeholder '{TAG_PLACEHOLDER}' {alvo} "
+        f"(sorteio incompleto; não há release real para rotular): "
+        f"{', '.join(chaves[:MAX_ERROS_POR_TIPO])}"
+        + (f" (+{len(chaves) - MAX_ERROS_POR_TIPO})" if len(chaves) > MAX_ERROS_POR_TIPO else "")
+    )
+
+
 def validar_planilha_referencia(referencia: pd.DataFrame) -> None:
     """Garante que a planilha em branco tem as colunas e chaves necessárias."""
     faltantes = [c for c in COLUNAS_IDENTIFICACAO if c not in referencia.columns]
@@ -187,16 +207,33 @@ def validar_planilha_referencia(referencia: pd.DataFrame) -> None:
         erros.append(f"colunas ausentes na planilha de referência: {', '.join(faltantes)}")
     elif referencia.duplicated(COLUNAS_CHAVE_RELEASE).any():
         erros.append("planilha de referência tem (repo_idx, release_idx) duplicados")
+    else:
+        placeholders = _chaves_placeholder(referencia)
+        if placeholders:
+            erros.append(
+                _mensagem_placeholder(placeholders, "na planilha de referência")
+                + ". Complete o sorteio com: uv run python -m analises.amostra_ouro --completar-pendentes"
+            )
     if erros:
         raise RotulosInvalidosError("planilha de referência", erros)
 
 
-def validar_rotulos(df: pd.DataFrame, referencia: pd.DataFrame) -> list[str]:
+def validar_rotulos(
+    df: pd.DataFrame,
+    referencia: pd.DataFrame,
+    linhas_invalidas: pd.DataFrame | None = None,
+) -> list[str]:
     """Valida um DataFrame de rótulos contra a planilha de referência.
 
     Verifica colunas, quantidade de linhas, chaves (repo_idx, release_idx) e
     identificação (repo_name, tag_name), valores permitidos em cada dimensão e
     consistência por repositório de `tipo_projeto` e `entrega_real`.
+
+    Linhas com a tag-placeholder do sorteio incompleto são sempre rejeitadas, a menos
+    que sua chave conste em `linhas_invalidas` (lista explícita, ver
+    `carregar_linhas_invalidas`). Com a lista, as linhas inválidas são ignoradas se
+    estiverem no arquivo e dispensadas do arquivo: ele precisa cobrir apenas as demais
+    linhas da planilha de referência.
     Retorna a lista de mensagens de erro (vazia se válido).
     """
     erros: list[str] = []
@@ -204,6 +241,19 @@ def validar_rotulos(df: pd.DataFrame, referencia: pd.DataFrame) -> list[str]:
     faltantes = [c for c in COLUNAS_OBRIGATORIAS if c not in df.columns]
     if faltantes:
         return [f"colunas ausentes: {', '.join(faltantes)}"]
+
+    if linhas_invalidas is not None and len(linhas_invalidas):
+        chaves_invalidas = set(_chave_linha(linhas_invalidas))
+        df = df[~_chave_linha(df).isin(chaves_invalidas)]  # mantém o índice: linhas do arquivo
+        referencia = referencia[~_chave_linha(referencia).isin(chaves_invalidas)].reset_index(drop=True)
+
+    placeholders = _chaves_placeholder(df)
+    if placeholders:
+        erros.append(
+            _mensagem_placeholder(placeholders, "no arquivo de rótulos")
+            + ". Esses rótulos não valem; para validar só as linhas válidas informe a lista "
+            f"explícita de linhas inválidas (<avaliador>{SUFIXO_LINHAS_INVALIDAS})"
+        )
 
     if len(df) != len(referencia):
         erros.append(f"{len(df)} linhas, esperado {len(referencia)}")
@@ -261,19 +311,56 @@ def _ordem_numerica(valor: str) -> tuple[int, str]:
     return (int(valor), valor) if valor.isdigit() else (10**9, valor)
 
 
+def _ordem_chave(chave: str) -> tuple[tuple[int, str], ...]:
+    return tuple(_ordem_numerica(parte) for parte in chave.split("/"))
+
+
+def carregar_linhas_invalidas(path: Path | str, referencia: pd.DataFrame) -> pd.DataFrame:
+    """Lê a lista explícita de linhas inválidas de um avaliador (`repo_idx`, `release_idx`).
+
+    Cada chave deve existir na planilha de referência e aparecer uma única vez; outras
+    colunas (ex.: a chave antiga do placeholder) são apenas informativas.
+    """
+    path = Path(path)
+    origem = path.name
+    try:
+        lista = carregar_csv(path)
+    except (pd.errors.ParserError, pd.errors.EmptyDataError, UnicodeDecodeError) as exc:
+        raise RotulosInvalidosError(origem, [f"não foi possível ler o CSV: {exc}"]) from exc
+    faltantes = [c for c in COLUNAS_CHAVE_RELEASE if c not in lista.columns]
+    if faltantes:
+        raise RotulosInvalidosError(origem, [f"colunas ausentes: {', '.join(faltantes)}"])
+    erros: list[str] = []
+    duplicadas = _chave_linha(lista)[lista.duplicated(COLUNAS_CHAVE_RELEASE)]
+    _resumir(erros, "chaves (repo_idx/release_idx) duplicadas", sorted(set(duplicadas), key=_ordem_chave))
+    desconhecidas = set(_chave_linha(lista)) - set(_chave_linha(referencia))
+    _resumir(erros, "chaves inexistentes na planilha de referência", sorted(desconhecidas, key=_ordem_chave))
+    if erros:
+        raise RotulosInvalidosError(origem, erros)
+    return lista
+
+
 def carregar_rotulos_validados(
-    path: Path | str, referencia: pd.DataFrame, nome: str | None = None
+    path: Path | str,
+    referencia: pd.DataFrame,
+    nome: str | None = None,
+    linhas_invalidas: pd.DataFrame | None = None,
 ) -> pd.DataFrame:
-    """Carrega um arquivo de rótulos e levanta `RotulosInvalidosError` se inválido."""
+    """Carrega um arquivo de rótulos e levanta `RotulosInvalidosError` se inválido.
+
+    Com `linhas_invalidas`, retorna apenas as linhas válidas (as inválidas são descartadas).
+    """
     path = Path(path)
     origem = nome or str(path)
     try:
         df = carregar_csv(path)
     except (pd.errors.ParserError, pd.errors.EmptyDataError, UnicodeDecodeError) as exc:
         raise RotulosInvalidosError(origem, [f"não foi possível ler o CSV: {exc}"]) from exc
-    erros = validar_rotulos(df, referencia)
+    erros = validar_rotulos(df, referencia, linhas_invalidas)
     if erros:
         raise RotulosInvalidosError(origem, erros)
+    if linhas_invalidas is not None and len(linhas_invalidas):
+        df = df[~_chave_linha(df).isin(set(_chave_linha(linhas_invalidas)))].reset_index(drop=True)
     return df
 
 
@@ -285,6 +372,9 @@ def carregar_avaliadores(
     """Carrega e valida `rotulos_<id>.csv` de todos os avaliadores pedidos.
 
     Levanta `ArquivosAusentesError` se algum arquivo não existir (nenhum arquivo é criado).
+    Se existir `<id>_linhas_invalidas.csv` ao lado de `rotulos_<id>.csv`, ele é usado como
+    lista explícita de linhas inválidas daquele avaliador, e o DataFrame retornado contém só
+    as linhas válidas (o kappa só é calculável quando todas as linhas forem rotuladas).
     """
     validacao_dir = Path(validacao_dir)
     ausentes = [a for a in avaliadores if not (validacao_dir / f"rotulos_{a}.csv").is_file()]
@@ -292,10 +382,20 @@ def carregar_avaliadores(
         raise ArquivosAusentesError(ausentes, validacao_dir)
     return {
         a: carregar_rotulos_validados(
-            validacao_dir / f"rotulos_{a}.csv", referencia, nome=f"rotulos_{a}.csv"
+            validacao_dir / f"rotulos_{a}.csv",
+            referencia,
+            nome=f"rotulos_{a}.csv",
+            linhas_invalidas=_linhas_invalidas_do_avaliador(validacao_dir, a, referencia),
         )
         for a in avaliadores
     }
+
+
+def _linhas_invalidas_do_avaliador(
+    validacao_dir: Path, avaliador: str, referencia: pd.DataFrame
+) -> pd.DataFrame | None:
+    caminho = validacao_dir / f"{avaliador}{SUFIXO_LINHAS_INVALIDAS}"
+    return carregar_linhas_invalidas(caminho, referencia) if caminho.is_file() else None
 
 
 # --------------------------------------------------------------------------- #
@@ -331,8 +431,15 @@ def _matriz_codigos(matriz: pd.DataFrame, dim: Dimensao) -> np.ndarray:
 
 def calcular_kappa_matriz(matriz: pd.DataFrame, dim: Dimensao) -> ResultadoKappa:
     """Kappa de Fleiss de uma matriz unidades x avaliadores (texto) para uma dimensão."""
-    if matriz.empty or matriz.isna().any().any():
-        raise ConcordanciaError(f"{dim.nome}: matriz de rótulos vazia ou com valores ausentes")
+    if matriz.empty:
+        raise ConcordanciaError(f"{dim.nome}: matriz de rótulos vazia")
+    if matriz.isna().any().any():
+        ausentes = matriz.isna().sum()
+        detalhe = ", ".join(f"{a}: {int(n)}" for a, n in ausentes.items() if n)
+        raise ConcordanciaError(
+            f"{dim.nome}: há unidades sem rótulo ({detalhe}). Um avaliador com linhas "
+            "inválidas ainda precisa rotular as linhas que faltam antes de calcular o kappa."
+        )
     codigos = _matriz_codigos(matriz, dim)
     tabela, _ = aggregate_raters(codigos, n_cat=len(dim.opcoes))
     with np.errstate(invalid="ignore", divide="ignore"):
@@ -543,7 +650,14 @@ def _executar(args: argparse.Namespace) -> int:
     if args.comando == "validar":
         rotulos = carregar_avaliadores(args.validacao_dir, referencia, args.avaliadores)
         for avaliador, df in rotulos.items():
-            print(f"[ok] rotulos_{avaliador}.csv: {len(df)} linhas válidas")
+            n_invalidas = len(referencia) - len(df)
+            extra = (
+                f" (cobre apenas as linhas válidas; {n_invalidas} inválidas/faltantes "
+                f"conforme {avaliador}{SUFIXO_LINHAS_INVALIDAS})"
+                if n_invalidas
+                else ""
+            )
+            print(f"[ok] rotulos_{avaliador}.csv: {len(df)} linhas válidas{extra}")
         return 0
 
     if args.comando == "verificar-consenso":
