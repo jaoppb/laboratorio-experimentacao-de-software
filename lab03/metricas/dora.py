@@ -3,7 +3,14 @@
 Follows the official specifications of Lab03 (guialab03.md):
 - Deployment Frequency = releases publicadas / 52.1 semanas
 - Classification into Elite, High, Medium, Low for each of the 4 DORA metrics
-- Overall classification = median of the 4 tier scores (4, 3, 2, 1), rounded down
+- Overall classification = median of the tier scores (4, 3, 2, 1), rounded down
+
+Null-handling rules (decision Q18b, issue #56):
+- `recovery_hours` null because there is NO failure episode -> Elite;
+- `recovery_hours` null because all failure episodes are censored -> Low;
+- `lead_time` null (missing data) -> no tier (None); the metric is excluded from
+  the overall score, which is then the median of the 3 available scores;
+- `cfr_a` is never null; CFR (b) is not part of the overall score.
 """
 
 from __future__ import annotations
@@ -95,15 +102,19 @@ def classify_deployment_frequency(freq: float) -> DORATier:
     return DORATier.LOW
 
 
-def classify_lead_time(lead_time_days: float | None) -> DORATier:
+def classify_lead_time(lead_time_days: float | None) -> DORATier | None:
     """Classify median lead time for changes (in days) according to Lab03 reference table.
 
     - Elite: < 1 dia
     - High: 1 dia a < 1 semana (7 dias)
     - Medium: 1 semana a < 30 dias
-    - Low: >= 30 dias (ou se ausente/não mensurável)
+    - Low: >= 30 dias (ou valor negativo, inválido)
+    - None: ausente/não mensurável (falta de dado). Não é Low nem Elite: a métrica
+      fica sem faixa e sai da nota geral (ver `calculate_overall_dora_score`).
     """
-    if lead_time_days is None or lead_time_days < 0:
+    if lead_time_days is None:
+        return None
+    if lead_time_days < 0:
         return DORATier.LOW
     if lead_time_days < 1.0:
         return DORATier.ELITE
@@ -133,15 +144,24 @@ def classify_change_failure_rate(cfr: float | None) -> DORATier:
     return DORATier.LOW
 
 
-def classify_recovery_time(recovery_hours: float | None) -> DORATier:
+def classify_recovery_time(
+    recovery_hours: float | None,
+    has_failure_episodes: bool = True,
+) -> DORATier:
     """Classify median recovery time (in hours) according to Lab03 reference table.
 
-    - Elite: < 1 hora
+    - Elite: < 1 hora, ou ausência total de episódios de falha
     - High: 1 hora a < 1 dia (24 horas)
     - Medium: 1 dia a < 1 semana (168 horas)
-    - Low: >= 1 semana (ou se ausente/censurado sem resolução)
+    - Low: >= 1 semana, ou todos os episódios de falha censurados (sem resolução)
+
+    `recovery_hours` nulo tem dois significados, distinguidos por `has_failure_episodes`:
+    - False: nenhum episódio de falha na janela -> Elite;
+    - True (padrão): há episódios, mas todos censurados -> Low.
     """
-    if recovery_hours is None or recovery_hours < 0:
+    if recovery_hours is None:
+        return DORATier.LOW if has_failure_episodes else DORATier.ELITE
+    if recovery_hours < 0:
         return DORATier.LOW
     if recovery_hours < 1.0:
         return DORATier.ELITE
@@ -161,8 +181,12 @@ def calculate_overall_dora_score(scores: Sequence[int]) -> tuple[int, DORATier]:
     - Medium = 2
     - Low = 1
 
-    The overall rating is the median of the four scores, rounded down.
-    Example: (4, 3, 3, 1) -> median 3.0 -> rounded down 3 -> High.
+    The overall rating is the median of the available scores, rounded down.
+    Normally there are four scores; when a metric is missing (null lead time) it is
+    excluded and the median is computed over the remaining three. The median of an
+    odd count is the middle value; for an even count it is the mean of the two
+    middle values, rounded down.
+    Examples: (4, 3, 3, 1) -> median 3.0 -> High; (4, 2, 1) -> median 2 -> Medium.
     """
     if not scores:
         raise ValueError("scores sequence must not be empty")
@@ -180,17 +204,20 @@ def calculate_overall_dora_score(scores: Sequence[int]) -> tuple[int, DORATier]:
 
 @dataclass
 class DORAEvaluation:
-    """Full evaluation of a repository across all 4 DORA metrics."""
+    """Full evaluation of a repository across the DORA metrics.
+
+    `scores` holds only the available metric scores (3 when lead time is null).
+    """
 
     deployment_frequency: float
     deployment_tier: DORATier
     lead_time_days: float | None
-    lead_time_tier: DORATier
+    lead_time_tier: DORATier | None
     cfr: float | None
     cfr_tier: DORATier
     recovery_hours: float | None
     recovery_tier: DORATier
-    scores: tuple[int, int, int, int]
+    scores: tuple[int, ...]
     overall_score: int
     overall_tier: DORATier
 
@@ -200,18 +227,27 @@ def evaluate_repository_dora(
     lead_time_days: float | None,
     cfr: float | None,
     recovery_hours: float | None,
+    failure_episodes: int | None = None,
 ) -> DORAEvaluation:
-    """Evaluate all 4 DORA metrics for a repository and return the overall DORA tier."""
+    """Evaluate the DORA metrics for a repository and return the overall DORA tier.
+
+    `failure_episodes` is the total number of failure episodes (resolved + censored).
+    It disambiguates a null `recovery_hours`: 0 -> Elite (no failures); otherwise
+    (or unknown, None) -> Low. A null `lead_time_days` yields `lead_time_tier=None`
+    and leaves the metric out of the overall score.
+    """
     dep_tier = classify_deployment_frequency(deployment_frequency)
     lead_tier = classify_lead_time(lead_time_days)
     cfr_tier = classify_change_failure_rate(cfr)
-    rec_tier = classify_recovery_time(recovery_hours)
+    rec_tier = classify_recovery_time(
+        recovery_hours,
+        has_failure_episodes=failure_episodes != 0,
+    )
 
-    scores = (
-        TIER_POINTS[dep_tier],
-        TIER_POINTS[lead_tier],
-        TIER_POINTS[cfr_tier],
-        TIER_POINTS[rec_tier],
+    scores = tuple(
+        TIER_POINTS[tier]
+        for tier in (dep_tier, lead_tier, cfr_tier, rec_tier)
+        if tier is not None
     )
 
     overall_score, overall_tier = calculate_overall_dora_score(scores)
