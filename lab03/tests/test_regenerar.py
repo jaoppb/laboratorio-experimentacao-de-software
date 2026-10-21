@@ -653,3 +653,213 @@ def test_check_invariants_exempts_kept_repositories_from_the_null_check():
     new[1]["c2_cfr_b_evaluated_releases"] = None
     assert check_invariants(old, new)
     assert check_invariants(old, new, kept={"b/b"}) == []
+
+
+# ------------------------------------------- reconcile mode, status, bundle
+
+
+def _reconcile_settings(env, tmp_path, **extra):
+    import dataclasses
+
+    from pipeline.workflow_runs import save_runs_to_parquet
+
+    # real "previous" runs for the reconciliation (the fixture's files are placeholders)
+    for name in ("alpha", "beta"):
+        save_runs_to_parquet(_runs()[:3], "acme", name, env.runs_dir / f"acme__{name}.parquet")
+    from datetime import datetime, timezone
+
+    return dataclasses.replace(
+        env,
+        runs_mode="reconciliar",
+        previous_window_start=datetime(2025, 10, 1, tzinfo=timezone.utc),
+        previous_window_end=datetime(2026, 9, 30, tzinfo=timezone.utc),
+        status_path=tmp_path / "status.json",
+        bundle_dir=tmp_path / "bundle",
+        **extra,
+    )
+
+
+@pytest.fixture
+def reconciling(monkeypatch: pytest.MonkeyPatch, fakes: Fakes):
+    seen: dict[str, Any] = {}
+
+    async def fake_reconcile(owner, repo, previous_runs, client, start_date, previous_end_date,
+                             end_date, branch, **kw):
+        name = f"{owner}/{repo}"
+        seen[name] = {"previous": len(previous_runs), "previous_end": previous_end_date, "branch": branch}
+        runs = _runs()
+        beta = name == "acme/beta"
+        entries = [
+            {"start": "2025-10-01T00:00:00Z", "end": "2025-10-31T23:59:59Z", "action": "kept",
+             "previous_count": 2, "api_count": 2},
+            {"start": "2025-11-01T00:00:00Z", "end": "2025-11-30T23:59:59Z",
+             "action": "refetched" if beta else "kept", "previous_count": 1000, "api_count": 1300,
+             "fetched_count": 1300},
+            {"start": "2026-09-30T00:00:01Z", "end": "2026-09-30T23:59:59Z", "action": "tail",
+             "fetched_count": 0},
+        ]
+        return WorkflowRunsCollectionResult(
+            owner=owner, repo=repo, branch=branch, runs=runs, total_runs=len(runs),
+            valid_runs_count=len(runs), passed_t4=False, api_requests=3 + (5 if beta else 0),
+            reconciliation=entries,
+        )
+
+    monkeypatch.setattr(regenerar, "reconcile_workflow_runs", fake_reconcile)
+    return seen
+
+
+def test_reconcile_mode_uses_the_baseline_runs_and_reports_refetched_intervals(env, fakes, client, tmp_path, reconciling):
+    settings = _reconcile_settings(env, tmp_path)
+    summary = _run(settings, client)
+
+    assert summary.ok and summary.finalized
+    # the previous runs come from the snapshot taken before anything was published
+    assert reconciling["acme/alpha"]["previous"] == 3 and reconciling["acme/beta"]["previous"] == 3
+    assert reconciling["acme/alpha"]["previous_end"].isoformat() == "2026-09-30T00:00:00+00:00"
+    assert fakes.run_calls == {}  # the full collector was never used
+    assert (env.state_dir / "baseline_runs" / "acme__alpha.parquet").is_file()
+
+    done = load_checkpoint(env.checkpoint_path, env.fingerprint())
+    diag = done["acme/beta"]["diagnostics"]
+    assert diag["runs_mode"] == "reconciliar"
+    assert diag["reconciled"] == {"kept": 1, "refetched": 1, "tail": 1}
+    assert diag["refetched_intervals"][0]["api_count"] == 1300
+
+    report = settings.report_path.read_text(encoding="utf-8")
+    assert "## Coleta dos runs: reconciliação com a API" in report
+    assert "| acme/beta | 2025-11-01T00:00:00Z .. 2025-11-30T23:59:59Z | 1000 | 1300 | intervalo truncado" in report
+    assert "reconciliar: 2" in report
+    assert "## Execução desacoplada" in report and "status.json" in report
+
+
+def test_reconcile_mode_requires_the_previous_window_and_files(env, fakes, client, tmp_path, reconciling):
+    import dataclasses
+
+    settings = dataclasses.replace(_reconcile_settings(env, tmp_path), previous_window_end=None)
+    summary = _run(settings, client)
+    assert set(summary.failed) == {"acme/alpha", "acme/beta"}
+    assert all("janela_anterior" in v for v in summary.failed.values())
+
+
+def test_a_checkpoint_from_the_full_mode_is_reused_in_reconcile_mode(env, fakes, client, tmp_path, reconciling):
+    settings = _reconcile_settings(env, tmp_path)  # also writes the previous runs
+    _run(env, client, limit=1)  # alpha collected in full mode
+    summary = _run(settings, client, resume=True)
+
+    assert summary.reused == 1 and summary.collected == ["acme/beta"]
+    assert list(reconciling) == ["acme/beta"]
+    assert summary.finalized
+
+
+def test_status_json_is_written_and_has_no_secrets(env, fakes, client, tmp_path, reconciling):
+    settings = _reconcile_settings(env, tmp_path)
+    client.token_pool = SimpleNamespace(
+        tokens=[SimpleNamespace(token="ghp_" + "s" * 36, remaining=4200, reset_ts=1_800_000_000.0,
+                                cooldown_until=0.0),
+                SimpleNamespace(token="ghp_" + "t" * 36, remaining=None, reset_ts=None,
+                                cooldown_until=float("inf"))]
+    )
+    _run(settings, client)
+
+    text = settings.status_path.read_text(encoding="utf-8")
+    status = json.loads(text)
+    assert "ghp_" not in text
+    assert status["state"] == "finished"
+    assert (status["done"], status["total"], status["runs_mode"]) == (2, 2, "reconciliar")
+    assert status["requests_this_run"] == 3 + 8
+    assert status["quota"][0]["remaining"] == 4200 and status["quota"][0]["reset_at"]
+    assert status["quota"][1]["disabled"] is True
+    assert status["current"] == [] and status["last_error"] is None and status["pid"] > 0
+
+
+def test_status_json_records_failures_and_partial_state(env, fakes, client, tmp_path):
+    import dataclasses
+
+    fakes.fail.add("acme/beta")
+    settings = dataclasses.replace(env, status_path=tmp_path / "status.json")
+    _run(settings, client)
+
+    status = json.loads(settings.status_path.read_text(encoding="utf-8"))
+    assert status["state"] == "failed" and status["failed_this_run"] == 1
+    assert status["done"] == 1 and "acme/beta" in status["last_error"]
+    assert "ghp_" not in status["last_error"]
+
+
+def test_bundle_has_everything_and_verifiable_checksums(env, fakes, client, tmp_path):
+    import dataclasses
+    import hashlib
+    import tarfile
+
+    settings = dataclasses.replace(env, bundle_dir=tmp_path / "bundle")
+    summary = _run(settings, client)
+
+    archive = summary.bundle
+    assert archive is not None and archive.name.startswith("outputs-") and archive.name.endswith(".tar.gz")
+    digest = (archive.parent / f"{archive.name}.sha256").read_text().split()[0]
+    assert digest == hashlib.sha256(archive.read_bytes()).hexdigest()
+
+    with tarfile.open(archive) as tar:
+        names = tar.getnames()
+        for expected in (
+            "outputs/dados/repositorios.csv",
+            "outputs/dados/repositorios.parquet",
+            "outputs/dados/runs/acme__alpha.parquet",
+            "outputs/dados/runs/acme__beta.parquet",
+            "outputs/docs/regeneracao_final.md",
+            "outputs/INVARIANTES.txt",
+            "outputs/DIFF_STAT.txt",
+            "outputs/SHA256SUMS",
+        ):
+            assert expected in names
+        assert not any("elastic" in n for n in names)  # the orphan is not part of the result
+        assert tar.extractfile("outputs/INVARIANTES.txt").read().decode().startswith("OK")
+        sums = tar.extractfile("outputs/SHA256SUMS").read().decode().splitlines()
+        for line in sums:
+            sha, member = line.split("  ", 1)
+            assert hashlib.sha256(tar.extractfile(f"outputs/{member}").read()).hexdigest() == sha
+    assert "Pacote de saídas" in regenerar.format_summary(summary)
+
+
+def test_settings_reject_unknown_runs_mode_and_parse_previous_window():
+    with pytest.raises(ValueError, match="runs_mode"):
+        RegenSettings.from_config({}, runs_mode="nope")
+    settings = RegenSettings.from_config(
+        {"regeneracao": {"janela_anterior": {"inicio": "2025-10-01", "fim": "2026-09-30"}}},
+        runs_mode="reconciliar",
+    )
+    assert settings.previous_window_end.isoformat() == "2026-09-30T00:00:00+00:00"  # literal, not end of day
+    assert settings.previous_window_start.isoformat() == "2025-10-01T00:00:00+00:00"
+
+
+def test_validate_reconciliation_compares_ids_and_derived_metrics(env, fakes, client, tmp_path, monkeypatch):
+    import dataclasses
+
+    from pipeline.regenerar import format_validation, validate_reconciliation
+
+    settings = _reconcile_settings(env, tmp_path)
+    _run(dataclasses.replace(env, runs_mode="completo"), client, limit=1)  # alpha: full result staged
+    from pipeline.regenerar import prepare_baseline
+
+    prepare_baseline(settings)
+
+    async def fake_reconcile(owner, repo, previous_runs, client, start_date, previous_end_date,
+                             end_date, branch, **kw):
+        runs = _runs() if repo == "alpha" else _runs()[:3]  # beta: the reconciliation lost a run
+        return WorkflowRunsCollectionResult(
+            owner=owner, repo=repo, branch=branch, runs=runs, total_runs=len(runs),
+            valid_runs_count=len(runs), passed_t4=False, api_requests=2,
+            reconciliation=[{"start": "a", "end": "b", "action": "kept"}],
+        )
+
+    monkeypatch.setattr(regenerar, "reconcile_workflow_runs", fake_reconcile)
+    import asyncio
+
+    results = asyncio.run(validate_reconciliation(settings, client, ["acme/alpha", "acme/beta"]))
+
+    alpha, beta = results
+    assert alpha["full_source"] == "checkpoint" and alpha["same_ids"] and alpha["same_metrics"]
+    assert beta["full_source"] == "coleta completa" and not beta["same_ids"]
+    assert beta["only_in_full"] == 1
+    assert alpha["requests_full"] == 7 and alpha["requests_reconciled"] == 2
+    assert (settings.state_dir / "validacao_reconciliacao.json").is_file()
+    assert "acme/beta" in format_validation(results)

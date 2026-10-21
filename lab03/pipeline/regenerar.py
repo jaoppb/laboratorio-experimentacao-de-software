@@ -33,10 +33,14 @@ import asyncio
 import hashlib
 import json
 import logging
+import os
 import re
 import shutil
 import subprocess
 import sys
+import tarfile
+import time
+from collections import Counter
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
@@ -71,11 +75,23 @@ from pipeline.releases import (
     save_releases_to_parquet,
     save_tags_to_parquet,
 )
-from pipeline.workflow_runs import collect_workflow_runs, save_runs_to_parquet
+from pipeline.workflow_runs import (
+    collect_workflow_runs,
+    _is_valid_run,
+    load_runs_from_parquet,
+    reconcile_workflow_runs,
+    save_runs_to_parquet,
+)
+from metricas.stability import calculate_cfr_a, calculate_recovery_time
 
 logger = logging.getLogger(__name__)
 
 STATE_DIR_NAME = ".regenerar"
+RUNS_MODE_FULL = "completo"
+RUNS_MODE_RECONCILE = "reconciliar"
+RUNS_MODES = (RUNS_MODE_FULL, RUNS_MODE_RECONCILE)
+STATUS_EVERY = 25  # repositories between two status.json writes
+HEARTBEAT_SECONDS = 120
 DEFAULT_REPORT = "docs/regeneracao_final.md"
 
 _TOKEN_RE = re.compile(
@@ -107,6 +123,13 @@ class RegenSettings:
     # keep their previous metric values instead of blocking the regeneration
     keep_previous: frozenset[str] = frozenset()
     report_path: Path | None = Path(DEFAULT_REPORT)
+    # How the workflow runs are obtained: "completo" (collector over the whole
+    # window) or "reconciliar" (reuse the previous runs where the API agrees)
+    runs_mode: str = RUNS_MODE_FULL
+    previous_window_start: datetime | None = None
+    previous_window_end: datetime | None = None
+    status_path: Path | None = None
+    bundle_dir: Path | None = None
 
     @classmethod
     def from_config(
@@ -115,6 +138,9 @@ class RegenSettings:
         cleanup_clones: bool = False,
         report_path: Path | str | None = DEFAULT_REPORT,
         keep_previous: Sequence[str] = (),
+        runs_mode: str = RUNS_MODE_FULL,
+        status_path: Path | str | None = None,
+        bundle_dir: Path | str | None = None,
     ) -> RegenSettings:
         janela = config.get("janela", {})
         dirs = config.get("diretorios", {})
@@ -128,6 +154,12 @@ class RegenSettings:
             raise ValueError(
                 f"Unknown CFR (b) heuristic {heuristic!r}; available: {sorted(HEURISTICS)}"
             )
+        if runs_mode not in RUNS_MODES:
+            raise ValueError(f"runs_mode must be one of {RUNS_MODES}, got {runs_mode!r}")
+        previous = config.get("regeneracao", {}).get("janela_anterior", {})
+        previous_start = _parse_datetime(previous.get("inicio")) if previous else None
+        # The previous upper bound is literal (a date-only value is 00:00:00Z)
+        previous_end = _parse_datetime(previous.get("fim")) if previous else None
         return cls(
             window_start=start,
             window_end=end,
@@ -144,6 +176,11 @@ class RegenSettings:
                 [*config.get("regeneracao", {}).get("manter_valores_anteriores", []), *keep_previous]
             ),
             report_path=Path(report_path) if report_path else None,
+            runs_mode=runs_mode,
+            previous_window_start=previous_start,
+            previous_window_end=previous_end,
+            status_path=Path(status_path) if status_path else None,
+            bundle_dir=Path(bundle_dir) if bundle_dir else None,
         )
 
     @property
@@ -161,6 +198,11 @@ class RegenSettings:
     @property
     def checkpoint_path(self) -> Path:
         return self.state_dir / "checkpoint.jsonl"
+
+    @property
+    def baseline_runs_dir(self) -> Path:
+        """Snapshot of `dados/runs/` before the regeneration (input of the reconciliation)."""
+        return self.state_dir / "baseline_runs"
 
     @property
     def staged_runs_dir(self) -> Path:
@@ -242,6 +284,39 @@ def append_checkpoint(
 # ---------------------------------------------------------- per repository
 
 
+async def acquire_runs(
+    client: GitHubClient, old: dict[str, Any], settings: RegenSettings
+) -> Any:
+    """Workflow runs of the window, in the mode of the settings (same result type)."""
+    full_name = old["full_name"]
+    owner, repo = full_name.split("/", 1)
+    if settings.runs_mode == RUNS_MODE_FULL:
+        return await collect_workflow_runs(
+            owner=owner,
+            repo=repo,
+            client=client,
+            start_date=settings.window_start,
+            end_date=settings.window_end,
+            branch=old.get("default_branch"),
+            save_to_parquet=False,
+        )
+    if settings.previous_window_end is None:
+        raise ValueError("runs reconciliation needs regeneracao.janela_anterior.fim in the config")
+    previous_file = settings.baseline_runs_dir / run_file_name(full_name)
+    if not previous_file.is_file():
+        raise FileNotFoundError(f"previous runs not found: {previous_file}")
+    return await reconcile_workflow_runs(
+        owner=owner,
+        repo=repo,
+        previous_runs=load_runs_from_parquet(previous_file),
+        client=client,
+        start_date=settings.window_start,
+        previous_end_date=settings.previous_window_end,
+        end_date=settings.window_end,
+        branch=old.get("default_branch") or "main",
+    )
+
+
 async def regenerate_repository(
     client: GitHubClient,
     old: dict[str, Any],
@@ -269,15 +344,7 @@ async def regenerate_repository(
         window_end=settings.window_end,
     )
 
-    runs_result = await collect_workflow_runs(
-        owner=owner,
-        repo=repo,
-        client=client,
-        start_date=settings.window_start,
-        end_date=settings.window_end,
-        branch=old.get("default_branch"),
-        save_to_parquet=False,
-    )
+    runs_result = await acquire_runs(client, old, settings)
 
     async with temporary_git_clone(
         owner=owner,
@@ -333,10 +400,19 @@ async def regenerate_repository(
         units.tag_commits_c3, owner, repo, dados / "tags" / run_file_name(full_name)
     )
 
-    diagnostics = {
+    diagnostics: dict[str, Any] = {
         "api_requests": runs_result.api_requests,
         "unsplittable_intervals": len(runs_result.unsplittable_intervals),
+        "runs_mode": settings.runs_mode,
     }
+    if settings.runs_mode == RUNS_MODE_RECONCILE:
+        actions = Counter(e["action"] for e in runs_result.reconciliation)
+        diagnostics["reconciled"] = dict(actions)
+        diagnostics["refetched_intervals"] = [
+            {k: e[k] for k in ("start", "end", "previous_count", "api_count", "fetched_count")}
+            for e in runs_result.reconciliation
+            if e["action"] == "refetched"
+        ]
     return record, diagnostics
 
 
@@ -348,7 +424,9 @@ def keep_previous_values(
     The previous `runs/` file is staged so the published `runs/` keeps one file
     per repository. Columns that did not exist before stay null.
     """
-    previous_runs = settings.runs_dir / run_file_name(old["full_name"])
+    previous_runs = settings.baseline_runs_dir / run_file_name(old["full_name"])
+    if not previous_runs.is_file():
+        previous_runs = settings.runs_dir / run_file_name(old["full_name"])
     if not previous_runs.is_file():
         raise FileNotFoundError(f"{previous_runs} not found; nothing to keep for {old['full_name']}")
     _copy_atomic(previous_runs, settings.staged_runs_dir / previous_runs.name)
@@ -372,6 +450,7 @@ class RegenSummary:
     problems: list[str] = field(default_factory=list)
     removed_orphans: list[str] = field(default_factory=list)
     kept: dict[str, str] = field(default_factory=dict)
+    bundle: Path | None = None
 
     @property
     def ok(self) -> bool:
@@ -391,6 +470,12 @@ def prepare_baseline(settings: RegenSettings) -> list[dict[str, Any]]:
         shutil.copy2(settings.dataset_parquet, settings.baseline_parquet)
         if settings.dataset_csv.is_file():
             shutil.copy2(settings.dataset_csv, settings.baseline_csv)
+    if not settings.baseline_runs_dir.is_dir() and settings.runs_dir.is_dir():
+        # Snapshot once, before anything is published (copy to a temp name, then rename)
+        tmp = settings.baseline_runs_dir.with_name("baseline_runs.tmp")
+        shutil.rmtree(tmp, ignore_errors=True)
+        shutil.copytree(settings.runs_dir, tmp)
+        tmp.replace(settings.baseline_runs_dir)
     records = load_repositories_dataset(settings.baseline_parquet)
     if not records:
         raise FileNotFoundError(f"Baseline empty or unreadable: {settings.baseline_parquet}")
@@ -404,6 +489,83 @@ def reset_state(settings: RegenSettings) -> None:
         shutil.rmtree(settings.staged_runs_dir)
 
 
+@dataclass
+class RunStatus:
+    """Machine-readable state of the run (`status.json`), for anyone reconnecting later."""
+
+    path: Path | None
+    total: int
+    done: int
+    mode: str
+    started_at: float = field(default_factory=time.time)
+    started_done: int = 0
+    requests: int = 0
+    in_flight: set[str] = field(default_factory=set)
+    last_error: str | None = None
+    failed: int = 0
+    state: str = "running"
+
+    def __post_init__(self) -> None:
+        self.started_done = self.done
+
+    def snapshot(self, client: Any = None) -> dict[str, Any]:
+        elapsed = time.time() - self.started_at
+        finished = self.done - self.started_done
+        remaining = max(0, self.total - self.done)
+        eta_seconds = None
+        if finished > 0 and remaining:
+            eta_seconds = round(elapsed / finished * remaining)
+        quota: list[dict[str, Any]] = []
+        pool = getattr(client, "token_pool", None)
+        for tok in getattr(pool, "tokens", []) or []:  # never includes the token itself
+            quota.append(
+                {
+                    "remaining": tok.remaining,
+                    "reset_at": (
+                        datetime.fromtimestamp(tok.reset_ts, timezone.utc).isoformat()
+                        if tok.reset_ts
+                        else None
+                    ),
+                    "disabled": tok.cooldown_until == float("inf"),
+                }
+            )
+        return {
+            "state": self.state,
+            "updated_at": datetime.now(timezone.utc).isoformat(),
+            "pid": os.getpid(),
+            "runs_mode": self.mode,
+            "done": self.done,
+            "total": self.total,
+            "failed_this_run": self.failed,
+            "requests_this_run": self.requests,
+            "quota": quota,
+            "current": sorted(self.in_flight),
+            "elapsed_seconds": round(elapsed),
+            "eta_seconds": eta_seconds,
+            "eta_at": (
+                datetime.fromtimestamp(time.time() + eta_seconds, timezone.utc).isoformat()
+                if eta_seconds is not None
+                else None
+            ),
+            "last_error": self.last_error,
+        }
+
+    def write(self, client: Any = None) -> None:
+        """Atomically write `status.json` (no-op without a path; never raises)."""
+        if self.path is None:
+            return
+        try:
+            self.path.parent.mkdir(parents=True, exist_ok=True)
+            tmp = self.path.with_name(self.path.name + ".tmp")
+            tmp.write_text(
+                json.dumps(self.snapshot(client), indent=2, sort_keys=True) + "\n",
+                encoding="utf-8",
+            )
+            tmp.replace(self.path)
+        except OSError as exc:  # a full disk must not kill the collection
+            logger.warning("Could not write status file: %s", exc)
+
+
 async def collect_all(
     settings: RegenSettings,
     scope: Sequence[dict[str, Any]],
@@ -411,6 +573,7 @@ async def collect_all(
     client: GitHubClient,
     num_workers: int,
     summary: RegenSummary,
+    status: RunStatus | None = None,
 ) -> None:
     """Collect the repositories of `scope` that are not in the checkpoint yet."""
     fingerprint = settings.fingerprint()
@@ -427,10 +590,17 @@ async def collect_all(
             except asyncio.QueueEmpty:
                 return
             name = old["full_name"]
+            if status:
+                status.in_flight.add(name)
             try:
                 record, diagnostics = await regenerate_repository(client, old, settings)
             except Exception as exc:
                 reason = redact(f"{type(exc).__name__}: {exc}")
+                if status:
+                    status.in_flight.discard(name)
+                    status.last_error = f"{name}: {reason}"[:500]
+                    status.failed += 1
+                    status.write(client)
                 if name not in settings.keep_previous:
                     summary.failed[name] = reason
                     logger.warning("Failed to regenerate %s: %s", name, reason)
@@ -446,8 +616,28 @@ async def collect_all(
             summary.collected.append(name)
             progress["n"] += 1
             logger.info("[%d/%d] %s regenerated", progress["n"], len(pending), name)
+            if status:
+                status.in_flight.discard(name)
+                status.done += 1
+                status.requests += diagnostics.get("api_requests", 0)
+                if progress["n"] % STATUS_EVERY == 0 or status.done >= status.total:
+                    status.write(client)
 
-    await asyncio.gather(*(worker() for _ in range(max(1, num_workers))))
+    async def heartbeat() -> None:
+        # Rewrites the status periodically so a stalled run is visible (old `updated_at`)
+        # and the in-flight repositories are fresh even during long repositories.
+        while True:
+            await asyncio.sleep(HEARTBEAT_SECONDS)
+            if status:
+                status.write(client)
+
+    beat = asyncio.create_task(heartbeat())
+    try:
+        if status:
+            status.write(client)
+        await asyncio.gather(*(worker() for _ in range(max(1, num_workers))))
+    finally:
+        beat.cancel()
 
 
 def remove_orphan_runs(runs_dir: Path, expected: set[str]) -> list[str]:
@@ -495,6 +685,7 @@ def finalize(
     summary: RegenSummary,
     generated_on: str | None = None,
     kept: dict[str, str] | None = None,
+    diagnostics: dict[str, dict[str, Any]] | None = None,
 ) -> None:
     """Check the invariants and publish datasets, runs and report (all or nothing)."""
     problems = check_invariants(
@@ -532,9 +723,12 @@ def finalize(
 
     if settings.report_path is not None:
         write_report(
-            settings, old_records, new_records, unsplittable, problems, generated_on, kept
+            settings, old_records, new_records, unsplittable, problems, generated_on, kept,
+            diagnostics,
         )
     summary.finalized = True
+    if settings.bundle_dir is not None:
+        summary.bundle = build_bundle(settings, new_records, summary)
 
 
 def write_report(
@@ -545,6 +739,7 @@ def write_report(
     problems: Sequence[str] = (),
     generated_on: str | None = None,
     kept: dict[str, str] | None = None,
+    diagnostics: dict[str, dict[str, Any]] | None = None,
 ) -> Path:
     """Write the comparison report (old vs new) to `settings.report_path`."""
     assert settings.report_path is not None
@@ -561,6 +756,7 @@ def write_report(
         min_workflow_runs=settings.min_workflow_runs,
         unsplittable=unsplittable,
         kept=kept,
+        runs_diagnostics=diagnostics,
     )
     text = render_report(
         comparison,
@@ -608,13 +804,25 @@ async def run_regeneration(
     owns_client = client is None
     if client is None:
         client = GitHubClient(cache_path=settings.cache_dir / "http_cache.sqlite")
+    status = RunStatus(
+        path=settings.status_path,
+        total=len(scope),
+        done=summary.reused,
+        mode=settings.runs_mode,
+    )
     try:
-        await collect_all(settings, scope, done, client, num_workers, summary)
+        await collect_all(settings, scope, done, client, num_workers, summary, status)
+    except BaseException:
+        status.state = "interrupted"
+        status.write(client)
+        raise
     finally:
         if owns_client:
             await client.close()
 
     if summary.failed or limit is not None:
+        status.state = "failed" if summary.failed else "partial"
+        status.write(client)
         return summary
 
     by_name = {name: entry["record"] for name, entry in done.items()}
@@ -626,8 +834,94 @@ async def run_regeneration(
     }
     kept = kept_from_checkpoint(done)
     summary.kept = kept
-    finalize(settings, old_records, new_records, unsplittable, summary, generated_on, kept)
+    diagnostics = {name: entry.get("diagnostics", {}) for name, entry in done.items()}
+    finalize(
+        settings, old_records, new_records, unsplittable, summary, generated_on, kept, diagnostics
+    )
+    status.state = "finished" if summary.finalized else "invariants-failed"
+    status.write(client)
     return summary
+
+
+def _sha256(path: Path) -> str:
+    h = hashlib.sha256()
+    with open(path, "rb") as f:
+        for chunk in iter(lambda: f.read(1 << 20), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+
+def build_bundle(
+    settings: RegenSettings,
+    new_records: Sequence[dict[str, Any]],
+    summary: RegenSummary,
+    utc_date: str | None = None,
+) -> Path:
+    """Self-contained `outputs-<UTCdate>.tar.gz` of the published results.
+
+    Holds `repositorios.csv|parquet`, `runs/`, the comparison report, the result of
+    the invariants, a `git diff --stat` and `SHA256SUMS` of every member; the
+    archive's own digest goes to `<archive>.sha256`. Safe to rebuild.
+    """
+    assert settings.bundle_dir is not None
+    date = utc_date or datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    out_dir = settings.bundle_dir
+    out_dir.mkdir(parents=True, exist_ok=True)
+    archive = out_dir / f"outputs-{date}.tar.gz"
+
+    members: list[tuple[Path, str]] = [
+        (settings.dataset_csv, "dados/repositorios.csv"),
+        (settings.dataset_parquet, "dados/repositorios.parquet"),
+    ]
+    members += [
+        (settings.runs_dir / run_file_name(r["full_name"]), f"dados/runs/{run_file_name(r['full_name'])}")
+        for r in new_records
+    ]
+    if settings.report_path is not None and settings.report_path.is_file():
+        members.append((settings.report_path, "docs/regeneracao_final.md"))
+
+    staging = settings.state_dir / "bundle"
+    shutil.rmtree(staging, ignore_errors=True)
+    staging.mkdir(parents=True)
+    invariants = staging / "INVARIANTES.txt"
+    old = load_repositories_dataset(settings.baseline_parquet)
+    problems = check_invariants(
+        old, list(new_records), expected_rows=settings.expected_rows, kept=summary.kept
+    )
+    invariants.write_text(
+        ("OK: todas as invariantes valem (%d linhas)\n" % len(new_records))
+        if not problems
+        else "VIOLADAS:\n" + "\n".join(f"- {p}" for p in problems) + "\n",
+        encoding="utf-8",
+    )
+    members.append((invariants, "INVARIANTES.txt"))
+    diff = staging / "DIFF_STAT.txt"
+    try:
+        out = subprocess.run(
+            ["git", "-C", str(settings.dados_dir), "diff", "--stat", "--", "."],
+            capture_output=True, text=True, check=False,
+        )
+        diff.write_text(out.stdout or out.stderr or "(sem diferenças ou git indisponível)\n", encoding="utf-8")
+    except OSError:
+        diff.write_text("(git indisponível)\n", encoding="utf-8")
+    members.append((diff, "DIFF_STAT.txt"))
+
+    sums = staging / "SHA256SUMS"
+    sums.write_text(
+        "".join(f"{_sha256(src)}  {arc}\n" for src, arc in members), encoding="utf-8"
+    )
+    members.append((sums, "SHA256SUMS"))
+
+    tmp = archive.with_name(archive.name + ".tmp")
+    with tarfile.open(tmp, "w:gz") as tar:
+        for src, arc in members:
+            tar.add(src, arcname=f"outputs/{arc}")
+    tmp.replace(archive)
+    archive.with_name(archive.name + ".sha256").write_text(
+        f"{_sha256(archive)}  {archive.name}\n", encoding="utf-8"
+    )
+    shutil.rmtree(staging, ignore_errors=True)
+    return archive
 
 
 def kept_from_checkpoint(done: dict[str, dict[str, Any]]) -> dict[str, str]:
@@ -657,8 +951,100 @@ def format_summary(summary: RegenSummary) -> str:
         lines.append("Dataset, runs e relatório publicados.")
         if summary.removed_orphans:
             lines.append(f"Runs órfãos removidos: {', '.join(summary.removed_orphans)}")
+        if summary.bundle:
+            lines.append(f"Pacote de saídas: {summary.bundle}")
     elif not summary.failed and not summary.problems:
         lines.append("Coleta parcial (--limit): nada foi publicado.")
+    return "\n".join(lines)
+
+
+async def validate_reconciliation(
+    settings: RegenSettings,
+    client: GitHubClient,
+    names: Sequence[str],
+) -> list[dict[str, Any]]:
+    """Check that reconciling the previous runs gives the same runs as a full collection.
+
+    For each repository the runs are reconciled (`runs_mode="reconciliar"`) and compared
+    with the full collection: the staged result of a finished repository when there is
+    one, otherwise a fresh full collection (spends the quota of a full collection).
+    Compares the run ids and the metrics derived from the runs (valid runs, CFR (a) and
+    recovery time) and reports the requests each way took.
+    """
+    import dataclasses
+
+    old_by_name = {r["full_name"]: r for r in load_repositories_dataset(settings.baseline_parquet)}
+    done = load_checkpoint(settings.checkpoint_path, settings.fingerprint())
+    reconcile_settings = dataclasses.replace(settings, runs_mode=RUNS_MODE_RECONCILE)
+    full_settings = dataclasses.replace(settings, runs_mode=RUNS_MODE_FULL)
+    results: list[dict[str, Any]] = []
+
+    for name in names:
+        old = old_by_name[name]
+        reconciled = await acquire_runs(client, old, reconcile_settings)
+        staged = settings.staged_runs_dir / run_file_name(name)
+        if name in done and staged.is_file() and done[name].get("diagnostics", {}).get("runs_mode", RUNS_MODE_FULL) == RUNS_MODE_FULL:
+            full_runs = load_runs_from_parquet(staged)
+            full_requests = done[name].get("diagnostics", {}).get("api_requests")
+            source = "checkpoint"
+        else:
+            full = await acquire_runs(client, old, full_settings)
+            full_runs, full_requests, source = full.runs, full.api_requests, "coleta completa"
+
+        def derived(runs: Sequence[Any]) -> dict[str, Any]:
+            recovery = calculate_recovery_time(runs)
+            return {
+                "runs": len(runs),
+                "cfr_a": calculate_cfr_a(runs),
+                "recovery_hours": recovery.median_hours,
+                "recovery_episodes": recovery.total_episodes,
+                "censored_ratio": recovery.censored_ratio,
+            }
+
+        ids_full = {r.id for r in full_runs}
+        ids_rec = {r.id for r in reconciled.runs}
+        d_full, d_rec = derived(full_runs), derived(reconciled.runs)
+        d_full["valid_runs"] = sum(1 for r in full_runs if _is_valid_run(r))
+        d_rec["valid_runs"] = reconciled.valid_runs_count
+        actions = Counter(e["action"] for e in reconciled.reconciliation)
+        results.append(
+            {
+                "repo": name,
+                "full_source": source,
+                "same_ids": ids_full == ids_rec,
+                "only_in_full": len(ids_full - ids_rec),
+                "only_in_reconciled": len(ids_rec - ids_full),
+                "same_metrics": {k: d_full[k] for k in d_full if k != "valid_runs"}
+                == {k: d_rec[k] for k in d_rec if k != "valid_runs"},
+                "full": d_full,
+                "reconciled": d_rec,
+                "requests_full": full_requests,
+                "requests_reconciled": reconciled.api_requests,
+                "intervals": dict(actions),
+                "refetched": [
+                    {k: e.get(k) for k in ("start", "end", "previous_count", "api_count")}
+                    for e in reconciled.reconciliation
+                    if e["action"] == "refetched"
+                ],
+            }
+        )
+        logger.info("validated %s: same_ids=%s", name, results[-1]["same_ids"])
+    settings.state_dir.mkdir(parents=True, exist_ok=True)
+    (settings.state_dir / "validacao_reconciliacao.json").write_text(
+        json.dumps(results, indent=2, sort_keys=True, default=str) + "\n", encoding="utf-8"
+    )
+    return results
+
+
+def format_validation(results: Sequence[dict[str, Any]]) -> str:
+    """Table of `validate_reconciliation` (no secrets)."""
+    lines = ["repo | origem completa | ids iguais | métricas iguais | runs | req. completo | req. reconciliado | intervalos"]
+    for r in results:
+        lines.append(
+            f"{r['repo']} | {r['full_source']} | {r['same_ids']} (só completo {r['only_in_full']}, "
+            f"só reconciliado {r['only_in_reconciled']}) | {r['same_metrics']} | {r['full']['runs']} | "
+            f"{r['requests_full']} | {r['requests_reconciled']} | {r['intervals']}"
+        )
     return "\n".join(lines)
 
 
@@ -676,7 +1062,11 @@ def report_only(settings: RegenSettings, generated_on: str | None = None) -> Pat
         for n, e in load_checkpoint(settings.checkpoint_path, fp).items()
         if e.get("diagnostics", {}).get("unsplittable_intervals")
     }
-    return write_report(settings, old, new, unsplittable, problems, generated_on, kept)
+    diagnostics = {
+        n: e.get("diagnostics", {})
+        for n, e in load_checkpoint(settings.checkpoint_path, fp).items()
+    }
+    return write_report(settings, old, new, unsplittable, problems, generated_on, kept, diagnostics)
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -716,6 +1106,28 @@ def main(argv: Sequence[str] | None = None) -> int:
             "regeneracao.manter_valores_anteriores do config)"
         ),
     )
+    parser.add_argument(
+        "--runs-modo",
+        choices=RUNS_MODES,
+        default=RUNS_MODE_FULL,
+        help=(
+            "completo: coleta os runs da janela inteira; reconciliar: reaproveita os runs "
+            "anteriores onde a contagem da API (total_count) bate e recoleta o resto e o fim "
+            "da janela (precisa de regeneracao.janela_anterior no config)"
+        ),
+    )
+    parser.add_argument("--status", default=None, help="Arquivo status.json (estado legível por máquina)")
+    parser.add_argument(
+        "--bundle-dir",
+        default=None,
+        help="Ao concluir, grava outputs-<data UTC>.tar.gz (+ .sha256) neste diretório",
+    )
+    parser.add_argument(
+        "--validar-reconciliacao",
+        nargs="+",
+        metavar="OWNER/REPO",
+        help="Compara runs reconciliados × coleta completa para estes repositórios e sai",
+    )
     parser.add_argument("--relatorio", default=DEFAULT_REPORT, help="Caminho do relatório Markdown")
     parser.add_argument(
         "--somente-relatorio",
@@ -734,6 +1146,9 @@ def main(argv: Sequence[str] | None = None) -> int:
         cleanup_clones=args.limpar_clones,
         report_path=args.relatorio,
         keep_previous=args.manter_antigo,
+        runs_mode=args.runs_modo,
+        status_path=args.status,
+        bundle_dir=args.bundle_dir,
     )
 
     if args.somente_relatorio:
@@ -741,6 +1156,19 @@ def main(argv: Sequence[str] | None = None) -> int:
         return 0
 
     from pipeline.http_client import resolve_tokens
+
+    if args.validar_reconciliacao:
+        prepare_baseline(settings)
+
+        async def _validate() -> list[dict[str, Any]]:
+            client = GitHubClient(cache_path=settings.cache_dir / "http_cache.sqlite")
+            try:
+                return await validate_reconciliation(settings, client, args.validar_reconciliacao)
+            finally:
+                await client.close()
+
+        print(format_validation(asyncio.run(_validate())))
+        return 0
 
     print(f"[*] Tokens configurados: {len(resolve_tokens())}")  # only the count, never the value
     try:
