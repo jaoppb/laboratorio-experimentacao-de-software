@@ -106,6 +106,10 @@ Heurística `v1` (única versão disponível em `metricas/cfr_b.HEURISTICS`): `N
 | `updated_at` | `timestamp[us, UTC]` | Data e hora de encerramento da execução. |
 | `is_valid` | `bool` | Indicador se a execução é válida para cálculo de CFR e tempo de recuperação: `True` para `success` e para falhas (`failure`, `timed_out`, `startup_failure`); `False` para conclusões ignoradas (`cancelled`, `skipped`, `neutral`, `action_required`, `stale`, nula). Soma de `True` = `workflow_runs_count_window`. |
 
+**Coleta e limite de 1.000 runs por consulta (`pipeline/workflow_runs.py`).** A API de Actions só devolve 1.000 resultados (10 páginas × 100) por consulta, qualquer que seja o `total_count`. O coletor consulta cada mês da janela e, enquanto `total_count >= 1000`, divide o intervalo ao meio (`[ini, meio]` e `[meio + 1 s, fim]`, disjuntos, em segundos inteiros) e consulta as metades em paralelo, **recursivamente, sem limite de profundidade e sem tamanho mínimo em dias** (antes: profundidade máxima 3 e intervalos mínimos de 2 dias, o que truncava em silêncio ≥ 20 repositórios). A divisão só pára quando `total_count < 1000` ou quando o intervalo chega a 1 segundo.
+
+*Caso residual:* se um intervalo de 1 s ainda tiver `total_count >= 1000`, o filtro `created` não consegue separá-los; o coletor lê o que a API entrega (os 1.000 primeiros), registra **um único aviso por repositório** (com a quantidade de intervalos, `total_count` somado e runs lidos) e segue. Não há coluna de sinalização no dataset (decisão Q20): o artigo deve declarar esse limite residual na §3.9. O resultado em memória (`WorkflowRunsCollectionResult.api_requests` e `.unsplittable_intervals`) expõe a contagem de chamadas e os intervalos afetados.
+
 ---
 
 ## 5. Dicionário de Dados: `releases/{owner}__{repo}.parquet` e `releases_c2/{owner}__{repo}.parquet`

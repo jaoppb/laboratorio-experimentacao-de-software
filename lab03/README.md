@@ -148,7 +148,7 @@ lab03/
 │   ├── persist_releases.py   # Regenera dados/releases/ de repositórios já aceitos
 │   ├── backfill_cfr_b.py     # Preenche as colunas cfr_b* do dataset sem mudar os repositórios
 │   ├── graphql/              # Consulta GraphQL de detalhes do repositório e releases
-│   ├── workflow_runs.py      # Coleta de runs com bissecção e armazenamento Parquet
+│   ├── workflow_runs.py      # Coleta de runs com bissecção recursiva (sem piso) e armazenamento Parquet
 │   └── funnel.py             # Rastreamento e exportação do funil de seleção
 ├── metricas/                 # Funções de cálculo das métricas DORA
 │   ├── schemas.py            # Dataclasses tipadas (Repo, Release, Commit, WorkflowRun)
