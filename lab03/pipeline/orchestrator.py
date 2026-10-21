@@ -11,8 +11,9 @@ import asyncio
 import csv
 import json
 import logging
-from datetime import datetime, timedelta, timezone
 from collections.abc import Sequence
+from dataclasses import dataclass
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -25,7 +26,7 @@ from metricas.dora import (
 )
 from metricas.cfr_b import DEFAULT_HEURISTIC, HEURISTICS, calculate_cfr_b
 from metricas.lead_time import calculate_lead_time
-from metricas.schemas import _parse_datetime, parse_window_end, window_length
+from metricas.schemas import Release, _parse_datetime, parse_window_end, window_length
 from metricas.stability import (
     calculate_cfr_a,
     calculate_recovery_time,
@@ -123,6 +124,84 @@ def compute_cfr_b_columns(
         "cfr_b_evaluated_releases": result.evaluated_releases,
         "cfr_b_censored_releases": result.censored_releases,
         "cfr_b_skipped_releases": result.skipped_releases,
+    }
+
+
+@dataclass
+class C2C3Units:
+    """Deploy units of the C2 (releases + pre-releases) and C3 (tags) definitions."""
+
+    all_tags: list[Release]
+    release_commits_c2: list[ReleaseCommits]
+    tag_commits_c3: list[ReleaseCommits]
+
+
+async def collect_c2_c3_units(
+    git_dir: Path | str,
+    releases: Sequence[Release],
+    window_start: datetime | str,
+    window_end: datetime | str,
+) -> C2C3Units:
+    """Collect the C2 and C3 deploy units (and their commits) from a local clone.
+
+    C2 = published releases plus pre-releases in the window; C3 = every Git tag
+    (dated by the commit author date) in the window. Shared by the orchestrator
+    and the dataset backfill so both follow the exact same definition.
+    """
+    all_tags = await extract_tags_from_git(git_dir)
+    window_releases_c2 = filter_window(
+        releases=releases,
+        window_start=window_start,
+        window_end=window_end,
+        include_prerelease=True,
+    )
+    window_tags_c3 = filter_window(
+        releases=all_tags,
+        window_start=window_start,
+        window_end=window_end,
+        include_prerelease=False,
+    )
+    release_commits_c2 = await collect_release_commits_from_git(
+        git_dir=git_dir, window=window_releases_c2
+    )
+    tag_commits_c3 = await collect_release_commits_from_git(
+        git_dir=git_dir, window=window_tags_c3
+    )
+    return C2C3Units(all_tags, release_commits_c2, tag_commits_c3)
+
+
+def compute_c2_c3_columns(
+    release_commits_c2: Sequence[ReleaseCommits],
+    tag_commits_c3: Sequence[ReleaseCommits],
+    total_prereleases: int,
+    total_tags: int,
+    window_weeks: float,
+) -> dict[str, Any]:
+    """Compute the pre-release, tag, C2 and C3 dataset columns of a repository.
+
+    `release_commits_c2` and `tag_commits_c3` hold the in-window units (the
+    anchor is not included), so their lengths are the window counts.
+    `window_weeks` is the length of the observation window (the deployment
+    frequency denominator). `total_prereleases` is the number of pre-releases among the collected
+    releases and `total_tags` the number of tags of the clone.
+    """
+    lead_time_c2 = calculate_lead_time(
+        [(rc.release, rc.commits_or_none) for rc in release_commits_c2]
+    )
+    lead_time_c3 = calculate_lead_time(
+        [(rc.release, rc.commits_or_none) for rc in tag_commits_c3]
+    )
+    return {
+        "prereleases_count_window": len(
+            [rc for rc in release_commits_c2 if rc.release.prerelease]
+        ),
+        "total_prereleases": total_prereleases,
+        "tags_count_window": len(tag_commits_c3),
+        "total_tags": total_tags,
+        "c2_deployment_frequency": len(release_commits_c2) / window_weeks,
+        "c2_lead_time_b_hours": lead_time_c2.median_b_hours,
+        "c3_deployment_frequency": len(tag_commits_c3) / window_weeks,
+        "c3_lead_time_b_hours": lead_time_c3.median_b_hours,
     }
 
 
@@ -499,25 +578,10 @@ class PipelineOrchestrator:
                 auto_cleanup=self.limpeza_git_cache,
                 token_pool=client.token_pool,
             ) as git_dir:
-                # 1. Extract all tags from git clone
-                all_tags = await extract_tags_from_git(git_dir)
-
-                # 2. Window filters
+                # 1. C1 window (main definition: published releases only)
                 window_releases_c1 = window_releases
-                window_releases_c2 = filter_window(
-                    releases=releases,
-                    window_start=self.window_start,
-                    window_end=self.window_end,
-                    include_prerelease=True,
-                )
-                window_tags_c3 = filter_window(
-                    releases=all_tags,
-                    window_start=self.window_start,
-                    window_end=self.window_end,
-                    include_prerelease=False,
-                )
 
-                # 3. Collect commits between consecutive deploy units from git
+                # 2. Collect commits between consecutive C1 releases
                 release_commits_c1 = await collect_release_commits(
                     client=client,
                     owner=owner,
@@ -525,14 +589,17 @@ class PipelineOrchestrator:
                     window=window_releases_c1,
                     git_dir=git_dir,
                 )
-                release_commits_c2 = await collect_release_commits_from_git(
+
+                # 3. C2 (releases + pre-releases) and C3 (tags) from the local clone
+                c2_c3_units = await collect_c2_c3_units(
                     git_dir=git_dir,
-                    window=window_releases_c2,
+                    releases=releases,
+                    window_start=self.window_start,
+                    window_end=self.window_end,
                 )
-                tag_commits_c3 = await collect_release_commits_from_git(
-                    git_dir=git_dir,
-                    window=window_tags_c3,
-                )
+            all_tags = c2_c3_units.all_tags
+            release_commits_c2 = c2_c3_units.release_commits_c2
+            tag_commits_c3 = c2_c3_units.tag_commits_c3
 
             # Persist C1 releases (main definition: lead time, CFR b and gold
             # sample), C2 releases + pre-releases and C3 tags to Parquet
@@ -556,15 +623,18 @@ class PipelineOrchestrator:
                 output_path=tags_path,
             )
 
-            # Lead time results
+            # Lead time results (C1 is the reference definition)
             lead_time_result_c1 = calculate_lead_time(
                 [(rc.release, rc.commits_or_none) for rc in release_commits_c1]
             )
-            lead_time_result_c2 = calculate_lead_time(
-                [(rc.release, rc.commits_or_none) for rc in release_commits_c2]
-            )
-            lead_time_result_c3 = calculate_lead_time(
-                [(rc.release, rc.commits_or_none) for rc in tag_commits_c3]
+
+            # Pre-release, tag, C2 and C3 columns
+            c2_c3_columns = compute_c2_c3_columns(
+                release_commits_c2,
+                tag_commits_c3,
+                total_prereleases=len([r for r in releases if r.prerelease]),
+                total_tags=len(all_tags),
+                window_weeks=self.window_weeks,
             )
         except Exception as exc:
             logger.warning("Error calculating lead time or tags via git clone for %s: %s", full_name, exc)
@@ -599,20 +669,6 @@ class PipelineOrchestrator:
             heuristic=self.cfr_b_heuristic,
         )
 
-        # C2 Metrics (Official Releases + Pre-releases)
-        c2_dep_freq = window_releases_c2.count / self.window_weeks
-        c2_lead_time_b = lead_time_result_c2.median_b_hours
-
-        # C3 Metrics (Git Tags)
-        c3_dep_freq = window_tags_c3.count / self.window_weeks
-        c3_lead_time_b = lead_time_result_c3.median_b_hours
-
-        # Additional counts
-        prereleases_count_window = len([r for r in window_releases_c2.in_window if r.prerelease])
-        total_prereleases = len([r for r in releases if r.prerelease])
-        tags_count_window = window_tags_c3.count
-        total_tags = len(all_tags)
-
         record = {
             "owner": owner,
             "name": repo,
@@ -646,14 +702,7 @@ class PipelineOrchestrator:
             "censored_episodes_ratio": recovery_result.censored_ratio,
             "overall_dora_score": dora_eval.overall_score,
             "overall_dora_tier": dora_eval.overall_tier.value,
-            "prereleases_count_window": prereleases_count_window,
-            "total_prereleases": total_prereleases,
-            "tags_count_window": tags_count_window,
-            "total_tags": total_tags,
-            "c2_deployment_frequency": c2_dep_freq,
-            "c2_lead_time_b_hours": c2_lead_time_b,
-            "c3_deployment_frequency": c3_dep_freq,
-            "c3_lead_time_b_hours": c3_lead_time_b,
+            **c2_c3_columns,
             **cfr_b_columns,
         }
 

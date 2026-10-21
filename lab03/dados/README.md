@@ -168,7 +168,7 @@ Armazena as tags Git do repositório mapeadas na janela de observação (mais a 
 
 `repositorios.csv`, `repositorios.parquet`, `funil.csv` e `runs/` são gerados pelo pipeline completo (`python -m pipeline`). Como a amostra-ouro (60 repositórios, seed 42) foi sorteada sobre os 330 repositórios atuais, o **conjunto de repositórios não pode mudar**; por isso as colunas novas são preenchidas por *backfill* (seção 7.1), e não por uma nova busca.
 
-**Estado atual (execução de 2026-10-20):** `repositorios.csv` e `repositorios.parquet` têm as 38 colunas da seção 2, com os mesmos 330 repositórios e a mesma ordem. As 24 primeiras colunas (até `overall_dora_tier`) são as da coleta original, inalteradas; as 6 colunas `cfr_b*` foram preenchidas pelo backfill. As 8 colunas de pré-releases, tags, C2 e C3 (`prereleases_count_window`, `total_prereleases`, `tags_count_window`, `total_tags`, `c2_*`, `c3_*`) **continuam nulas**: só existem para repositórios processados pela versão atual do pipeline e ainda não têm backfill.
+**Estado atual (execução de 2026-10-20):** `repositorios.csv` e `repositorios.parquet` têm as 38 colunas da seção 2, com os mesmos 330 repositórios e a mesma ordem. As 24 primeiras colunas (até `overall_dora_tier`) são as da coleta original, inalteradas; as 6 colunas `cfr_b*` foram preenchidas pelo backfill. As 8 colunas de pré-releases, tags, C2 e C3 (`prereleases_count_window`, `total_prereleases`, `tags_count_window`, `total_tags`, `c2_*`, `c3_*`) foram preenchidas pelo segundo backfill (seção 7.2, execução de 2026-10-21) para 329 dos 330 repositórios; `MadsLorentzen/ai-job-search` (repositório desabilitado no GitHub) e `c2_lead_time_b_hours` de `expo/expo` continuam nulos, com os motivos na seção 7.2.
 
 Requisitos:
 
@@ -191,8 +191,8 @@ Pontos de atenção:
 - Uma regeneração completa com `--clean` refaz a busca de candidatos e **não preserva o conjunto de 330 repositórios** (ver a seção 7.1 para o caminho que o preserva). `--clean` é o caminho para recalcular todas as colunas. Sem ele, o pipeline reaproveita os repositórios já gravados em `repositorios.parquet` e **não** os recalcula: nesses repositórios as colunas `cfr_b*` ausentes saem nulas.
 - `--clean` apaga `repositorios.parquet`, `repositorios.csv`, `funil.csv` e `.pipeline_state.json`. Os diretórios `runs/`, `releases/`, `releases_c2/` e `tags/` não são apagados; seus arquivos são sobrescritos para cada repositório aceito.
 - A seleção usa a Search API, que reflete o estado atual do GitHub; a amostra regenerada pode diferir da anterior (estrelas, releases e runs mudam com o tempo).
-- `python -m pipeline.persist_releases` (seção 5) regenera apenas `releases/`, e `python -m analises.persistir_amostra_ouro` persiste `releases/` só dos 60 repositórios da amostra-ouro; nenhum dos dois altera `repositorios.*`. Para preencher só as colunas `cfr_b*` nos repositórios já coletados, use o backfill da seção 7.1.
-- `releases/` e `releases_c2/` não são versionados (seção 5); versione apenas `repositorios.*`, `funil.csv` e `runs/`.
+- `python -m pipeline.persist_releases` (seção 5) regenera apenas `releases/`, e `python -m analises.persistir_amostra_ouro` persiste `releases/` só dos 60 repositórios da amostra-ouro; nenhum dos dois altera `repositorios.*`. Para preencher só as colunas `cfr_b*` nos repositórios já coletados, use o backfill da seção 7.1; para as colunas de pré-releases, tags, C2 e C3, o da seção 7.2.
+- `releases/`, `releases_c2/` e `tags/` (e o `c2_c3_meta/` da seção 7.2) não são versionados (seções 5 e 6; `.gitignore`); versione apenas `repositorios.*`, `funil.csv` e `runs/`.
 - Depois de regenerar, rode `uv run python -m pytest --cov=metricas --cov=pipeline --cov-report=term-missing --cov-fail-under=80` e confira se as 38 colunas de `repositorios.parquet` seguem a seção 2.
 
 ### 7.1 Backfill das colunas `cfr_b*` sem alterar os 330 repositórios
@@ -223,3 +223,43 @@ Observações da execução:
 
 - 12 repositórios grandes (por exemplo `llvm/llvm-project`, `rails/rails`) estouraram o timeout fixo de 120 s do `git clone` (`pipeline/git_clone.py`). Foram pré-clonados manualmente com o mesmo comando (`git clone --bare --filter=tree:0 --single-branch`, mais o *fetch* das tags), que o pipeline reaproveita, e o backfill foi reexecutado para coletá-los.
 - `PostHog/posthog` tem 2576 releases na janela em `releases_count_window` (coleta original) e 2575 na coleta atual (2165 avaliadas + 410 censuradas); a diferença de uma release vem de a coleta ter sido refeita meses depois. O `releases_count_window` original foi mantido.
+
+### 7.2 Backfill das colunas de pré-releases, tags, C2 e C3
+
+`pipeline/backfill_c2_c3.py` preenche as 8 colunas que restavam nulas (`prereleases_count_window`, `total_prereleases`, `tags_count_window`, `total_tags`, `c2_deployment_frequency`, `c2_lead_time_b_hours`, `c3_deployment_frequency`, `c3_lead_time_b_hours`) sem alterar o conjunto de repositórios. Para cada repositório, na ordem do arquivo:
+
+1. coleta (se ainda não existir **para a janela atual**) as releases e pré-releases via GraphQL e as tags de um clone com o filtro de `pipeline/git_clone.py`, pela **mesma função do orquestrador** (`pipeline.orchestrator.collect_c2_c3_units`: C2 = releases + pré-releases da janela, C3 = todas as tags da janela, datadas pela data de autor do commit, commits via `git log` local). A janela é interpretada como no orquestrador (`parse_window_end`: `fim` só com data vale o fim do dia; denominador de 365/7 semanas);
+2. grava `releases_c2/{owner}__{repo}.parquet` e `tags/{owner}__{repo}.parquet` (seções 5 e 6) e `c2_c3_meta/{owner}__{repo}.json` com a janela da coleta, os totais que esses arquivos não guardam (`total_prereleases`, `total_tags`) e os valores de C1 da coleta nova (`releases_count_window`, `total_releases`), usados só para detectar deriva;
+3. calcula as colunas a partir desses arquivos com `pipeline.orchestrator.compute_c2_c3_columns`, a mesma função que o orquestrador agora usa, e regrava `repositorios.parquet` e `repositorios.csv` com o esquema completo.
+
+```bash
+# a partir de lab03/, com GITHUB_TOKEN definido
+uv run python -m pipeline.backfill_c2_c3 --config config.yaml            # coleta o que falta e preenche
+uv run python -m pipeline.backfill_c2_c3 --config config.yaml --offline  # só usa os arquivos já coletados
+```
+
+Opções: `--workers N` (padrão 4) e `--limit N`. O comando é idempotente (duas execuções `--offline` seguidas geram o mesmo CSV byte a byte) e retomável: um repositório só é considerado coletado quando os três arquivos existem (o JSON é gravado por último) e a janela gravada no JSON é a do `config.yaml`; arquivos coletados com outra janela são recoletados. Falhas deixam as colunas do repositório como estavam no dataset de entrada (nulas) e saem no relatório (código de saída 1). Todas as outras 30 colunas e a ordem das linhas são preservadas (conferido contra o `repositorios.parquet` anterior). O backfill **não** reescreve `funil.csv` nem `runs/`.
+
+Execução real (2026-10-21, janela 2025-10-01 a 2026-09-30 com fim do dia, 365 dias; o clone usou o mesmo filtro `tree:0` do pipeline):
+
+| Coluna | Nulos antes | Nulos depois | Valores nos 329 repositórios preenchidos |
+|---|---|---|---|
+| `prereleases_count_window` | 330 | 1 | soma 7481, mediana 0 (142 repositórios com ao menos uma) |
+| `total_prereleases` | 330 | 1 | soma 11613, mediana 2 (185 repositórios com ao menos uma) |
+| `tags_count_window` | 330 | 1 | soma 57016, mediana 43, mínimo 5 |
+| `total_tags` | 330 | 1 | soma 191132, mediana 230, mínimo 7 |
+| `c2_deployment_frequency` | 330 | 1 | mediana 0,633 deploys/semana |
+| `c2_lead_time_b_hours` | 330 | 2 | mediana 267,2 h em 328 repositórios |
+| `c3_deployment_frequency` | 330 | 1 | mediana 0,825 tags/semana |
+| `c3_lead_time_b_hours` | 330 | 1 | mediana 237,5 h |
+
+Semântica dos valores nulos e casos limite:
+
+- **`MadsLorentzen/ai-job-search`: as 8 colunas ficam nulas.** O repositório foi movido para `ai-job-search-dev/ai-job-search` e está desabilitado no GitHub (`git clone` falha com "Repository ... is disabled"), então as releases e tags não podem ser recoletadas. Uma coleta anterior à mudança da janela existia, mas foi descartada para não misturar janelas na mesma linha. As demais colunas desse repositório seguem como na coleta original.
+- `c2_lead_time_b_hours` é nulo também em `expo/expo`: as 146 unidades C2 da janela não têm nenhum commit novo entre releases consecutivas (uma delas é `not_found`), então não há lead time por commit. É um nulo legítimo da definição (como o `lead_time_b_hours` de C1, nulo em 61 repositórios); não foi forçado nenhum valor. `c3_lead_time_b_hours` só é nulo em `ai-job-search`.
+- `prereleases_count_window = 0` quando não há pré-release na janela (187 dos 329 repositórios); nesse caso as unidades C2 coincidem com as de C1. Pré-releases existem em 185 repositórios (`total_prereleases > 0`), 43 deles só fora da janela.
+- `tags_count_window` e `total_tags` não são zero em nenhum repositório (mínimos observados: 5 e 7).
+- **Janela nova × colunas antigas.** As colunas novas usam a janela vigente no `config.yaml` (fim do dia 30/09 e denominador 365/7 ≈ 52,14 semanas), mas as 30 colunas anteriores (inclusive `releases_count_window`, `deployment_frequency` e `cfr_b*`) ainda foram calculadas com a janela antiga (`fim` = 30/09 00:00Z, denominador 52,1) e só mudam quando o dataset for regenerado com a janela nova (seção "Janela de observação"). Por isso `releases_count_window` difere da contagem C1 da coleta nova em 60 repositórios, sempre para mais (releases publicadas em 30/09, por exemplo `PostHog/posthog`, +96), e `c2_deployment_frequency` não é comparável diretamente com `deployment_frequency` na mesma linha enquanto isso não ocorrer.
+- **Deriva de `total_releases`.** As colunas novas refletem o GitHub em 2026-10-21; `total_releases` é maior na coleta nova em 69 repositórios, porque a coleta pagina da mais recente para a mais antiga e novas releases publicadas depois da coleta original empurram a âncora para páginas posteriores. Como `total_prereleases` vem da coleta nova, em `vercel/next.js` (610 pré-releases contra `total_releases` = 600) e `abhigyanpatwari/GitNexus` (976 contra 969) o invariante "pré-releases estão contidas em `total_releases`" não vale no dataset; `total_releases` não foi alterado.
+- `tags/` guarda a comparação de uma tag sem commits como `ok`, sem diferenciá-la de `not_found`; isso não afeta nenhuma das 8 colunas, que só usam a contagem na janela e a mediana por commit.
+- 12 repositórios grandes e alguns outros estouraram o timeout fixo de 120 s do `git clone`/`git log` (`pipeline/git_clone.py`) com o clone feito pelo próprio comando; foram pré-clonados manualmente (mesmo comando, mais o *fetch* das tags), que o pipeline reaproveita. `openbq-org/OpenBB` tem tags que só diferem na caixa das letras e não pode ser clonado em um sistema de arquivos que ignora caixa com o backend de referências padrão; foi clonado com `--ref-format=reftable`.

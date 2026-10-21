@@ -68,6 +68,12 @@ Para preencher as colunas `cfr_b*` do dataset já coletado **sem alterar os 330 
 uv run python -m pipeline.backfill_cfr_b --config config.yaml
 ```
 
+As colunas de pré-releases, tags, C2 e C3 (`prereleases_*`, `tags_*`, `c2_*`, `c3_*`) têm um backfill equivalente, executado em 2026-10-21 ([seção 7.2](./dados/README.md#72-backfill-das-colunas-de-pré-releases-tags-c2-e-c3)):
+
+```bash
+uv run python -m pipeline.backfill_c2_c3 --config config.yaml
+```
+
 ### Execução com Amostra Reduzida (`--limit`)
 Para validar o pipeline ou realizar testes rápidos, utilize o argumento `--limit`:
 
@@ -147,6 +153,7 @@ lab03/
 │   ├── git_clone.py          # Clone blobless temporário: tags e commits via git local
 │   ├── persist_releases.py   # Regenera dados/releases/ de repositórios já aceitos
 │   ├── backfill_cfr_b.py     # Preenche as colunas cfr_b* do dataset sem mudar os repositórios
+│   ├── backfill_c2_c3.py     # Preenche as colunas de pré-releases, tags, C2 e C3 sem mudar os repositórios
 │   ├── graphql/              # Consulta GraphQL de detalhes do repositório e releases
 │   ├── workflow_runs.py      # Coleta de runs com bissecção recursiva (sem piso) e armazenamento Parquet
 │   └── funnel.py             # Rastreamento e exportação do funil de seleção
@@ -168,6 +175,7 @@ lab03/
     ├── test_graphql.py
     ├── test_persist_releases.py
     ├── test_backfill_cfr_b.py
+    ├── test_backfill_c2_c3.py
     ├── test_tags_extraction.py
     ├── test_amostra_ouro.py
     ├── test_investigar_lead_time.py
