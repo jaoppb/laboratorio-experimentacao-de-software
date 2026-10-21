@@ -34,10 +34,13 @@
 ### 3.1 Desenho do estudo
 
 Trata-se de um estudo observacional, quantitativo e baseado em mineração de repositórios. A unidade
-de análise é o **repositório** open-source do GitHub que usa GitHub Actions. Para cada repositório,
-calculamos as quatro métricas DORA (*deployment frequency*, *lead time for changes*, *change
-failure rate* e tempo de recuperação) (Forsgren, Humble & Kim, 2018; DORA, [guia das métricas](https://dora.dev/guides/dora-metrics-four-keys/))
-dentro de uma janela de observação de 12 meses.
+de análise é o **repositório** open-source do GitHub que usa GitHub Actions e atende aos critérios de
+inclusão da seção 3.3 (amostra-alvo de 330 repositórios, `amostra.tamanho_final` em `config.yaml`).
+Para cada repositório, calculamos as quatro métricas DORA (*deployment frequency*, *lead time for
+changes*, *change failure rate* e tempo de recuperação) (Forsgren, Humble & Kim, 2018; DORA, [guia
+das métricas](https://dora.dev/guides/dora-metrics-four-keys/)) dentro de uma única janela de
+observação de 12 meses (seção 3.2). Não há intervenção sobre os repositórios: os dados são
+coletados a posteriori, a partir de registros públicos.
 
 Como o GitHub não registra *deploys* nem falhas em produção, todas as métricas são **proxies**:
 uma *release* publicada representa um *deploy*, e uma execução de CI com falha representa uma falha.
@@ -49,17 +52,20 @@ as definições operacionais (RQ 07).
 
 | RQ | Pergunta | Métrica / variantes | Análise planejada | Hipótese informal (a priori) |
 |---|---|---|---|---|
-| RQ 01 | Qual a frequência de deploys? | *Deployment frequency* = releases publicadas na janela ÷ 52,1 semanas | mediana, IQR e faixa DORA | `artigo_contexto_e_hipoteses.md` |
+| RQ 01 | Qual a frequência de deploys? | *Deployment frequency* = releases publicadas (sem rascunhos nem pré-releases) na janela ÷ 52,1 semanas | mediana, IQR e faixa DORA | `artigo_contexto_e_hipoteses.md` |
 | RQ 02 | Qual o tempo entre commit e deploy? | *Lead time*: (a) por release; (b) por commit | mediana, IQR e faixa DORA; contraste (a) × (b) | `docs/hipoteses_rq02_rq03_rq05.md` |
-| RQ 03 | Qual a taxa de falha das mudanças entregues? | CFR: (a) proxy de CI; (b) proxy de entrega (release corretiva em até 7 dias) | mediana, IQR e faixa DORA; contraste (a) × (b) | `docs/hipoteses_rq02_rq03_rq05.md` |
-| RQ 04 | Qual o tempo de recuperação após falha de CI? | Duração de episódios de falha por workflow; proporção de episódios censurados | mediana, IQR e faixa DORA | `docs/hipoteses_rq04_rq07.md` |
+| RQ 03 | Qual a taxa de falha das mudanças entregues? | CFR: (a) proxy de CI (runs `push` do default branch com falha ÷ runs com sucesso ou falha); (b) proxy de entrega (release corretiva em até 7 dias) | mediana, IQR e faixa DORA; contraste (a) × (b) | `docs/hipoteses_rq02_rq03_rq05.md` |
+| RQ 04 | Qual o tempo de recuperação após falha de CI? | Duração de episódios de falha por workflow (mediana por repositório); proporção de episódios censurados | mediana, IQR e faixa DORA | `docs/hipoteses_rq04_rq07.md` |
 | RQ 05 | Maior frequência de deploy implica maior ou menor taxa de falha? | Correlação de Spearman entre RQ 01 e RQ 03, para CFR (a) e CFR (b) | ρ, p-valor e n | `docs/hipoteses_rq02_rq03_rq05.md` |
 | RQ 06 | Que características dos repositórios se associam ao desempenho? | Métricas das RQ 01 a 04 comparadas entre subgrupos | Kruskal-Wallis / Mann-Whitney, correção de Holm, ε² / Cliff's δ | `artigo_contexto_e_hipoteses.md` |
-| RQ 07 | A classificação DORA depende da definição operacional? | Combinações C1, C2 e C3 (seção 3.5.6) | % de mudança de categoria e κ ponderado linear | `docs/hipoteses_rq04_rq07.md` |
+| RQ 07 | A classificação DORA depende da definição operacional? | Combinações C1, C2 e C3 (seção 3.5.6) | % de mudança de categoria e κ de Cohen ponderado (pesos lineares) | `docs/hipoteses_rq04_rq07.md` |
 | RQ 08 (bônus) | (Rework rate ou evolução temporal) | — | — | `[PENDENTE: decisão do grupo sobre fazer ou não a RQ 08; nada disso existe no repositório]` |
 
-As hipóteses informais foram escritas **antes** da coleta e da análise dos dados, conforme o guia, e
-estão na Introdução do artigo; esta seção não as repete.
+As hipóteses informais foram versionadas antes do primeiro dado do Lab03 (arquivos de hipóteses em
+08/10/2026; primeiro `repositorios.csv` em 09/10/2026, segundo o histórico do Git) e devem estar na
+Introdução do artigo; esta seção não as repete. `docs/hipoteses_rq04_rq07.md` foi alterado depois
+(#51, 14/10/2026, correção da definição de falha no texto da RQ 04).
+`[VERIFICAR: a ordem “hipótese antes dos dados” foi checada só pelas datas dos commits; o histórico não prova que nenhuma coleta local anterior a 09/10 foi vista pelos autores, e o texto da Introdução no Overleaf não está no repositório. Os autores devem confirmar a afirmação.]`
 
 ### 3.2 Fonte de dados e janela de observação
 
@@ -161,44 +167,63 @@ estrelas, a amostra final tem **mínimo de 38.855 estrelas**, efeito direto de p
 
 ### 3.4 Coleta de dados e pipeline
 
-A coleta roda com um único comando (`uv run python -m pipeline --config config.yaml`; `--limit N`
-para amostras reduzidas e `--clean` para regenerar o dataset). O token é lido de `GITHUB_TOKEN`
-(ou vários, em `GITHUB_TOKENS`) ou do `gh auth token`, e nunca é versionado.
+A coleta roda com um único comando (`uv run python -m pipeline --config config.yaml`). A opção
+`--limit N` limita o número de repositórios aceitos, e `--clean` apaga o dataset, o funil e o estado
+da execução anterior (`dados/runs/` e o cache HTTP não são apagados). Os tokens são lidos de
+`GITHUB_TOKENS` (lista separada por vírgulas, que habilita a rotação) ou `GITHUB_TOKEN`, nas
+variáveis de ambiente ou, na falta delas, em um arquivo `.env`, e por último de `gh auth token`.
+`.env`, o cache e o estado da execução estão no `.gitignore` e nunca são versionados.
 
-**Metadados e releases.** Uma consulta GraphQL por repositório (`pipeline/graphql/queries/repo_details.graphql`)
-traz estrelas, linguagem principal, default branch, data de criação e as releases (tag, data de
-publicação, *draft* e *pre-release*), da mais recente para a mais antiga. A paginação para na página
-que contém a **release âncora**: a última release estável anterior à janela, usada como predecessora
-da primeira release da janela. Rascunhos e releases sem data de publicação são descartados na coleta.
+**Metadados e releases.** A consulta GraphQL `repo_details.graphql` (uma por repositório, repetida
+com cursor apenas se as releases não cabem em uma página de 100) traz estrelas, linguagem principal,
+default branch, data de criação e as releases (tag, data de publicação, *draft* e *pre-release*),
+ordenadas por data de **criação** decrescente. A paginação para na página que contém a **release
+âncora**: a última release estável anterior à janela, usada como predecessora da primeira release
+da janela. Isso supõe que a ordem de criação coincida com a de publicação; uma release criada muito
+antes de ser publicada poderia ficar em página não lida, e não medimos essa ocorrência. Rascunhos e
+releases sem data de publicação são descartados na coleta.
 O número de contribuidores é obtido por `GET /repos/{owner}/{repo}/contributors?per_page=1&anon=true`,
-lendo o número da última página no cabeçalho `Link`. Se o GraphQL falhar, há uma rota de contingência
-em REST.
+lendo o número da última página no cabeçalho `Link` (0 se a requisição falha). Se o GraphQL falha,
+há uma rota de contingência em REST (`GET /repos/{owner}/{repo}/releases` e os metadados do candidato
+devolvido pela Search API).
 
 ***Workflow runs*.** `GET /repos/{owner}/{repo}/actions/runs` com `branch` = default branch,
-`event=push` e `created=<início>..<fim>`. A janela é dividida em intervalos mensais consultados em
-paralelo. Se um intervalo devolve `total_count ≥ 1.000` (teto da API), ele é dividido ao meio
-recursivamente (profundidade máxima 3, intervalo mínimo de 2 dias). Os runs são deduplicados por `id`
-e gravados em `dados/runs/{owner}__{repo}.parquet`. Registramos para cada run o `workflow_id`, a
-`conclusion`, `run_started_at` e `updated_at`.
+`event=push`, `created=<início>..<fim>` e 100 resultados por página. A janela é dividida em
+intervalos por mês-calendário (UTC), consultados em paralelo. Se um intervalo devolve
+`total_count ≥ 1.000` (teto de resultados por consulta), ele é dividido ao meio e as metades são
+consultadas em paralelo, recursivamente, até a profundidade 3 (no máximo 8 subintervalos por mês) e
+desde que o intervalo tenha mais de 2 dias. Um subintervalo que ainda atinge 1.000 na profundidade
+máxima é lido só até a 10ª página, ou seja, **truncado em 1.000 runs, sem marca no dataset** (seção
+3.9). Os runs são deduplicados por `id` (as metades compartilham o instante central) e gravados em
+`dados/runs/{owner}__{repo}.parquet`, com `id`, `workflow_id`, `name`, `event`, `branch`,
+`conclusion`, `run_started_at`, `updated_at` e `is_valid`. O arquivo guarda todos os runs
+recuperados, inclusive os de conclusão ignorada; só `is_valid` os distingue.
 
 **Commits de cada release: clone Git local no lugar do `compare`.** O guia sugere obter os commits
 de uma release com `GET /compare/{base}...{head}`. O pipeline, desde a Issue #47, obtém os mesmos
-commits com `git log {release anterior}..{release}` em um **clone *bare* e *blobless***
+commits com `git log {release anterior}..{release}` em um **clone parcial *bare* e *treeless***
 (`git clone --bare --filter=tree:0 --single-branch`), seguido de
-`git fetch --filter=tree:0 origin +refs/tags/*:refs/tags/*` para trazer todas as tags. A semântica
-é a do `compare` (commits alcançáveis pela release e não pela anterior), com estas vantagens:
+`git fetch --filter=tree:0 origin +refs/tags/*:refs/tags/*` para trazer todas as tags. O código e os
+documentos do grupo chamam esse clone de *blobless*, mas, em rigor, *blobless* é
+`--filter=blob:none`; com `tree:0` o clone omite também as árvores. A semântica é a do `compare`
+(commits alcançáveis pela release e não pela anterior), com estas vantagens:
 
-* **não consome cota da API**, o que importa para 330 repositórios com milhares de releases (a base
-  tem 25.732 releases na janela);
-* **não tem o teto de 250 commits** nem exige paginação do `compare`;
-* o clone sem árvores nem arquivos (`tree:0`) baixa só o histórico de commits, o que é leve.
+* **não consome a cota das APIs REST e GraphQL**, o que importa para 330 repositórios com milhares
+  de releases (a base tem 25.732 releases na janela). O clone usa o protocolo Git em `github.com`,
+  que tem limites próprios (ver o uso de token abaixo);
+* **não tem o teto de 250 commits** nem exige paginar o `compare`;
+* o clone sem árvores nem blobs (`tree:0`) traz apenas objetos de commit, que bastam para o
+  `git log` entre tags, em vez do repositório completo. Não medimos o ganho de tempo nem de espaço.
 
-O clone tenta primeiro sem autenticação e, se falhar por limite de taxa ou autenticação, tenta de
-novo com um token do conjunto. O clone temporário é apagado depois do uso. A primeira versão do clone
+O clone tenta primeiro sem autenticação e, se falhar por limite de taxa ou autenticação (mensagem de
+erro com `403`, `429`, `authentication`, `rate limit` ou `username`), tenta de novo com um token do
+conjunto. O clone fica em `cache/git_repos/` e é apagado depois do uso (`limpeza_git_cache: true`
+no `config.yaml`). A primeira versão do clone
 trazia só as tags alcançáveis do default branch e fazia o pipeline descartar como "tag não
 encontrada" 20,6% das releases da janela; o `fetch` de todas as tags corrigiu isso (seção 3.9,
-`docs/investigacao_lead_time.md`). A implementação via REST (`pipeline/commits.py`) continua no
-código e testada, mas não é a usada na coleta.
+`docs/investigacao_lead_time.md`). Se esse `fetch` falhar, o clone continua utilizável, com aviso no
+log, e as releases cujas tags faltam recebem `not_found`. A implementação via REST
+(`pipeline/commits.py`) continua no código e testada, mas não é a usada na coleta.
 
 **Datas e mensagens dos commits.** Cada commit é guardado com SHA, data do **autor**
 (`%aI`, equivalente a `commit.author.date`, como manda o guia) e **assunto** da mensagem (primeira
@@ -216,19 +241,34 @@ na seção 3.9).
 
 Em cada conjunto, a **predecessora** de uma unidade é a unidade imediatamente anterior na ordem
 cronológica; para a primeira unidade da janela, é a âncora (a última unidade anterior à janela). Se
-não há âncora, a unidade é a primeira da história do repositório (`first_release`) e não entra no
-lead time. Se a tag da release ou da predecessora não existe no clone (equivalente ao 404 do
-`compare`), a unidade recebe o status `not_found` e também fica fora do lead time. Cada unidade é
-marcada com `ok`, `first_release` ou `not_found`, e essas contagens são reportadas (seção 3.9).
+não há âncora, a unidade é a primeira release (ou tag) do repositório (`first_release`) e não entra
+no lead time. Se o `git log {predecessora}..{unidade}` não resolve (por exemplo, a tag da release ou
+da predecessora não existe no clone, equivalente ao 404 do `compare`), a unidade recebe o status
+`not_found` e também fica fora do lead time. Cada unidade é marcada com `ok`, `first_release` ou
+`not_found`, e essas contagens são reportadas (seção 3.9). A coluna `status` só é gravada em
+`releases/` e `releases_c2/`; em `tags/` ela não é gravada e `commits_count` vale 0 tanto para
+`first_release` quanto para `not_found`.
 
-**Robustez e retomada.** O cliente HTTP lê `X-RateLimit-Remaining` e `X-RateLimit-Reset`, alterna
-entre vários tokens, coloca em espera o token que atinge o limite e, sem token, espera o reinício
-da cota. Erros 5xx e de rede são repetidos com *backoff* exponencial (1 s, 2 s, 4 s, ..., até 5
-tentativas). Toda resposta 2xx é gravada em um cache SQLite em disco (modo WAL), e cada repositório
-aceito é gravado de forma incremental em `dados/repositorios.parquet`/`.csv`; assim, uma execução
-interrompida continua de onde parou, sem repetir chamadas. As funções de métricas e do pipeline têm
-testes automatizados com *fixtures* sintéticas (pytest) e cobertura mínima de 80% (módulos
-`metricas` e `pipeline`), executados no GitHub Actions do repositório (`.github/workflows/testes-lab03.yml`).
+**Robustez e retomada.** O cliente HTTP (HTTP/2, até 15 requisições simultâneas) lê
+`X-RateLimit-Remaining` e `X-RateLimit-Reset` de cada resposta. Quando um token esgota a cota, ele
+fica em espera até o reinício (ou por 60 s, se o cabeçalho não existe) e o cliente passa ao próximo
+token do conjunto, em rodízio; se todos estão em espera, aguarda o primeiro reinício, e sem nenhum
+token aguarda o reinício da cota. Um token que devolve 401 é desativado. Erros 5xx e de rede são
+repetidos com *backoff* exponencial: até 5 novas tentativas, com esperas de 1, 2, 4, 8 e 16 s. Toda
+resposta 2xx é gravada em um cache SQLite em disco (modo WAL), indexado por URL e parâmetros e sem
+prazo de validade. Cada repositório aceito é gravado de forma incremental em
+`dados/repositorios.parquet`/`.csv`, e os contadores do funil e os nomes já avaliados ficam em
+`dados/.pipeline_state.json`. Assim, uma execução interrompida (limite de taxa, queda de rede,
+*Ctrl+C*) continua de onde parou: os candidatos já avaliados são pulados e as chamadas já feitas são
+servidas do cache. Como o cache não expira, uma nova execução com o mesmo `cache/` reaproveita
+respostas antigas; para recoletar do zero é preciso apagar o `cache/` e usar `--clean`. Os clones
+Git são temporários e não entram no cache.
+
+As funções de métricas e do pipeline têm testes automatizados com *fixtures* sintéticas (pytest). A
+verificação local exige cobertura mínima de 80% sobre `metricas` e `pipeline`
+(`pytest --cov=metricas --cov=pipeline --cov-fail-under=80`). O GitHub Actions do repositório
+(`.github/workflows/testes-lab03.yml`) executa `pytest --cov=metricas --cov-fail-under=80`, ou seja,
+exige cobertura apenas do módulo `metricas`, como pede o guia.
 
 ### 3.5 Definições operacionais e métricas
 
@@ -239,6 +279,11 @@ Todas as fórmulas abaixo estão implementadas em `metricas/` e documentadas col
 #### 3.5.1 Frequência de deploy (RQ 01)
 
 $$\text{DF} = \frac{\text{releases publicadas na janela (draft = false, prerelease = false)}}{52{,}1\ \text{semanas}}$$
+
+O numerador conta as releases com `janela.inicio ≤ published_at ≤ janela.fim` (limites inclusivos).
+O divisor 52,1 é o valor fixo do guia (≈ 365 ÷ 7) e não é recalculado a partir das datas
+configuradas: a janela de `config.yaml` (01/10/2025 a 30/09/2026 às 00:00 UTC) tem 364 dias, ou
+52,0 semanas, o que subestima a frequência em cerca de 0,2%.
 
 #### 3.5.2 Lead time (RQ 02)
 
@@ -272,7 +317,8 @@ altera o lead time. O que o alterou foi o `--single-branch`, que omitia tags de 
 $$\text{CFR}_a = \frac{\#\text{falhas}}{\#\text{falhas} + \#\text{sucessos}}$$
 
 calculada sobre todos os *workflow runs* do default branch com `event = push`, **todos os workflows
-juntos**. A classificação da conclusão segue o guia:
+juntos**. Cada run conta uma vez, sem ponderar por workflow nem por commit: um mesmo `push` pode
+gerar vários runs, um por workflow. A classificação da conclusão segue o guia:
 
 | `conclusion` | Tratamento |
 |---|---|
@@ -280,24 +326,31 @@ juntos**. A classificação da conclusão segue o guia:
 | `failure`, `timed_out`, `startup_failure` | falha |
 | `cancelled`, `skipped`, `neutral`, `action_required`, `stale`, vazio (em andamento) | ignorado: fora do numerador e do denominador |
 
-O $\text{CFR}_a$ é nulo se o repositório não tem nenhum run de sucesso ou falha. Esta variante mede
-falha de **pipeline**, e não falha em produção.
+Nos `runs/` versionados (2.289.119 runs dos 330 repositórios) aparecem apenas `success`,
+`failure`, `startup_failure`, `cancelled`, `skipped` e conclusão vazia; as demais linhas da tabela
+estão previstas no código, mas não ocorreram. O $\text{CFR}_a$ é nulo se o repositório não tem nenhum
+run de sucesso ou falha, o que não ocorre na amostra (todos têm pelo menos 51 runs válidos). Esta
+variante mede falha de **pipeline**, e não falha em produção.
 
 #### 3.5.4 Tempo de recuperação e censura (RQ 04)
 
-Os runs são agrupados por workflow e ordenados por `run_started_at`. Dentro de cada workflow,
-conclusões ignoradas não iniciam, interrompem nem encerram episódios. Um **episódio de falha** começa
-na primeira falha (após um sucesso, ou no início do histórico) e inclui as falhas consecutivas; ele
-termina no próximo sucesso do mesmo workflow. A duração é
+Os runs são agrupados por workflow (`workflow_id`) e ordenados por `run_started_at`. Dentro de cada
+workflow, conclusões ignoradas não iniciam, interrompem nem encerram episódios. Um **episódio de
+falha** começa na primeira falha (a primeira depois de um sucesso ou, se o workflow não tem sucesso
+anterior, a primeira falha do histórico coletado) e inclui as falhas consecutivas; ele termina no
+próximo sucesso do mesmo workflow. Quando o histórico coletado começa por uma falha, a falha pode ter
+começado antes da janela, e a duração é medida a partir do primeiro run visto (censura à esquerda,
+não tratada). A duração é
 
 $$\text{recuperação} = \text{updated\_at}_{\text{sucesso}} - \text{run\_started\_at}_{\text{primeira falha}}$$
 
-(truncada em 0). O valor do repositório é a **mediana** das durações dos episódios resolvidos, de
-todos os workflows. Um episódio que não termina até o fim do histórico coletado é **censurado**, e
-o pipeline registra a proporção `censored_episodes_ratio = censurados ÷ (resolvidos + censurados)`
-(0 se não há episódios). Os episódios censurados **não são descartados da contagem**, mas também
-**não entram na mediana**, que usa apenas os episódios resolvidos (ver ameaça na seção 3.9). O valor
-é nulo se nenhum episódio foi resolvido.
+(em horas, truncada em 0). O valor do repositório é a **mediana** das durações dos episódios
+resolvidos, de todos os workflows. Um episódio que não termina até o fim do histórico coletado é
+**censurado**, e o pipeline registra a proporção
+`censored_episodes_ratio = censurados ÷ (resolvidos + censurados)` (0 se não há episódios). Os
+episódios censurados **não são descartados da contagem**, mas também **não entram na mediana**, que
+usa apenas os episódios resolvidos (ver ameaça na seção 3.9). O valor é nulo se nenhum episódio foi
+resolvido, seja porque não houve falha, seja porque todos os episódios ficaram censurados.
 
 #### 3.5.5 Classificação DORA (faixas fixas da disciplina)
 
@@ -325,6 +378,11 @@ Em todas as RQs, reportamos **mediana e intervalo interquartil (IQR)**, e não m
 por causa da assimetria das distribuições, como pede o guia.
 
 #### 3.5.6 Combinações de definições para a análise de sensibilidade (RQ 07)
+
+O pipeline grava só as frequências de deploy e os lead times (b) de C2 e C3, e não as faixas nem a
+nota geral dessas combinações: a análise da RQ 07 precisa classificá-las com as mesmas funções de
+`metricas/dora.py`. O CFR (a) é o mesmo nas três combinações (`cfr_a`). As colunas de C2 e C3 ainda
+não existem no `repositorios.csv` versionado, que tem 24 colunas (ver 3.10).
 
 | Combinação | Unidade de deploy | Lead time | CFR |
 |---|---|---|---|
@@ -638,11 +696,29 @@ versionados; o que depende de resultados futuros está marcado.
 
 O pipeline (código, `config.yaml`, testes e documentação) e os dados (`dados/repositorios.csv` e
 `.parquet`, `funil.csv`, `runs/`, `analises/`, `amostra_ouro/`) estão versionados no repositório do
-grupo. `dados/releases/` e `dados/releases_c2/` (cerca de 320 MB; um arquivo passa de 100 MB) **não**
-são versionados e são regenerados em cerca de 10 minutos por
-`uv run python -m pipeline.persist_releases --config config.yaml`. O dicionário de dados completo está
-em `lab03/dados/README.md`. `dados/tags/` também é gerado pelo pipeline, mas não consta entre os
-arquivos versionados hoje. A replicação cruzada é relatada em seção própria.
+grupo. As dependências ficam travadas em `uv.lock` (`uv sync --frozen` no CI) e o projeto exige
+Python ≥ 3.12 (`requires-python`). O dicionário de dados completo está em `lab03/dados/README.md`.
+`[VERIFICAR: o .python-version versionado fixa o Python 3.14, enquanto o README e o dicionário de dados citam 3.12; confirmar com qual versão a coleta foi feita e alinhar os documentos.]`
+
+`dados/releases/` e `dados/releases_c2/` (cerca de 320 MB, segundo o dicionário de dados e o
+relatório da Sprint 02; um arquivo passa de 100 MB) **não** são versionados (`.gitignore`).
+`releases/` pode ser regenerado por `uv run python -m pipeline.persist_releases --config config.yaml`,
+que precisa de rede e levou cerca de 10 a 12 minutos para os 330 repositórios (o dicionário de dados
+diz cerca de 10; o relatório da Sprint 02, cerca de 12). Esse comando **não** gera `releases_c2/`
+nem `tags/`: eles só são escritos pelo pipeline completo (`python -m pipeline --clean`), que
+seleciona a amostra de novo a partir do estado atual do GitHub. `dados/tags/` também não consta entre
+os arquivos versionados hoje.
+
+Os `runs/` versionados bastam para recalcular, sem rede, `cfr_a`, `recovery_hours` e
+`censored_episodes_ratio`. O lead time e o CFR (b) dependem de `releases/`, que precisa ser
+regenerado. O `repositorios.csv`/`.parquet` versionado tem 24 das 38 colunas atuais (sem pré-releases,
+tags, C2, C3 e `cfr_b*`) e é anterior à correção do clone (seção 3.4); ele só fica consistente com o
+dicionário de dados depois da regeneração (#56).
+`[VERIFICAR: dados/runs/ tem 333 arquivos para 330 repositórios no dataset; elastic__elasticsearch, home-assistant__core e ueberdosis__tiptap não constam em repositorios.csv. Hipótese, não verificada: foram descartados depois da coleta de runs (o orquestrador grava runs/ antes da etapa de clone). Decidir se esses arquivos saem do versionamento ou são documentados.]`
+
+Como a coleta lê o estado do GitHub no momento da execução (Search API, contagens, releases, tags e
+runs mudam com o tempo) e o cache HTTP não é versionado, uma replicação reproduz o método, e não
+necessariamente os mesmos valores (seção 3.2). A replicação cruzada é relatada em seção própria.
 `[PENDENTE: link final do repositório e do GitHub Projects no artigo; link do Overleaf (#48).]`
 
 ---
