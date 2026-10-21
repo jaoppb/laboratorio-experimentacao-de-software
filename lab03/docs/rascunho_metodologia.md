@@ -70,9 +70,9 @@ as definições operacionais (RQ 07).
 | RQ 02 | Qual o tempo entre commit e deploy? | *Lead time*: (a) por release; (b) por commit | mediana, IQR e faixa DORA; contraste (a) × (b) | `docs/hipoteses_rq02_rq03_rq05.md` |
 | RQ 03 | Qual a taxa de falha das mudanças entregues? | CFR: (a) proxy de CI (runs `push` do default branch com falha ÷ runs com sucesso ou falha); (b) proxy de entrega (release corretiva em até 7 dias) | mediana, IQR e faixa DORA; contraste (a) × (b) | `docs/hipoteses_rq02_rq03_rq05.md` |
 | RQ 04 | Qual o tempo de recuperação após falha de CI? | Duração de episódios de falha por workflow (mediana por repositório); proporção de episódios censurados | mediana, IQR e faixa DORA | `docs/hipoteses_rq04_rq07.md` |
-| RQ 05 | Maior frequência de deploy implica maior ou menor taxa de falha? | Correlação de Spearman entre RQ 01 e RQ 03, para CFR (a) e CFR (b) | ρ, p-valor e n | `docs/hipoteses_rq02_rq03_rq05.md` |
-| RQ 06 | Que características dos repositórios se associam ao desempenho? | Métricas das RQ 01 a 04 comparadas entre subgrupos | Kruskal-Wallis / Mann-Whitney, correção de Holm, ε² / Cliff's δ | `artigo_contexto_e_hipoteses.md` |
-| RQ 07 | A classificação DORA depende da definição operacional? | Combinações C1, C2 e C3 (seção 3.5.6) | % de mudança de categoria e κ de Cohen ponderado (pesos lineares) | `docs/hipoteses_rq04_rq07.md` |
+| RQ 05 | Maior frequência de deploy implica maior ou menor taxa de falha? | Correlação de Spearman entre RQ 01 e RQ 03, para CFR (a) e CFR (b) | ρ, p-valor e n | `docs/hipoteses_rq05_rq06_rq07.md` (fonte: `docs/hipoteses_rq02_rq03_rq05.md`) |
+| RQ 06 | Que características dos repositórios se associam ao desempenho? | Métricas das RQ 01 a 04 comparadas entre subgrupos | Kruskal-Wallis / Mann-Whitney, correção de Holm, ε² / Cliff's δ | `docs/hipoteses_rq05_rq06_rq07.md` (fonte: `artigo_contexto_e_hipoteses.md`) |
+| RQ 07 | A classificação DORA depende da definição operacional? | Combinações C1, C2 e C3 (seção 3.5.6) | % de mudança de categoria e κ de Cohen ponderado (pesos lineares) | `docs/hipoteses_rq05_rq06_rq07.md` (fonte: `docs/hipoteses_rq04_rq07.md`) |
 | RQ 08 (bônus) | (Rework rate ou evolução temporal) | — | — | `[PENDENTE: decisão do grupo sobre fazer ou não a RQ 08; nada disso existe no repositório]` |
 
 As hipóteses informais foram versionadas antes do primeiro dado do Lab03 (arquivos de hipóteses em
@@ -777,8 +777,9 @@ de cada métrica), em vez de $n = 60$. Consequências a declarar no artigo:
   agente, e o que sai de script vira script. Para `release_corretiva`, a heurística é justamente o
   objeto da avaliação (3.6), então rotulá-la com agente fora da amostra-ouro misturaria avaliador e
   avaliado. `[PENDENTE: escopo das dimensões rotuladas por agentes.]`
-* Se a acurácia dos agentes for baixa, o fator tipo fica pouco confiável, e a hipótese 4 da RQ 06
-  (`artigo_contexto_e_hipoteses.md`) deve ser tratada como exploratória.
+* Se a acurácia dos agentes for baixa, o fator tipo fica pouco confiável, e a hipótese H6.5 da RQ 06
+  (`docs/hipoteses_rq05_rq06_rq07.md`; hipótese 4 em `artigo_contexto_e_hipoteses.md`) deve ser tratada
+  como exploratória.
 
 ### 3.9 Ameaças à validade e limitações conhecidas
 
