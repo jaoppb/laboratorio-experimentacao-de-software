@@ -74,6 +74,12 @@ Este diretório contém os artefatos de dados gerados pelo pipeline de mineraç�
 | `cfr_b_evaluated_releases` | Inteiro | releases | Releases avaliadas (falhas + sem falha). Denominador de `cfr_b`; nunca nulo. |
 | `cfr_b_censored_releases` | Inteiro | releases | Releases publicadas nos últimos 7 dias da janela (`published_at > janela.fim − 7 dias`, com `janela.fim` = fim do dia: para `2026-09-30`, o corte é `2026-09-23T23:59:59.999999Z`), que ainda não podem ser avaliadas e ficam fora do denominador; nunca nulo. |
 | `cfr_b_skipped_releases` | Inteiro | releases | Releases ignoradas porque a próxima release veio em até 7 dias, mas seus commits são desconhecidos (`status` `first_release` ou `not_found`), então não dá para julgar se ela é corretiva; ficam fora do denominador; nunca nulo. |
+| `c2_cfr_b` | Float | proporção (0.0 a 1.0) | CFR (b) sob a combinação C2 (decisão do grupo, Q8): mesma definição de `cfr_b` (subseção 2.1), mas sobre as releases **e pré-releases** da janela (as mesmas de `releases_c2/`). Nulo quando `c2_cfr_b_evaluated_releases = 0`. Gerado pela regeneração final (seção 7.2). |
+| `c2_cfr_b_tier` | String | faixa | Nível DORA de CFR sobre `c2_cfr_b`, com as faixas de `cfr_b_tier`; nulo quando `c2_cfr_b` é nulo. |
+| `c2_cfr_b_failed_releases` | Inteiro | releases | Unidades de C2 classificadas como falhas; numerador de `c2_cfr_b`; nunca nulo. |
+| `c2_cfr_b_evaluated_releases` | Inteiro | releases | Unidades de C2 avaliadas; denominador de `c2_cfr_b`; nunca nulo. |
+| `c2_cfr_b_censored_releases` | Inteiro | releases | Unidades de C2 publicadas nos últimos 7 dias da janela (fora do denominador); nunca nulo. |
+| `c2_cfr_b_skipped_releases` | Inteiro | releases | Unidades de C2 ignoradas por commits desconhecidos da próxima unidade; nunca nulo. |
 
 ### 2.1 CFR (b): release corretiva (`metricas/cfr_b.py`)
 
@@ -263,3 +269,22 @@ Semântica dos valores nulos e casos limite:
 - **Deriva de `total_releases`.** As colunas novas refletem o GitHub em 2026-10-21; `total_releases` é maior na coleta nova em 69 repositórios, porque a coleta pagina da mais recente para a mais antiga e novas releases publicadas depois da coleta original empurram a âncora para páginas posteriores. Como `total_prereleases` vem da coleta nova, em `vercel/next.js` (610 pré-releases contra `total_releases` = 600) e `abhigyanpatwari/GitNexus` (976 contra 969) o invariante "pré-releases estão contidas em `total_releases`" não vale no dataset; `total_releases` não foi alterado.
 - `tags/` guarda a comparação de uma tag sem commits como `ok`, sem diferenciá-la de `not_found`; isso não afeta nenhuma das 8 colunas, que só usam a contagem na janela e a mediana por commit.
 - 12 repositórios grandes e alguns outros estouraram o timeout fixo de 120 s do `git clone`/`git log` (`pipeline/git_clone.py`) com o clone feito pelo próprio comando; foram pré-clonados manualmente (mesmo comando, mais o *fetch* das tags), que o pipeline reaproveita. `openbq-org/OpenBB` tem tags que só diferem na caixa das letras e não pode ser clonado em um sistema de arquivos que ignora caixa com o backend de referências padrão; foi clonado com `--ref-format=reftable`.
+
+### 7.3 Regeneração final dos 330 repositórios (Issue #56)
+
+`pipeline/regenerar.py` faz a **única regeneração final** do dataset sobre os 330 repositórios **congelados** (a seleção não é refeita e `funil.csv` não é tocado). Lê a lista de `repositorios.csv`, recalcula **todas as colunas de métricas** de exatamente esses repositórios, na mesma ordem, com as regras atuais (janela até o fim do dia, divisão recursiva de runs sem piso, filtro de clone, mensagens completas dos commits, regras de nulos, CFR (b) em C1 e em C2 e todas as colunas C2/C3) pelas mesmas funções do pipeline (`compute_metric_columns`). As colunas de metadados da seleção (`owner`, `name`, `full_name`, `stars`, `language`, `default_branch`, `created_at`, `contributors_count`) são copiadas do dataset versionado e nunca recalculadas.
+
+```bash
+# a partir de lab03/, com GITHUB_TOKEN (ou GITHUB_TOKENS) definido
+uv run python -m pipeline.regenerar --config config.yaml --limit 3     # teste: coleta 3 repositórios, não publica nada
+uv run python -m pipeline.regenerar --config config.yaml --fresh       # coleta tudo e publica
+uv run python -m pipeline.regenerar --config config.yaml --resume      # retoma uma execução interrompida
+uv run python -m pipeline.regenerar --config config.yaml --somente-relatorio
+```
+
+Opções: `--workers K` (padrão 4), `--limpar-clones` (apaga cada clone bare após o uso; por padrão eles são mantidos para retomar sem reclonar) e `--relatorio CAMINHO` (padrão `docs/regeneracao_final.md`).
+
+- **Estado de trabalho** (ignorado pelo git) em `dados/.regenerar/`: `baseline.parquet|csv` (cópia do dataset de antes, usada como lista de repositórios e como lado "antes" do relatório), `checkpoint.jsonl` (uma linha por repositório concluído) e `runs/` (runs regenerados). Um checkpoint de outra janela, heurística ou esquema é ignorado; uma execução sem `--resume` com checkpoint existente é recusada (use `--resume` ou `--fresh`).
+- **Publicação tudo ou nada:** só quando os 330 repositórios foram coletados (sem `--limit` e sem falhas) e as invariantes valem (330 linhas, mesmos nomes e ordem, metadados idênticos, esquema completo, CSV e Parquet com as mesmas colunas), o comando grava `repositorios.parquet|csv`, copia os runs regenerados para `runs/<owner>__<repo>.parquet`, remove de `runs/` os arquivos que não são de nenhum dos 330 repositórios (`git rm` quando versionados; os três órfãos `elastic__elasticsearch`, `home-assistant__core` e `ueberdosis__tiptap`) e escreve o relatório `docs/regeneracao_final.md` (antes × depois por coluna, transições de faixa, repositórios com faixa geral alterada, contagem de nulos e invariantes).
+- Falhas por repositório (rede, clone) não interrompem a execução: ficam listadas no resumo (sem tokens), o código de saída é 1 e nada é publicado; basta rodar de novo com `--resume`.
+- Repositórios que, após a recoleta, ficarem abaixo dos mínimos da seleção (5 releases, 50 runs válidos) **permanecem** no dataset (a amostra é congelada) e são listados no relatório.

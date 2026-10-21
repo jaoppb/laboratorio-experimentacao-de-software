@@ -50,3 +50,6 @@ lab03/dados/releases/
 lab03/dados/releases_c2/
 lab03/dados/tags/
 lab03/dados/c2_c3_meta/
+
+# Regeneração final (#56): estado de trabalho
+lab03/dados/.regenerar/

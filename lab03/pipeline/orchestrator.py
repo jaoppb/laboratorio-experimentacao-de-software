@@ -53,7 +53,9 @@ from pipeline.repo_selector import iter_candidates_by_stars
 from pipeline.workflow_runs import collect_workflow_runs, save_runs_to_parquet
 
 if TYPE_CHECKING:
+    from metricas.schemas import WorkflowRun
     from pipeline.commits import ReleaseCommits
+    from pipeline.releases import WindowReleases
 
 logger = logging.getLogger(__name__)
 
@@ -97,6 +99,12 @@ SCHEMA_REPOSITORIOS = pa.schema(
         ("cfr_b_evaluated_releases", pa.int64()),
         ("cfr_b_censored_releases", pa.int64()),
         ("cfr_b_skipped_releases", pa.int64()),
+        ("c2_cfr_b", pa.float64()),
+        ("c2_cfr_b_tier", pa.string()),
+        ("c2_cfr_b_failed_releases", pa.int64()),
+        ("c2_cfr_b_evaluated_releases", pa.int64()),
+        ("c2_cfr_b_censored_releases", pa.int64()),
+        ("c2_cfr_b_skipped_releases", pa.int64()),
     ]
 )
 
@@ -105,9 +113,12 @@ def compute_cfr_b_columns(
     release_commits: Sequence[ReleaseCommits],
     window_end: datetime | str,
     heuristic: str = DEFAULT_HEURISTIC,
+    prefix: str = "",
 ) -> dict[str, Any]:
-    """Compute the CFR (b) dataset columns from the C1 releases of a repository.
+    """Compute the CFR (b) dataset columns from the deploy units of a repository.
 
+    `release_commits` are the C1 releases for the `cfr_b*` columns and the C2
+    units (releases + pre-releases) for the `c2_cfr_b*` ones (`prefix="c2_"`).
     `cfr_b` and `cfr_b_tier` are None when no release could be evaluated
     (all censored or skipped); the counters are always filled.
     """
@@ -118,12 +129,94 @@ def compute_cfr_b_columns(
     )
     tier = result.tier
     return {
-        "cfr_b": result.cfr_b,
-        "cfr_b_tier": tier.value if tier is not None else None,
-        "cfr_b_failed_releases": result.failed_releases,
-        "cfr_b_evaluated_releases": result.evaluated_releases,
-        "cfr_b_censored_releases": result.censored_releases,
-        "cfr_b_skipped_releases": result.skipped_releases,
+        f"{prefix}cfr_b": result.cfr_b,
+        f"{prefix}cfr_b_tier": tier.value if tier is not None else None,
+        f"{prefix}cfr_b_failed_releases": result.failed_releases,
+        f"{prefix}cfr_b_evaluated_releases": result.evaluated_releases,
+        f"{prefix}cfr_b_censored_releases": result.censored_releases,
+        f"{prefix}cfr_b_skipped_releases": result.skipped_releases,
+    }
+
+
+def compute_metric_columns(
+    *,
+    releases: Sequence[Release],
+    window_releases: WindowReleases,
+    runs: Sequence[WorkflowRun],
+    valid_runs_count: int,
+    release_commits_c1: Sequence[ReleaseCommits],
+    units: C2C3Units,
+    window_start: datetime,
+    window_end: datetime,
+    window_weeks: float,
+    cfr_b_heuristic: str = DEFAULT_HEURISTIC,
+) -> dict[str, Any]:
+    """Compute every metric column of one repository (all but the metadata ones).
+
+    Shared by the pipeline (`evaluate_candidate`) and the final regeneration
+    (`pipeline.regenerar`), so both apply the same definitions: C1 reference
+    metrics, CFR (a)/(b), recovery time, DORA tiers and the C2/C3 columns
+    (including CFR (b) over C2, Issue #56).
+    """
+    lead_time_c1 = calculate_lead_time(
+        [(rc.release, rc.commits_or_none) for rc in release_commits_c1]
+    )
+    dep_freq = calculate_deployment_frequency(
+        releases=releases,
+        window_weeks=window_weeks,
+        start_date=window_start,
+        end_date=window_end,
+    )
+    cfr_a = calculate_cfr_a(runs)
+    recovery_result = calculate_recovery_time(runs)
+
+    lead_time_a = lead_time_c1.median_a_hours
+    lead_time_days = (lead_time_a / 24.0) if lead_time_a is not None else None
+    dora_eval = evaluate_repository_dora(
+        deployment_frequency=dep_freq,
+        lead_time_days=lead_time_days,
+        cfr=cfr_a,
+        recovery_hours=recovery_result.median_hours,
+        failure_episodes=recovery_result.total_episodes,
+    )
+
+    return {
+        "releases_count_window": window_releases.count,
+        "total_releases": len(releases),
+        "workflow_runs_count_window": valid_runs_count,
+        "total_workflow_runs": len(runs),
+        "deployment_frequency": dep_freq,
+        "deployment_tier": dora_eval.deployment_tier.value,
+        "lead_time_a_hours": lead_time_a,
+        "lead_time_b_hours": lead_time_c1.median_b_hours,
+        "lead_time_tier": (
+            dora_eval.lead_time_tier.value if dora_eval.lead_time_tier is not None else None
+        ),
+        "cfr_a": cfr_a,
+        "cfr_tier": dora_eval.cfr_tier.value,
+        "recovery_hours": recovery_result.median_hours,
+        "recovery_tier": dora_eval.recovery_tier.value,
+        "censored_episodes_ratio": recovery_result.censored_ratio,
+        "overall_dora_score": dora_eval.overall_score,
+        "overall_dora_tier": dora_eval.overall_tier.value,
+        **compute_c2_c3_columns(
+            units.release_commits_c2,
+            units.tag_commits_c3,
+            total_prereleases=len([r for r in releases if r.prerelease]),
+            total_tags=len(units.all_tags),
+            window_weeks=window_weeks,
+        ),
+        # CFR (b): delivery proxy (skipped = unknown commits). Over C1 (main
+        # definition) and over C2 for the C2 combination (group decision, Q8).
+        **compute_cfr_b_columns(
+            release_commits_c1, window_end=window_end, heuristic=cfr_b_heuristic
+        ),
+        **compute_cfr_b_columns(
+            units.release_commits_c2,
+            window_end=window_end,
+            heuristic=cfr_b_heuristic,
+            prefix="c2_",
+        ),
     }
 
 
@@ -597,7 +690,6 @@ class PipelineOrchestrator:
                     window_start=self.window_start,
                     window_end=self.window_end,
                 )
-            all_tags = c2_c3_units.all_tags
             release_commits_c2 = c2_c3_units.release_commits_c2
             tag_commits_c3 = c2_c3_units.tag_commits_c3
 
@@ -622,51 +714,21 @@ class PipelineOrchestrator:
                 repo=repo,
                 output_path=tags_path,
             )
-
-            # Lead time results (C1 is the reference definition)
-            lead_time_result_c1 = calculate_lead_time(
-                [(rc.release, rc.commits_or_none) for rc in release_commits_c1]
-            )
-
-            # Pre-release, tag, C2 and C3 columns
-            c2_c3_columns = compute_c2_c3_columns(
-                release_commits_c2,
-                tag_commits_c3,
-                total_prereleases=len([r for r in releases if r.prerelease]),
-                total_tags=len(all_tags),
-                window_weeks=self.window_weeks,
-            )
         except Exception as exc:
             logger.warning("Error calculating lead time or tags via git clone for %s: %s", full_name, exc)
             return None, "git_clone_error"
 
-        # Calculate DORA Metrics (C1 Reference)
-        dep_freq = calculate_deployment_frequency(
+        metric_columns = compute_metric_columns(
             releases=releases,
-            window_weeks=self.window_weeks,
-            start_date=self.window_start,
-            end_date=self.window_end,
-        )
-        cfr_a = calculate_cfr_a(runs_result.runs)
-        recovery_result = calculate_recovery_time(runs_result.runs)
-
-        lead_time_a = lead_time_result_c1.median_a_hours
-        lead_time_b = lead_time_result_c1.median_b_hours
-        lead_time_days = (lead_time_a / 24.0) if lead_time_a is not None else None
-
-        dora_eval = evaluate_repository_dora(
-            deployment_frequency=dep_freq,
-            lead_time_days=lead_time_days,
-            cfr=cfr_a,
-            recovery_hours=recovery_result.median_hours,
-            failure_episodes=recovery_result.total_episodes,
-        )
-
-        # CFR (b): delivery proxy on the C1 releases (skipped = unknown commits)
-        cfr_b_columns = compute_cfr_b_columns(
-            release_commits_c1,
+            window_releases=window_releases,
+            runs=runs_result.runs,
+            valid_runs_count=runs_result.valid_runs_count,
+            release_commits_c1=release_commits_c1,
+            units=c2_c3_units,
+            window_start=self.window_start,
             window_end=self.window_end,
-            heuristic=self.cfr_b_heuristic,
+            window_weeks=self.window_weeks,
+            cfr_b_heuristic=self.cfr_b_heuristic,
         )
 
         record = {
@@ -684,26 +746,7 @@ class PipelineOrchestrator:
                 else None
             ),
             "contributors_count": meta.contributors_count,
-            "releases_count_window": window_releases.count,
-            "total_releases": len(releases),
-            "workflow_runs_count_window": runs_result.valid_runs_count,
-            "total_workflow_runs": runs_result.total_runs,
-            "deployment_frequency": dep_freq,
-            "deployment_tier": dora_eval.deployment_tier.value,
-            "lead_time_a_hours": lead_time_a,
-            "lead_time_b_hours": lead_time_b,
-            "lead_time_tier": (
-                dora_eval.lead_time_tier.value if dora_eval.lead_time_tier is not None else None
-            ),
-            "cfr_a": cfr_a,
-            "cfr_tier": dora_eval.cfr_tier.value,
-            "recovery_hours": recovery_result.median_hours,
-            "recovery_tier": dora_eval.recovery_tier.value,
-            "censored_episodes_ratio": recovery_result.censored_ratio,
-            "overall_dora_score": dora_eval.overall_score,
-            "overall_dora_tier": dora_eval.overall_tier.value,
-            **c2_c3_columns,
-            **cfr_b_columns,
+            **metric_columns,
         }
 
         return record, None
