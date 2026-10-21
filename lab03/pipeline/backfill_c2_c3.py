@@ -35,13 +35,20 @@ import json
 import logging
 import sys
 from dataclasses import dataclass, field
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 
 import pyarrow.parquet as pq
 import yaml
 
-from metricas.schemas import Commit, Release, _parse_datetime
+from metricas.schemas import (
+    Commit,
+    Release,
+    _parse_datetime,
+    parse_window_end,
+    window_length,
+)
 from pipeline.backfill_cfr_b import load_release_commits, releases_path
 from pipeline.commits import ComparisonStatus, ReleaseCommits
 from pipeline.git_clone import temporary_git_clone
@@ -81,9 +88,18 @@ class RepoPaths:
     tags: Path
     meta: Path
 
-    def complete(self) -> bool:
-        """The meta file is written last, so its presence marks a finished collection."""
-        return self.releases_c2.is_file() and self.tags.is_file() and self.meta.is_file()
+    def complete(self, window: tuple[datetime, datetime] | None = None) -> bool:
+        """The meta file is written last, so its presence marks a finished collection.
+
+        With `window`, the collection must also have been made for that exact
+        observation window (the C2/C3 units depend on it); files collected for
+        another window are stale and collected again.
+        """
+        if not (self.releases_c2.is_file() and self.tags.is_file() and self.meta.is_file()):
+            return False
+        if window is None:
+            return True
+        return read_meta(self.meta).get("window") == window_key(*window)
 
 
 def repo_paths(dados_dir: Path, full_name: str) -> RepoPaths:
@@ -93,6 +109,11 @@ def repo_paths(dados_dir: Path, full_name: str) -> RepoPaths:
         tags=releases_path(dados_dir / "tags", full_name),
         meta=releases_path(dados_dir / "c2_c3_meta", full_name).with_suffix(".json"),
     )
+
+
+def window_key(window_start: datetime, window_end: datetime) -> list[str]:
+    """Window identity stored in the meta file."""
+    return [window_start.isoformat(), window_end.isoformat()]
 
 
 def load_tag_commits(path: str | Path) -> list[ReleaseCommits]:
@@ -119,7 +140,7 @@ def load_tag_commits(path: str | Path) -> list[ReleaseCommits]:
     return result
 
 
-def write_meta(path: Path, meta: dict[str, int]) -> None:
+def write_meta(path: Path, meta: dict[str, Any]) -> None:
     """Atomically write the totals JSON."""
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_suffix(".json.tmp")
@@ -127,7 +148,7 @@ def write_meta(path: Path, meta: dict[str, int]) -> None:
     tmp.replace(path)
 
 
-def read_meta(path: Path) -> dict[str, int]:
+def read_meta(path: Path) -> dict[str, Any]:
     """Totals saved at collection time."""
     return json.loads(path.read_text(encoding="utf-8"))
 
@@ -172,6 +193,8 @@ async def collect_repository_c2_c3(
             "total_releases": len(releases),
             "total_prereleases": len([r for r in releases if r.prerelease]),
             "total_tags": len(units.all_tags),
+            # window the units were collected for (C2/C3 depend on it)
+            "window": window_key(window_start, window_end),
         },
     )
     return paths
@@ -200,7 +223,9 @@ class BackfillC2C3Report:
         return not self.failed
 
 
-def apply_c2_c3(record: dict[str, Any], paths: RepoPaths) -> tuple[bool, bool]:
+def apply_c2_c3(
+    record: dict[str, Any], paths: RepoPaths, window_weeks: float
+) -> tuple[bool, bool]:
     """Fill the eight C2/C3 columns of `record` in place from the persisted files.
 
     Returns `(window_consistent, total_consistent)`: whether the C1 figures
@@ -217,6 +242,7 @@ def apply_c2_c3(record: dict[str, Any], paths: RepoPaths) -> tuple[bool, bool]:
             load_tag_commits(paths.tags),
             total_prereleases=meta["total_prereleases"],
             total_tags=meta["total_tags"],
+            window_weeks=window_weeks,
         )
     )
     return (
@@ -236,7 +262,9 @@ async def backfill_c2_c3(
     janela = config.get("janela", {})
     dirs = config.get("diretorios", {})
     window_start = _parse_datetime(janela.get("inicio", "2025-10-01"))
-    window_end = _parse_datetime(janela.get("fim", "2026-09-30"))
+    # `fim` date-only = end of that day (same interpretation as the orchestrator)
+    window_end = parse_window_end(janela.get("fim", "2026-09-30"))
+    window_weeks = window_length(window_start, window_end) / timedelta(weeks=1)  # type: ignore[arg-type]
 
     dados_dir = Path(dirs.get("dados", "dados"))
     git_cache_dir = Path(dirs.get("git_cache", "cache/git_repos"))
@@ -250,7 +278,12 @@ async def backfill_c2_c3(
     scope = records if limit is None else records[:limit]
 
     report = BackfillC2C3Report(total=len(scope))
-    pending = [r["full_name"] for r in scope if not repo_paths(dados_dir, r["full_name"]).complete()]
+    window = (window_start, window_end)
+    pending = [
+        r["full_name"]
+        for r in scope
+        if not repo_paths(dados_dir, r["full_name"]).complete(window)  # type: ignore[arg-type]
+    ]
     logger.info("%d repositories, %d without C2/C3 files", len(scope), len(pending))
 
     if pending and offline:
@@ -301,11 +334,11 @@ async def backfill_c2_c3(
         if name in report.failed:
             continue
         paths = repo_paths(dados_dir, name)
-        if not paths.complete():
+        if not paths.complete(window):  # type: ignore[arg-type]
             # e.g. files removed while the run was in progress
             report.failed[name] = "C2/C3 files missing"
             continue
-        window_ok, total_ok = apply_c2_c3(record, paths)
+        window_ok, total_ok = apply_c2_c3(record, paths, window_weeks)
         if not window_ok:
             report.count_mismatch.append(name)
         if not total_ok:

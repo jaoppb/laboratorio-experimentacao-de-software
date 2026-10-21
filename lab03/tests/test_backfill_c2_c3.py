@@ -12,7 +12,7 @@ import pyarrow.parquet as pq
 import pytest
 import yaml
 
-from metricas.schemas import Commit, Release
+from metricas.schemas import Commit, Release, _parse_datetime, parse_window_end
 from pipeline import backfill_c2_c3
 from pipeline.commits import ComparisonStatus, ReleaseCommits
 from pipeline.orchestrator import (
@@ -23,6 +23,10 @@ from pipeline.orchestrator import (
 from pipeline.releases import save_releases_to_parquet, save_tags_to_parquet
 
 FULL_COLUMNS = [f.name for f in SCHEMA_REPOSITORIOS]
+
+# Test window: 2024-01-01 to 2024-12-31 (`fim` date-only = end of the day) = 366 days
+WEEKS = 366 / 7
+WINDOW = (_parse_datetime("2024-01-01"), parse_window_end("2024-12-31"))
 
 
 def _commit(sha: str, committed_at: str, message: str = "m") -> Commit:
@@ -167,7 +171,9 @@ def _persist(units, dados: Path, names) -> None:
         paths = backfill_c2_c3.repo_paths(dados, name)
         save_releases_to_parquet(units[name]["c2"], owner, repo, paths.releases_c2)
         save_tags_to_parquet(units[name]["c3"], owner, repo, paths.tags)
-        backfill_c2_c3.write_meta(paths.meta, units[name]["meta"])
+        backfill_c2_c3.write_meta(
+            paths.meta, {**units[name]["meta"], "window": backfill_c2_c3.window_key(*WINDOW)}
+        )
 
 
 def _read_parquet(tmp_path: Path) -> list[dict]:
@@ -189,16 +195,18 @@ class _Client:
 def test_compute_columns_semantics(units):
     full = units["org/full"]
 
-    columns = compute_c2_c3_columns(full["c2"], full["c3"], total_prereleases=2, total_tags=9)
+    columns = compute_c2_c3_columns(
+        full["c2"], full["c3"], total_prereleases=2, total_tags=9, window_weeks=WEEKS
+    )
 
     assert columns == {
         "prereleases_count_window": 1,
         "total_prereleases": 2,
         "tags_count_window": 2,
         "total_tags": 9,
-        "c2_deployment_frequency": 3 / 52.1,
+        "c2_deployment_frequency": 3 / WEEKS,
         "c2_lead_time_b_hours": 36.0,  # median of 24h (rc1) and 48h (v1.1)
-        "c3_deployment_frequency": 2 / 52.1,
+        "c3_deployment_frequency": 2 / WEEKS,
         "c3_lead_time_b_hours": 24.0,
     }
     assert list(columns) == [
@@ -225,12 +233,14 @@ def test_columns_from_files_equal_columns_from_memory(units, tmp_path):
         record: dict = {}
         assert backfill_c2_c3.apply_c2_c3(
             record, backfill_c2_c3.repo_paths(tmp_path, name)
+            , WEEKS
         ) == (True, True)
         expected = compute_c2_c3_columns(
             data["c2"],
             data["c3"],
             total_prereleases=data["meta"]["total_prereleases"],
             total_tags=data["meta"]["total_tags"],
+            window_weeks=WEEKS,
         )
         assert record == expected, name
 
@@ -255,7 +265,7 @@ async def test_backfill_offline_fills_columns_and_keeps_everything_else(
     assert full["prereleases_count_window"] == 1 and full["total_prereleases"] == 2
     assert full["tags_count_window"] == 2 and full["total_tags"] == 9
     assert full["c2_lead_time_b_hours"] == 36.0 and full["c3_lead_time_b_hours"] == 24.0
-    assert nolt["c2_deployment_frequency"] == 1 / 52.1
+    assert nolt["c2_deployment_frequency"] == 1 / WEEKS
     assert nolt["c2_lead_time_b_hours"] is None and nolt["c3_lead_time_b_hours"] is None
     # no units: counts and frequencies are zero, only the lead time is null
     assert empty["c2_deployment_frequency"] == 0.0 and empty["c3_deployment_frequency"] == 0.0
@@ -315,6 +325,31 @@ async def test_incomplete_collection_is_not_reused(config, units, dataset, tmp_p
     assert list(report.failed) == ["org/full"]
 
 
+async def test_collection_for_another_window_is_stale_and_collected_again(
+    config, units, dataset, tmp_path, monkeypatch
+):
+    dados = tmp_path / "dados"
+    _persist(units, dados, units)
+    # org/nolt was collected with the previous window convention (`fim` at 00:00Z)
+    paths = backfill_c2_c3.repo_paths(dados, "org/nolt")
+    meta = backfill_c2_c3.read_meta(paths.meta)
+    meta["window"] = ["2024-01-01T00:00:00+00:00", "2024-12-31T00:00:00+00:00"]
+    backfill_c2_c3.write_meta(paths.meta, meta)
+    assert paths.complete() and not paths.complete(WINDOW)
+    calls: list[str] = []
+
+    async def fake_collect(client, full_name, **kwargs):
+        calls.append(full_name)
+        assert kwargs["window_end"] == WINDOW[1]
+        _persist(units, kwargs["dados_dir"], [full_name])
+
+    monkeypatch.setattr(backfill_c2_c3, "collect_repository_c2_c3", fake_collect)
+
+    report = await backfill_c2_c3.backfill_c2_c3(config, client=_Client())
+
+    assert calls == ["org/nolt"] and report.ok
+
+
 async def test_backfill_collects_only_missing_and_resumes(
     config, units, dataset, tmp_path, monkeypatch
 ):
@@ -350,7 +385,7 @@ async def test_backfill_collects_only_missing_and_resumes(
     report = await backfill_c2_c3.backfill_c2_c3(config, client=_Client())
     assert calls == ["org/nolt"]
     assert report.ok
-    assert _read_parquet(tmp_path)[1]["c2_deployment_frequency"] == 1 / 52.1
+    assert _read_parquet(tmp_path)[1]["c2_deployment_frequency"] == 1 / WEEKS
 
 
 async def test_backfill_flags_count_mismatch_with_dataset(config, units, tmp_path):
@@ -429,6 +464,7 @@ def git_repo(tmp_path: Path) -> Path:
         ("anchor", "2023-12-01T00:00:00Z", "v0.9"),
         ("rc", "2024-03-01T00:00:00Z", "v1.0-rc1"),
         ("final", "2024-06-01T00:00:00Z", "v1.0"),
+        ("last-day", "2024-12-31T12:00:00Z", "v1.1"),
     ]:
         (repo / f"{name}.txt").write_text(name)
         _git(repo, "add", ".")
@@ -445,6 +481,8 @@ async def test_collect_repository_persists_c2_c3_and_columns_match(
         Release(tag_name="v0.9", published_at="2023-12-02T00:00:00Z"),
         Release(tag_name="v1.0-rc1", published_at="2024-03-02T00:00:00Z", prerelease=True),
         Release(tag_name="v1.0", published_at="2024-06-02T00:00:00Z"),
+        # last day of the window: only inside because `fim` date-only means end of day
+        Release(tag_name="v1.1", published_at="2024-12-31T12:00:00Z"),
         Release(tag_name="v0.8", published_at="2023-11-01T00:00:00Z", prerelease=True),
     ]
 
@@ -460,7 +498,7 @@ async def test_collect_repository_persists_c2_c3_and_columns_match(
     dados = tmp_path / "dados"
     # only org/full is under test; the other repos are not in the persisted set
     save_repositories_dataset(
-        [_legacy_record("org/full", 1, 4)],
+        [_legacy_record("org/full", 2, 5)],
         dados / "repositorios.parquet",
         dados / "repositorios.csv",
     )
@@ -471,11 +509,11 @@ async def test_collect_repository_persists_c2_c3_and_columns_match(
     (row,) = _read_parquet(tmp_path)
     assert row["prereleases_count_window"] == 1  # v1.0-rc1 (v0.8 is outside the window)
     assert row["total_prereleases"] == 2
-    assert row["tags_count_window"] == 2
-    assert row["total_tags"] == 3
-    assert row["c2_deployment_frequency"] == 2 / 52.1
-    assert row["c3_deployment_frequency"] == 2 / 52.1
-    # rc1 ships 1 commit (2024-03-01) published on 2024-03-02 -> 24h; v1.0 ditto
+    assert row["tags_count_window"] == 3  # includes v1.1 of the last day
+    assert row["total_tags"] == 4
+    assert row["c2_deployment_frequency"] == 3 / WEEKS
+    assert row["c3_deployment_frequency"] == 3 / WEEKS
+    # rc1 and v1.0 ship 1 commit published a day later (24h); v1.1 is published at its commit (0h)
     assert row["c2_lead_time_b_hours"] == 24.0
     # the tags are dated by their commit, which is also the commit date -> 0h
     assert row["c3_lead_time_b_hours"] == 0.0
@@ -484,13 +522,19 @@ async def test_collect_repository_persists_c2_c3_and_columns_match(
     assert [r["tag_name"] for r in pq.read_table(paths.releases_c2).to_pylist()] == [
         "v1.0-rc1",
         "v1.0",
+        "v1.1",
     ]
-    assert [r["tag_name"] for r in pq.read_table(paths.tags).to_pylist()] == ["v1.0-rc1", "v1.0"]
+    assert [r["tag_name"] for r in pq.read_table(paths.tags).to_pylist()] == [
+        "v1.0-rc1",
+        "v1.0",
+        "v1.1",
+    ]
     assert backfill_c2_c3.read_meta(paths.meta) == {
-        "releases_count_window": 1,
-        "total_releases": 4,
+        "releases_count_window": 2,
+        "total_releases": 5,
         "total_prereleases": 2,
-        "total_tags": 3,
+        "total_tags": 4,
+        "window": backfill_c2_c3.window_key(*WINDOW),
     }
 
 
