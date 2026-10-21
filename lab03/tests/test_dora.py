@@ -3,7 +3,7 @@
 Follows requirements of Issue #32:
 - deployment_frequency: releases publicadas / 52.1 semanas
 - Classificação Elite/High/Medium/Low pela tabela do enunciado
-- Classificação geral: mediana das 4 notas, arredondada para baixo
+- Classificação geral: mediana das notas disponíveis (4, ou 3 se lead time nulo), arredondada para baixo
 - Testes: (4, 3, 3, 1) -> High; valores nos limites das faixas; repositório com 0 releases
 """
 
@@ -23,7 +23,8 @@ from metricas.dora import (
     classify_recovery_time,
     evaluate_repository_dora,
 )
-from metricas.schemas import Release
+from metricas.schemas import Release, WorkflowRun
+from metricas.stability import calculate_recovery_time
 
 
 class TestDeploymentFrequencyCalculation:
@@ -109,11 +110,14 @@ class TestDORATierClassifications:
         assert classify_lead_time(7.0) == DORATier.MEDIUM
         assert classify_lead_time(29.999) == DORATier.MEDIUM
 
-        # Low: >= 30 dias ou None ou negativo
+        # Low: >= 30 dias ou negativo (inválido)
         assert classify_lead_time(30.0) == DORATier.LOW
         assert classify_lead_time(60.0) == DORATier.LOW
-        assert classify_lead_time(None) == DORATier.LOW
         assert classify_lead_time(-1.0) == DORATier.LOW
+
+    def test_lead_time_null_has_no_tier(self):
+        """Q18b: lead time ausente não é Low nem Elite — fica sem faixa."""
+        assert classify_lead_time(None) is None
 
     def test_change_failure_rate_tier_boundaries(self):
         # Elite: <= 15% (0.15)
@@ -147,11 +151,23 @@ class TestDORATierClassifications:
         assert classify_recovery_time(24.0) == DORATier.MEDIUM
         assert classify_recovery_time(167.999) == DORATier.MEDIUM
 
-        # Low: >= 1 semana ou None ou negativo
+        # Low: >= 1 semana ou negativo
         assert classify_recovery_time(168.0) == DORATier.LOW
         assert classify_recovery_time(500.0) == DORATier.LOW
-        assert classify_recovery_time(None) == DORATier.LOW
         assert classify_recovery_time(-2.0) == DORATier.LOW
+
+    def test_recovery_time_null_without_failure_episodes_is_elite(self):
+        """Q18b: sem nenhum episódio de falha -> Elite."""
+        assert classify_recovery_time(None, has_failure_episodes=False) == DORATier.ELITE
+
+    def test_recovery_time_null_with_only_censored_episodes_is_low(self):
+        """Q18b/Q18: só episódios censurados -> Low (inalterado, e é o padrão)."""
+        assert classify_recovery_time(None, has_failure_episodes=True) == DORATier.LOW
+        assert classify_recovery_time(None) == DORATier.LOW
+
+    def test_recovery_time_with_value_ignores_episode_flag(self):
+        assert classify_recovery_time(200.0, has_failure_episodes=False) == DORATier.LOW
+        assert classify_recovery_time(0.5, has_failure_episodes=True) == DORATier.ELITE
 
 
 class TestOverallDORAClassification:
@@ -189,6 +205,20 @@ class TestOverallDORAClassification:
         score, tier = calculate_overall_dora_score([2, 2, 2, 1])
         assert score == 2
         assert tier == DORATier.MEDIUM
+
+    def test_three_scores_odd_count_uses_middle_value(self):
+        """Com 3 métricas (lead time nulo), a mediana é o valor central."""
+        # (4, 2, 1) -> mediana 2 -> Medium
+        assert calculate_overall_dora_score([4, 2, 1]) == (2, DORATier.MEDIUM)
+        # (1, 4, 4) -> mediana 4 -> Elite
+        assert calculate_overall_dora_score([1, 4, 4]) == (4, DORATier.ELITE)
+        # (3, 3, 1) -> mediana 3 -> High
+        assert calculate_overall_dora_score([3, 3, 1]) == (3, DORATier.HIGH)
+
+    def test_dropping_one_score_can_change_overall(self):
+        """Excluir uma nota muda a mediana: (4,1,4,1) -> 2.5 -> Medium; (4,4,1) -> 4 -> Elite."""
+        assert calculate_overall_dora_score([4, 1, 4, 1]) == (2, DORATier.MEDIUM)
+        assert calculate_overall_dora_score([4, 4, 1]) == (4, DORATier.ELITE)
 
     def test_empty_scores_raises_value_error(self):
         with pytest.raises(ValueError, match="must not be empty"):
@@ -234,12 +264,86 @@ class TestEvaluateRepositoryDORA:
             recovery_hours=None,
         )
         assert evaluation.deployment_tier == DORATier.LOW
-        assert evaluation.lead_time_tier == DORATier.LOW
+        # lead time nulo: sem faixa e fora da nota geral
+        assert evaluation.lead_time_tier is None
         assert evaluation.cfr_tier == DORATier.LOW
+        # episódios desconhecidos (None) mantêm o comportamento anterior: Low
         assert evaluation.recovery_tier == DORATier.LOW
-        assert evaluation.scores == (1, 1, 1, 1)
+        assert evaluation.scores == (1, 1, 1)
         assert evaluation.overall_score == 1
         assert evaluation.overall_tier == DORATier.LOW
+
+    def test_evaluate_no_failure_episodes_recovery_is_elite(self):
+        evaluation = evaluate_repository_dora(
+            deployment_frequency=0.0,  # Low = 1
+            lead_time_days=10.0,  # Medium = 2
+            cfr=0.0,  # Elite = 4
+            recovery_hours=None,
+            failure_episodes=0,  # Elite = 4
+        )
+        assert evaluation.recovery_tier == DORATier.ELITE
+        assert evaluation.scores == (1, 2, 4, 4)
+        # mediana (2+4)/2 = 3.0 -> High
+        assert evaluation.overall_tier == DORATier.HIGH
+
+    def test_evaluate_only_censored_episodes_recovery_is_low(self):
+        evaluation = evaluate_repository_dora(
+            deployment_frequency=0.0,  # Low = 1
+            lead_time_days=10.0,  # Medium = 2
+            cfr=0.0,  # Elite = 4
+            recovery_hours=None,
+            failure_episodes=2,  # Low = 1 (todos censurados)
+        )
+        assert evaluation.recovery_tier == DORATier.LOW
+        assert evaluation.scores == (1, 2, 4, 1)
+        # mediana (1+2)/2 = 1.5 -> 1 -> Low
+        assert evaluation.overall_tier == DORATier.LOW
+
+    def test_evaluate_null_lead_time_uses_three_metrics(self):
+        # deployment Elite (4), cfr Medium (2), recovery Low (1); lead time nulo.
+        evaluation = evaluate_repository_dora(
+            deployment_frequency=8.0,
+            lead_time_days=None,
+            cfr=0.40,
+            recovery_hours=200.0,
+            failure_episodes=1,
+        )
+        assert evaluation.lead_time_tier is None
+        assert evaluation.scores == (4, 2, 1)
+        assert evaluation.overall_score == 2
+        assert evaluation.overall_tier == DORATier.MEDIUM
+
+    def test_evaluate_null_lead_time_not_counted_as_low_or_elite(self):
+        # Com lead time Low a mediana seria (4,4,1,1) -> 2.5 -> Medium; sem ele (4,4,1) -> Elite.
+        with_low = evaluate_repository_dora(8.0, 100.0, 0.0, 200.0, failure_episodes=1)
+        assert with_low.overall_tier == DORATier.MEDIUM
+        without = evaluate_repository_dora(8.0, None, 0.0, 200.0, failure_episodes=1)
+        assert without.scores == (4, 4, 1)
+        assert without.overall_tier == DORATier.ELITE
+
+    def test_evaluate_with_real_recovery_result(self):
+        """Integra `calculate_recovery_time` com a avaliação para os dois motivos de nulo."""
+        none_result = calculate_recovery_time([])
+        assert none_result.median_hours is None and none_result.total_episodes == 0
+        ev = evaluate_repository_dora(
+            8.0, 3.0, 0.1, none_result.median_hours, failure_episodes=none_result.total_episodes
+        )
+        assert ev.recovery_tier == DORATier.ELITE
+
+        t0 = datetime(2026, 1, 1, tzinfo=timezone.utc)
+        runs = [
+            WorkflowRun(
+                id=1, workflow_id=1, conclusion="failure",
+                run_started_at=t0, updated_at=t0,
+            )
+        ]
+        censored = calculate_recovery_time(runs)
+        assert censored.median_hours is None
+        assert censored.total_episodes == 1 and censored.censored_ratio == 1.0
+        ev = evaluate_repository_dora(
+            8.0, 3.0, 0.1, censored.median_hours, failure_episodes=censored.total_episodes
+        )
+        assert ev.recovery_tier == DORATier.LOW
 
     def test_repo_schema_with_metadata_and_created_at(self):
         from metricas.schemas import Repo
