@@ -7,6 +7,16 @@ from datetime import datetime, timezone
 from typing import Any
 
 
+# A full commit message (subject + body) is truncated to this many characters
+# when persisted, to bound storage (squash merges can carry huge bodies).
+MAX_FULL_MESSAGE_CHARS = 10_000
+
+
+def truncate_full_message(message: str) -> str:
+    """Normalize CRLF/trailing whitespace and cap at `MAX_FULL_MESSAGE_CHARS`."""
+    return message.replace("\r\n", "\n").replace("\r", "\n").strip()[:MAX_FULL_MESSAGE_CHARS]
+
+
 def _parse_datetime(dt_val: datetime | str | None) -> datetime | None:
     """Parse datetime or ISO 8601 string into a timezone-aware UTC datetime."""
     if dt_val is None:
@@ -84,14 +94,40 @@ class Release:
 
 @dataclass
 class Commit:
-    """Baseline stub for commit data between releases."""
+    """Baseline stub for commit data between releases.
+
+    `message` is the commit subject (first line, `git log --format=%s`); it is
+    what heuristic `v1` reads and it never changes meaning. `full_message` is
+    the whole message (`%B`, subject + body, truncated to
+    `MAX_FULL_MESSAGE_CHARS`) and is None for data collected before it existed.
+    """
 
     sha: str
     committed_at: datetime | str
     message: str = ""
+    full_message: str | None = None
 
     def __post_init__(self) -> None:
         parsed = _parse_datetime(self.committed_at)
         if parsed is None:
             raise ValueError("committed_at must not be None")
         self.committed_at = parsed
+
+    @property
+    def text(self) -> str:
+        """Full message when known; otherwise the subject (back-compat fallback)."""
+        return self.message if self.full_message is None else self.full_message
+
+    @classmethod
+    def from_record(cls, record: dict[str, Any]) -> "Commit":
+        """Build a commit from a persisted Parquet row.
+
+        Files written before `full_message` existed lack the key; it then
+        stays None and `text` falls back to the subject.
+        """
+        return cls(
+            sha=record["sha"],
+            committed_at=record["committed_at"],
+            message=record["message"],
+            full_message=record.get("full_message"),
+        )
