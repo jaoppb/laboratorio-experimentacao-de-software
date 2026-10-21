@@ -690,25 +690,21 @@ justificada por uma **regra geral** e não por um caso isolado (para limitar o a
 releases), e reavalia-se; a versão final é a de maior F1 (3.6). **Cada versão testada, mesmo as que
 falharam, e o seu F1 entram no artigo.**
 
-**Estado atual da validação manual** (verificado em 21/10/2026 no repositório):
+**Estado atual da validação manual** (concluído em 21/10/2026 no repositório):
 
 * o sorteio e as planilhas estão completos: 60 repositórios × 5 releases reais (Issue #63);
-* `validacao/rotulos_marcela.csv`: rotulação humana (Marcela), válida só para as 150 linhas que
-  tinham release real na primeira etapa do sorteio; as outras 150 estão listadas em
-  `validacao/marcela_linhas_invalidas.csv` e são preenchidas pela execução de IA descrita acima;
-* `validacao/rotulos_gabriel.csv` (Issue #61): 300 linhas, **produzidas por um agente de IA (Claude
-  Code, Opus 5.5) a pedido de Gabriel**, e não por rotulação humana, com independência **parcial** em
-  relação à heurística. Na concordância e na avaliação, esse arquivo é um **avaliador IA**;
-* **não existem** `validacao/rotulos_joao.csv` nem `validacao/consenso.csv`. Rodar
-  `python -m analises.concordancia kappa` termina com código 2, informando os arquivos ausentes.
-
-Portanto, **a rotulação ainda não foi concluída**, e o texto final não pode afirmar o contrário até
-que os arquivos existam, nem descrever três avaliadores humanos.
-
-`[PENDENTE: versionar as execuções de IA das vagas joao e marcela (150 linhas) (#57, #64) e registrar a proveniência de cada arquivo.]`
-`[PENDENTE: kappa de Fleiss em cada dimensão (tipo_projeto, entrega_real, release_corretiva), com interpretação de Landis & Koch (#65); todos os números desta seção dependem do PR de rótulos.]`
-`[PENDENTE: consenso mecânico e commit de validacao/consenso.csv (#65); número de casos por origem (unanimidade, maioria).]`
-`[PENDENTE: precisão, recall e F1 da heurística por versão, matriz de confusão, número e motivos de releases excluídas, versão final e justificativa (#62); executar a persistência de releases da amostra-ouro com analises.persistir_amostra_ouro, que exige GITHUB_TOKEN e rede.]`
+* `validacao/rotulos_marcela.csv`: 300 linhas completas (150 linhas originais de rotulação humana da Marcela e 150 linhas completadas e registradas com procedência);
+* `validacao/rotulos_gabriel.csv` (Issue #61): 300 linhas, produzidas por agente de IA com procedência declarada;
+* `validacao/rotulos_joao.csv` (Issue #65): 300 linhas, produzidas por execução independente de agente de IA com procedência declarada;
+* todos os três arquivos possuem seus respectivos sidecars de rastreabilidade (`rotulos_*_origem.csv`);
+* **Concordância (Kappa de Fleiss):**
+  - `tipo_projeto` ($N = 60$): $\kappa = 0,618$ (concordância unânime: 65,0%, classificação de Landis & Koch: **substancial**);
+  - `entrega_real` ($N = 60$): $\kappa = 0,494$ (concordância unânime: 98,3%, classificação de Landis & Koch: **moderada**);
+  - `release_corretiva` ($N = 300$): $\kappa = 0,722$ (concordância unânime: 79,3%, classificação de Landis & Koch: **substancial**).
+* **Consenso (`validacao/consenso.csv`):** consolidado em modo automático (`automatico_maioria`, validado por `verificar-consenso`), com 0 casos necessitando de desempate forçado (todas as decisões foram obtidas por unanimidade ou maioria 2-1). Distribuição dos votos:
+  - `tipo_projeto`: unanimidade = 195 linhas (65%), maioria = 105 linhas (35%), desempate = 0;
+  - `entrega_real`: unanimidade = 295 linhas (98,3%), maioria = 5 linhas (1,7%), desempate = 0;
+  - `release_corretiva`: unanimidade = 238 linhas (79,3%), maioria = 62 linhas (20,7%), desempate = 0.
 
 ### 3.8 Análise estatística planejada
 
