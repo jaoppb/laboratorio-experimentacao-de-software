@@ -464,10 +464,14 @@ publicadas da janela (C1, sem pré-releases), com semente determinística por re
 prevê **300 linhas** (60 × 5). A lista dos 60 repositórios está em `dados/amostra_ouro/sorteio_info.json`
 (gerado em 15/10/2026) e o código está em `analises/amostra_ouro.py`. Reexecutar o sorteio sobre o
 `repositorios.parquet` e o `repositorios.csv` versionados reproduz exatamente os mesmos 60 repositórios.
-`[VERIFICAR: o sorteio de releases só foi feito para 30 dos 60 repositórios. Para os outros 30, o arquivo dados/releases/ do repositório não existia no momento do sorteio (analises/amostra_ouro.py::carregar_releases_repositorio devolve lista vazia), então releases_sorteadas está vazia no sorteio_info.json e as 5 linhas de cada um (150 das 300) saíram na planilha com tag_name = "(pendente de persistência)" e sem data. Hoje só 150 releases reais estão identificadas. Antes de a rotulação seguir, é preciso persistir as releases desses 30 repositórios (analises.persistir_amostra_ouro) e gerar de novo as planilhas (analises.amostra_ouro), e as 150 linhas já rotuladas em validacao/rotulos_marcela.csv precisam ser refeitas, porque não apontam para uma release identificável.]`
+O sorteio foi feito em duas etapas: em 15/10/2026, só 30 dos 60 repositórios tinham releases
+persistidas; em 20/10/2026, as releases dos outros 30 foram sorteadas com a mesma semente, o mesmo
+método e a mesma janela (`analises/amostra_ouro.py --completar-pendentes`, Issue #63), sem alterar o
+sorteio dos 30 primeiros. As planilhas atuais têm as 300 linhas com releases reais
+(`docs/amostra_ouro.md`).
 `[VERIFICAR: o sorteio usou a ordem das linhas do dataset de 15/10/2026. Se o dataset for regenerado (#56) e a composição ou a ordem das 330 mudar, a lista de 60 repositórios pode deixar de pertencer à amostra final. O sorteio_info.json é o registro oficial dos 60.]`
 
-**Rotulação independente.** Cada um dos três autores preenche, **sem consultar os demais e sem ver a
+**Rotulação independente.** Cada um dos três avaliadores preenche, **sem consultar os demais e sem ver a
 saída da heurística**, sua própria planilha (CSV/XLSX com *links* diretos para a página de cada
 release no GitHub; `dados/amostra_ouro/amostra_ouro_<nome>.csv`), com:
 
@@ -521,21 +525,26 @@ a lista de falsos positivos e negativos, propõe-se uma nova versão (sem apagar
 justificada por uma **regra geral** e não por um caso isolado (para limitar o ajuste excessivo às 300
 releases), e reavalia-se. **Cada versão testada, mesmo as que falharam, e o seu F1 entram no artigo.**
 
-**Estado atual da validação manual** (verificado nesta data no repositório):
+**Estado atual da validação manual** (verificado em 21/10/2026 no repositório; a proveniência de
+cada arquivo está em `validacao/PROVENIENCIA.md`):
 
-* o sorteio e as planilhas em branco existem (`dados/amostra_ouro/`; Issue #63), mas só 30 dos 60
-  repositórios têm as 5 releases identificadas (ver o `[VERIFICAR]` em "Amostragem");
-* **apenas um** dos três arquivos de rótulos existe: `validacao/rotulos_marcela.csv`, que passa na
-  validação de formato da ferramenta (300 linhas válidas; essa validação compara `repo_name` e
-  `tag_name` com a planilha e, por isso, não detecta que 150 linhas têm `tag_name` pendente);
-* **não existem** `validacao/rotulos_joao.csv`, `validacao/rotulos_gabriel.csv` nem
-  `validacao/consenso.csv`. Rodar `python -m analises.concordancia kappa` termina com código 2,
-  informando os arquivos ausentes.
+* o sorteio e as planilhas estão completos: 60 repositórios × 5 releases reais (Issue #63);
+* `validacao/rotulos_marcela.csv`: rotulação humana (Marcela), válida só para as 150 linhas que
+  tinham release real na primeira etapa do sorteio; as outras 150 estão listadas em
+  `validacao/marcela_linhas_invalidas.csv` e precisam ser rotuladas de novo;
+* `validacao/rotulos_gabriel.csv` (Issue #61): 300 linhas, **produzidas por um agente de IA
+  (Claude) a pedido de Gabriel**, e não por rotulação humana. O agente não viu os rótulos dos
+  colegas nem rodou a heurística na amostra, mas foi o mesmo que implementou a heurística v1 (#59),
+  então a independência em relação à heurística é **parcial**. Na concordância e na avaliação, esse
+  arquivo é um **avaliador IA**; o texto final não pode descrever três avaliadores humanos;
+* **não existem** `validacao/rotulos_joao.csv` nem `validacao/consenso.csv`. Rodar
+  `python -m analises.concordancia kappa` termina com código 2, informando os arquivos ausentes.
 
-Portanto, **a rotulação manual pelos três autores ainda não foi concluída**, e o texto final não pode
-afirmar o contrário até que os arquivos existam.
+Portanto, **a rotulação ainda não foi concluída**, e o texto final não pode afirmar o contrário até
+que os arquivos existam.
 
-`[PENDENTE: rotulação independente de João (#57) e Gabriel (#61).]`
+`[PENDENTE: decidir com o grupo como reportar o kappa e o F1 com um avaliador IA: por exemplo, kappa entre os dois avaliadores humanos (Cohen) e, à parte, o kappa com o avaliador IA, ou consenso só entre humanos com o rótulo de IA como apoio. A decisão muda a redação desta seção e da 3.9.]`
+`[PENDENTE: rotulação independente de João (#57) e das 150 linhas restantes de Marcela (#64).]`
 `[PENDENTE: kappa de Fleiss em cada dimensão (tipo_projeto, entrega_real, release_corretiva), com interpretação de Landis & Koch (#65).]`
 `[PENDENTE: reunião de consenso e commit de validacao/consenso.csv (#65); data, relator e número de casos por origem (unanimidade, maioria, reunião).]`
 `[PENDENTE: precisão, recall e F1 da heurística por versão, matriz de confusão, número e motivos de releases excluídas, versão final e justificativa (#62); executar a persistência de releases da amostra-ouro com analises.persistir_amostra_ouro, que exige GITHUB_TOKEN e rede.]`
@@ -731,7 +740,7 @@ necessariamente os mesmos valores (seção 3.2). A replicação cruzada é relat
 | 2 | Confirmar janela oficial e o limite de 30/09 | 3.2 | professor; `config.yaml` |
 | 3 | Data(s) da coleta e regeneração do dataset | 3.2, 3.9 | João (#56) |
 | 4 | Regerar `repositorios.*` (colunas novas, lead time corrigido) e reconferir a caracterização da amostra | 3.3, 3.9 | João (#56) |
-| 5 | Rótulos de João e Gabriel | 3.7 | #57, #61 |
+| 5 | Rótulos de João e as 150 linhas restantes de Marcela; como tratar o avaliador IA (rótulos de Gabriel) no kappa e no F1 | 3.7, 3.9 | #57, #64, #61 |
 | 6 | Kappa de Fleiss real (3 dimensões) | 3.7 | #65 |
 | 7 | Consenso (`validacao/consenso.csv`), reunião, relator e data | 3.7 | #65 |
 | 8 | Precisão, recall e F1 por versão da heurística; versão final | 3.6, 3.7 | #62 |
