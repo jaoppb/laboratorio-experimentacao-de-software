@@ -1,0 +1,76 @@
+{
+  "resultados": [
+    {
+      "dimensao": "tipo_projeto",
+      "unidade": "repositorio",
+      "n_unidades": 60,
+      "n_avaliadores": 3,
+      "kappa": 0.6176024279210927,
+      "concordancia_unanime_pct": 65.0,
+      "interpretacao": "substancial"
+    },
+    {
+      "dimensao": "entrega_real",
+      "unidade": "repositorio",
+      "n_unidades": 60,
+      "n_avaliadores": 3,
+      "kappa": 0.4943820224719036,
+      "concordancia_unanime_pct": 98.33333333333333,
+      "interpretacao": "moderada"
+    },
+    {
+      "dimensao": "release_corretiva",
+      "unidade": "release",
+      "n_unidades": 300,
+      "n_avaliadores": 3,
+      "kappa": 0.7217845675195945,
+      "concordancia_unanime_pct": 79.33333333333333,
+      "interpretacao": "substancial"
+    }
+  ],
+  "proveniencia": {
+    "resumo": [
+      {
+        "avaliador": "marcela",
+        "origem": "humano",
+        "modelo": "",
+        "esforco": "",
+        "n_linhas": 150
+      },
+      {
+        "avaliador": "marcela",
+        "origem": "ia",
+        "modelo": "claude-opus-5.5",
+        "esforco": "high",
+        "n_linhas": 150
+      },
+      {
+        "avaliador": "gabriel",
+        "origem": "ia",
+        "modelo": "claude-opus-5.5 (Claude Code)",
+        "esforco": "desconhecido",
+        "n_linhas": 300
+      },
+      {
+        "avaliador": "joao",
+        "origem": "ia",
+        "modelo": "claude-opus-5.5",
+        "esforco": "high",
+        "n_linhas": 300
+      }
+    ],
+    "independencia": {
+      "marcela": [
+        "rotulação humana independente",
+        "cega à heurística e aos outros avaliadores"
+      ],
+      "gabriel": [
+        "parcial: o mesmo assistente implementou a heurística v1 (#59)"
+      ],
+      "joao": [
+        "execução independente e cega à heurística"
+      ]
+    },
+    "aviso": "AVISO: rótulos de IA: o kappa mede concordância entre execuções do mesmo modelo, não entre pessoas"
+  }
+}
