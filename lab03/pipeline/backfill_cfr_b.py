@@ -85,7 +85,7 @@ def load_release_commits(path: str | Path) -> list[ReleaseCommits]:
         commits = []
         if status == ComparisonStatus.OK:
             commits = [
-                Commit(sha=c["sha"], committed_at=c["committed_at"], message=c["message"])
+                Commit.from_record(c)
                 for c in row["commits"] or []
             ]
         result.append(ReleaseCommits(release, None, status, commits))

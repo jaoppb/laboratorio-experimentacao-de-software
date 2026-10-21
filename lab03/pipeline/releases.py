@@ -22,6 +22,16 @@ logger = logging.getLogger(__name__)
 
 PER_PAGE = 100
 
+# Struct of one persisted commit. `full_message` (subject + body, truncated to
+# `metricas.schemas.MAX_FULL_MESSAGE_CHARS`) is nullable: files written before
+# it existed lack the field and are still readable (`Commit.from_record`).
+_COMMIT_FIELDS = [
+    ("sha", pa.string()),
+    ("committed_at", pa.string()),
+    ("message", pa.string()),
+    ("full_message", pa.string()),
+]
+
 
 def parse_release(payload: dict[str, Any]) -> Release | None:
     """Convert a release JSON object from the API into a `Release`."""
@@ -266,6 +276,7 @@ def save_releases_to_parquet(
                         else str(c.committed_at)
                     ),
                     "message": c.message or "",
+                    "full_message": c.full_message,
                 }
                 for c in rc.commits
             ]
@@ -282,13 +293,7 @@ def save_releases_to_parquet(
             (
                 "commits",
                 pa.list_(
-                    pa.struct(
-                        [
-                            ("sha", pa.string()),
-                            ("committed_at", pa.string()),
-                            ("message", pa.string()),
-                        ]
-                    )
+                    pa.struct(_COMMIT_FIELDS)
                 ),
             ),
         ]
@@ -305,13 +310,7 @@ def save_releases_to_parquet(
             pa.array(
                 commits_lists,
                 type=pa.list_(
-                    pa.struct(
-                        [
-                            ("sha", pa.string()),
-                            ("committed_at", pa.string()),
-                            ("message", pa.string()),
-                        ]
-                    )
+                    pa.struct(_COMMIT_FIELDS)
                 ),
             ),
         ],
@@ -358,6 +357,7 @@ def save_tags_to_parquet(
                         else str(c.committed_at)
                     ),
                     "message": c.message or "",
+                    "full_message": c.full_message,
                 }
                 for c in tc.commits
             ]
@@ -373,13 +373,7 @@ def save_tags_to_parquet(
             (
                 "commits",
                 pa.list_(
-                    pa.struct(
-                        [
-                            ("sha", pa.string()),
-                            ("committed_at", pa.string()),
-                            ("message", pa.string()),
-                        ]
-                    )
+                    pa.struct(_COMMIT_FIELDS)
                 ),
             ),
         ]
@@ -395,13 +389,7 @@ def save_tags_to_parquet(
             pa.array(
                 commits_lists,
                 type=pa.list_(
-                    pa.struct(
-                        [
-                            ("sha", pa.string()),
-                            ("committed_at", pa.string()),
-                            ("message", pa.string()),
-                        ]
-                    )
+                    pa.struct(_COMMIT_FIELDS)
                 ),
             ),
         ],

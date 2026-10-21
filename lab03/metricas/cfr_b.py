@@ -69,8 +69,15 @@ def is_fix_message(message: str) -> bool:
     return bool(_FIX_KEYWORDS_RE.search(message or ""))
 
 
-def has_fix_commit(commits: Sequence[Commit]) -> bool:
-    """True if at least one commit message mentions revert, hotfix or fix."""
+def has_fix_commit(commits: Sequence[Commit], full_message: bool = False) -> bool:
+    """True if at least one commit message mentions revert, hotfix or fix.
+
+    By default only the subject (`Commit.message`) is read. With
+    `full_message=True` the whole message (`Commit.text`: subject + body, or
+    the subject when the full message was not collected) is read instead.
+    """
+    if full_message:
+        return any(is_fix_message(c.text) for c in commits)
     return any(is_fix_message(c.message) for c in commits)
 
 
@@ -97,8 +104,24 @@ def heuristic_v1(previous_tag: str, tag: str, commits: Sequence[Commit]) -> bool
     return patch and fix
 
 
+def heuristic_v1_full_message(previous_tag: str, tag: str, commits: Sequence[Commit]) -> bool:
+    """v1_full_message: same rule as v1, but reads the full commit message (subject + body).
+
+    Only the patch changes AND some commit message (subject or body, e.g.
+    `Fixes #123`, `Revert "..."`) mentions revert/hotfix/fix. Commits collected
+    without the full message fall back to the subject, so on old data this
+    equals v1.
+    """
+    patch = is_patch_bump(previous_tag, tag)
+    fix = has_fix_commit(commits, full_message=True)
+    if patch is None:
+        return fix
+    return patch and fix
+
+
 HEURISTICS: dict[str, Heuristic] = {
     "v1": heuristic_v1,
+    "v1_full_message": heuristic_v1_full_message,
 }
 
 DEFAULT_HEURISTIC = "v1"

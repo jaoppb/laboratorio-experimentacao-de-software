@@ -3,12 +3,15 @@
 import pytest
 
 from metricas.cfr_b import (
+    DEFAULT_HEURISTIC,
+    HEURISTICS,
     CfrBResult,
     ReleaseOutcome,
     calculate_cfr_b,
     fix_commit_ratio,
     has_fix_commit,
     heuristic_v1,
+    heuristic_v1_full_message,
     is_corrective_release,
     is_fix_message,
     is_patch_bump,
@@ -259,3 +262,55 @@ def test_non_semver_tags_use_commit_messages():
 def test_unparseable_window_end():
     with pytest.raises(ValueError):
         calculate_cfr_b([], window_end=None)  # type: ignore[arg-type]
+
+
+# --- Heuristic v1_full_message ---------------------------------------------
+
+
+def _full(sha: str, subject: str, full: str | None) -> Commit:
+    return Commit(sha=sha, committed_at="2024-05-01T00:00:00Z", message=subject, full_message=full)
+
+
+def test_default_heuristic_is_still_v1_and_both_are_registered():
+    assert DEFAULT_HEURISTIC == "v1"
+    assert list(HEURISTICS) == ["v1", "v1_full_message"]
+
+
+def test_v1_ignores_the_body_but_v1_full_message_reads_it():
+    commits = [_full("1", "chore: tidy", "chore: tidy\n\nbody\nFixes #123")]
+    assert is_corrective_release("v1.0.0", "v1.0.1", commits, version="v1") is False
+    assert is_corrective_release("v1.0.0", "v1.0.1", commits, version="v1_full_message") is True
+    # default stays v1
+    assert is_corrective_release("v1.0.0", "v1.0.1", commits) is False
+
+
+def test_v1_full_message_keeps_the_version_criterion():
+    commits = [_full("1", "chore", "chore\n\nFixes #1")]
+    assert heuristic_v1_full_message("v1.0.0", "v1.1.0", commits) is False
+    assert heuristic_v1_full_message("nightly-1", "nightly-2", commits) is True
+
+
+def test_v1_full_message_falls_back_to_subject_for_old_data():
+    old = [_commit("1", "fix: crash")]  # full_message=None (collected before the field)
+    other = [_commit("2", "feat: x")]
+    assert old[0].full_message is None and old[0].text == "fix: crash"
+    for tags in (("v1.0.0", "v1.0.1"), ("nightly-1", "nightly-2")):
+        assert heuristic_v1_full_message(*tags, old) == heuristic_v1(*tags, old)
+        assert heuristic_v1_full_message(*tags, other) == heuristic_v1(*tags, other)
+
+
+@pytest.mark.parametrize(
+    "subject, body, expected",
+    [
+        ("Merge branch 'x'", "Merge branch 'x'\n\nhotfix: login", True),
+        ('Revert "feat: a"', 'Revert "feat: a"\n\nThis reverts commit abc.', True),
+        ("docs: café ✓", "docs: café ✓\n\nsem correção aqui", False),
+        ("feat: crlf", "feat: crlf\n\nhotfix inside body", True),
+        ("feat: prefix", "feat: prefix\n\nsuffix, prefixed, unfixed", False),
+    ],
+)
+def test_v1_full_message_on_synthetic_messages(subject, body, expected):
+    commits = [_full("1", subject, body)]
+    assert has_fix_commit(commits, full_message=True) is expected
+    # v1 only ever sees the subject
+    assert has_fix_commit(commits) is is_fix_message(subject)

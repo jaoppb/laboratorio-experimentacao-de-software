@@ -10,11 +10,12 @@ import asyncio
 from contextlib import asynccontextmanager
 import logging
 import os
+import re
 from pathlib import Path
 import shutil
 from typing import TYPE_CHECKING, AsyncIterator
 
-from metricas.schemas import Commit, Release
+from metricas.schemas import Commit, Release, truncate_full_message
 from pipeline.commits import ComparisonStatus, ReleaseCommits
 
 if TYPE_CHECKING:
@@ -22,6 +23,23 @@ if TYPE_CHECKING:
     from pipeline.releases import WindowReleases
 
 logger = logging.getLogger(__name__)
+
+
+# Partial-clone filter. `tree:0` already omits trees AND blobs, so it is both
+# "treeless" and "blobless" for our purposes; commit objects (SHA, author date,
+# subject, full message) and tags are all we read. The group decided (Q19) on
+# `combine:tree:0+blob:none`, but GitHub rejects `combine` filters on clone
+# ("fatal: remote error: filter 'combine' not supported"; verified with git
+# 2.54 against github.com), so it cannot be used there. Kept in one constant.
+CLONE_FILTER = "--filter=tree:0"
+
+# `git log` record layout: a record separator before each commit (so multi-line
+# `%B` bodies need no newline heuristics) and a unit separator between fields.
+_RECORD_START = "\x1e"
+_FIELD_SEP = "\x1f"
+# Split only at a separator followed by `<sha><unit separator>`, so a stray
+# \x1e inside a commit body cannot cut a record.
+_RECORD_SPLIT_RE = re.compile(r"\x1e(?=[0-9a-f]{40,64}\x1f)")
 
 
 class GitCloneError(Exception):
@@ -99,7 +117,7 @@ async def fetch_all_tags(git_dir: Path | str, auth_args: list[str] | None = None
         f"--git-dir={git_dir}",
         "fetch",
         "--quiet",
-        "--filter=tree:0",
+        CLONE_FILTER,
         "origin",
         "+refs/tags/*:refs/tags/*",
     ]
@@ -134,7 +152,7 @@ async def clone_repository(
     clone_args = [
         "clone",
         "--bare",
-        "--filter=tree:0",
+        CLONE_FILTER,
         "--single-branch",
         url,
         str(target),
@@ -169,7 +187,7 @@ async def clone_repository(
                 *auth_header,
                 "clone",
                 "--bare",
-                "--filter=tree:0",
+                CLONE_FILTER,
                 "--single-branch",
                 url,
                 str(target),
@@ -194,8 +212,7 @@ async def get_commits_between_tags(
     """Retrieve commits between base_tag and head_tag using git log in bare repository."""
     git_path = Path(git_dir)
     target_git_dir = git_path / ".git" if (git_path / ".git").is_dir() else git_path
-    sep = "\x1f"
-    fmt = f"%H{sep}%aI{sep}%s"
+    fmt = f"{_RECORD_START}%H{_FIELD_SEP}%aI{_FIELD_SEP}%s{_FIELD_SEP}%B"
     args = [
         f"--git-dir={target_git_dir}",
         "log",
@@ -211,27 +228,22 @@ async def get_commits_between_tags(
         raise KeyError(f"Tags not resolvable: {base_tag}..{head_tag}")
 
     commits: list[Commit] = []
-    for line in stdout.splitlines():
-        line = line.strip()
-        if not line:
+    for record in _RECORD_SPLIT_RE.split(stdout):
+        record = record.strip()
+        if not record:
             continue
-        parts = line.split(sep, 2)
-        if len(parts) == 3:
+        parts = record.split(_FIELD_SEP, 3)
+        if len(parts) >= 3:
             commits.append(
                 Commit(
                     sha=parts[0],
                     committed_at=parts[1],
-                    message=parts[2],
+                    message=parts[2].strip(),
+                    full_message=truncate_full_message(parts[3]) if len(parts) == 4 else None,
                 )
             )
-        elif len(parts) >= 2:
-            commits.append(
-                Commit(
-                    sha=parts[0],
-                    committed_at=parts[1],
-                    message="",
-                )
-            )
+        elif len(parts) == 2:
+            commits.append(Commit(sha=parts[0], committed_at=parts[1], message=""))
     return commits
 
 
