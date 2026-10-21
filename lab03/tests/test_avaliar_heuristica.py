@@ -382,6 +382,7 @@ def test_cli_fim_a_fim_markdown_e_erros(cenario, tmp_path, capsys):
         [
             "--consenso", str(consenso), "--releases-dir", str(releases_dir),
             "--saida", str(saida), "--saida-erros", str(saida_erros), "--max-erros", "1",
+            "--versoes", "v1",
         ]
     )  # fmt: skip
 
@@ -402,7 +403,8 @@ def test_cli_saida_csv(cenario, tmp_path):
     saida = tmp_path / "avaliacao.csv"
     assert main(["--consenso", str(consenso), "--releases-dir", str(releases_dir), "--saida", str(saida)]) == 0
     tabela = pd.read_csv(saida)
-    assert list(tabela["versao"]) == ["v1"]
+    assert list(tabela["versao"]) == list(HEURISTICS)
+    tabela = tabela[tabela["versao"] == "v1"].reset_index(drop=True)
     assert tabela.loc[0, "f1"] == pytest.approx(2 / 3)
     assert tabela.loc[0, "n_excluidas"] == 5
 
