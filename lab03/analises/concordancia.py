@@ -24,12 +24,23 @@ Unidade de análise (importante):
 Este módulo NUNCA cria `rotulos_*.csv` nem grava `consenso.csv` por padrão: o arquivo
 de consenso só é escrito quando o caminho de saída é informado explicitamente.
 
+Modo com avaliadores IA (desvio documentado, ver `docs/protocolo_consenso.md` seção 7):
+
+* `--origens` carrega e valida os arquivos auxiliares `rotulos_<id>_origem.csv`
+  (`repo_idx,release_idx,origem,modelo,esforco,data_utc`; `origem` ∈ {`ia`, `humano`}),
+  imprime o resumo de proveniência por avaliador e, se houver linha de IA, um aviso de que o
+  kappa mede a concordância entre execuções do mesmo modelo, não entre pessoas;
+* `consenso --modo-automatico --origens` gera o consenso por maioria **sem reunião**
+  (1-1-1 → `outro`/`incerto`), marcado com `consenso_modo=automatico_maioria`.
+
 Execução (a partir de `lab03/`), com os três arquivos em `validacao/`:
     uv run python -m analises.concordancia validar
     uv run python -m analises.concordancia kappa
     uv run python -m analises.concordancia divergencias --saida /tmp/divergencias.csv
     uv run python -m analises.concordancia consenso --saida /tmp/consenso_modelo.csv
     uv run python -m analises.concordancia verificar-consenso
+    uv run python -m analises.concordancia kappa --origens
+    uv run python -m analises.concordancia consenso --modo-automatico --origens --saida /tmp/consenso.csv
 """
 
 from __future__ import annotations
@@ -99,7 +110,28 @@ ORIGEM_UNANIMIDADE = "unanimidade"
 ORIGEM_MAIORIA = "maioria"
 ORIGEM_PENDENTE = "pendente"
 ORIGEM_REUNIAO = "reuniao"
+ORIGEM_DESEMPATE_AUTOMATICO = "desempate_automatico"
 ORIGENS_VALIDAS = (ORIGEM_UNANIMIDADE, ORIGEM_MAIORIA, ORIGEM_REUNIAO)
+
+# Proveniência dos rótulos (arquivo auxiliar `rotulos_<id>_origem.csv`).
+SUFIXO_ORIGEM = "_origem.csv"
+FONTE_IA = "ia"
+FONTE_HUMANO = "humano"
+FONTES_VALIDAS = (FONTE_IA, FONTE_HUMANO)
+COLUNAS_ORIGEM = ["repo_idx", "release_idx", "origem", "modelo", "esforco", "data_utc"]
+# Coluna opcional: nota de independência em texto livre (ex.: independência apenas parcial);
+# é repetida na saída do resumo de proveniência, para que a ressalva acompanhe os números.
+COLUNA_INDEPENDENCIA = "independencia"
+AVISO_ROTULOS_IA = (
+    "AVISO: rótulos de IA: o kappa mede concordância entre execuções do mesmo modelo, "
+    "não entre pessoas"
+)
+
+# Modo de consenso sem reunião (coluna `consenso_modo` do consenso.csv).
+MODO_AUTOMATICO_MAIORIA = "automatico_maioria"
+MODOS_CONSENSO = (MODO_AUTOMATICO_MAIORIA,)
+# Desempate 1-1-1 sem reunião: as categorias de "não classificável" do protocolo.
+DESEMPATE_AUTOMATICO = {"tipo_projeto": "outro", "entrega_real": "incerto"}
 
 MAX_ERROS_POR_TIPO = 5
 
@@ -468,6 +500,140 @@ def calcular_kappas(
 
 
 # --------------------------------------------------------------------------- #
+# Proveniência dos rótulos (avaliadores IA / humanos)
+# --------------------------------------------------------------------------- #
+def carregar_origem_validada(
+    path: Path | str, rotulos: pd.DataFrame, nome: str | None = None
+) -> pd.DataFrame:
+    """Carrega e valida o arquivo auxiliar de origem de um avaliador.
+
+    As chaves (`repo_idx`, `release_idx`) devem coincidir **exatamente** com as linhas do
+    `rotulos` já validado (sem duplicadas, ausentes ou sobrando); `origem` ∈ {`ia`, `humano`};
+    linhas `ia` exigem `modelo`; e, como `tipo_projeto`/`entrega_real` são por repositório,
+    a `origem` não pode variar entre as releases do mesmo repositório.
+    """
+    path = Path(path)
+    origem = nome or str(path)
+    try:
+        df = carregar_csv(path)
+    except (pd.errors.ParserError, pd.errors.EmptyDataError, UnicodeDecodeError) as exc:
+        raise RotulosInvalidosError(origem, [f"não foi possível ler o CSV: {exc}"]) from exc
+    faltantes = [c for c in COLUNAS_ORIGEM if c not in df.columns]
+    if faltantes:
+        raise RotulosInvalidosError(origem, [f"colunas ausentes: {', '.join(faltantes)}"])
+
+    erros: list[str] = []
+    duplicadas = _chave_linha(df)[df.duplicated(COLUNAS_CHAVE_RELEASE)]
+    _resumir(erros, "chaves (repo_idx/release_idx) duplicadas", sorted(set(duplicadas), key=_ordem_chave))
+    chaves_df, chaves_rot = set(_chave_linha(df)), set(_chave_linha(rotulos))
+    _resumir(erros, "linhas de rótulo sem origem (chaves ausentes)", sorted(chaves_rot - chaves_df, key=_ordem_chave))
+    _resumir(erros, "origem para chaves inexistentes nos rótulos", sorted(chaves_df - chaves_rot, key=_ordem_chave))
+
+    invalidas = ~df["origem"].isin(FONTES_VALIDAS)
+    _resumir(
+        erros,
+        f"origem fora de {list(FONTES_VALIDAS)} (linhas)",
+        [f"{i + 2}='{df.loc[i, 'origem']}'" for i in df.index[invalidas]],
+    )
+    sem_modelo = (df["origem"] == FONTE_IA) & (df["modelo"] == "")
+    _resumir(erros, "origem=ia sem modelo (linhas)", [str(i + 2) for i in df.index[sem_modelo]])
+    variacao = df[~invalidas].groupby("repo_idx")["origem"].nunique()
+    _resumir(
+        erros,
+        "origem diverge entre as releases do mesmo repositório (repo_idx)",
+        sorted(variacao[variacao > 1].index, key=_ordem_numerica),
+    )
+    if erros:
+        raise RotulosInvalidosError(origem, erros)
+    opcionais = [COLUNA_INDEPENDENCIA] if COLUNA_INDEPENDENCIA in df.columns else []
+    return df[COLUNAS_ORIGEM + opcionais].reset_index(drop=True)
+
+
+def carregar_origens(
+    validacao_dir: Path | str, rotulos: Mapping[str, pd.DataFrame]
+) -> dict[str, pd.DataFrame]:
+    """Carrega `rotulos_<id>_origem.csv` de cada avaliador de `rotulos` (nada é criado)."""
+    validacao_dir = Path(validacao_dir)
+    ausentes = [
+        f"rotulos_{a}{SUFIXO_ORIGEM}"
+        for a in rotulos
+        if not (validacao_dir / f"rotulos_{a}{SUFIXO_ORIGEM}").is_file()
+    ]
+    if ausentes:
+        raise ConcordanciaError(
+            f"Arquivos de origem ausentes em {validacao_dir}: {', '.join(ausentes)}. "
+            "Com --origens cada avaliador precisa do seu rotulos_<id>_origem.csv."
+        )
+    return {
+        a: carregar_origem_validada(
+            validacao_dir / f"rotulos_{a}{SUFIXO_ORIGEM}", df, nome=f"rotulos_{a}{SUFIXO_ORIGEM}"
+        )
+        for a, df in rotulos.items()
+    }
+
+
+def resumir_proveniencia(origens: Mapping[str, pd.DataFrame]) -> pd.DataFrame:
+    """Contagem de linhas por avaliador, origem, modelo e esforço."""
+    partes = [
+        df.groupby(["origem", "modelo", "esforco"], dropna=False)
+        .size()
+        .rename("n_linhas")
+        .reset_index()
+        .assign(avaliador=avaliador)
+        for avaliador, df in origens.items()
+    ]
+    colunas = ["avaliador", "origem", "modelo", "esforco", "n_linhas"]
+    if not partes:
+        return pd.DataFrame(columns=colunas)
+    return pd.concat(partes, ignore_index=True)[colunas]
+
+
+def tem_rotulos_ia(origens: Mapping[str, pd.DataFrame]) -> bool:
+    return any((df["origem"] == FONTE_IA).any() for df in origens.values())
+
+
+def formatar_proveniencia(origens: Mapping[str, pd.DataFrame]) -> str:
+    """Resumo textual da proveniência, seguido do aviso quando há rótulos de IA."""
+    linhas = ["proveniência dos rótulos (origem / modelo / esforço: nº de linhas):"]
+    resumo = resumir_proveniencia(origens)
+    for avaliador in origens:
+        partes = [
+            f"{r.origem}/{r.modelo or '-'}/{r.esforco or '-'}: {r.n_linhas}"
+            for r in resumo[resumo["avaliador"] == avaliador].itertuples()
+        ]
+        linhas.append(f"  {avaliador}: " + "; ".join(partes))
+        notas = _notas_independencia(origens[avaliador])
+        linhas.extend(f"    independência ({avaliador}): {nota}" for nota in notas)
+    if tem_rotulos_ia(origens):
+        linhas.append(f"!!! {AVISO_ROTULOS_IA} !!!")
+    return "\n".join(linhas)
+
+
+def _notas_independencia(origem: pd.DataFrame) -> list[str]:
+    """Valores distintos e não vazios da coluna opcional `independencia` (ordem de aparição)."""
+    if COLUNA_INDEPENDENCIA not in origem.columns:
+        return []
+    return [n for n in origem[COLUNA_INDEPENDENCIA].drop_duplicates() if n]
+
+
+def proveniencia_para_json(origens: Mapping[str, pd.DataFrame]) -> dict:
+    resumo = resumir_proveniencia(origens)
+    return {
+        "resumo": json.loads(resumo.to_json(orient="records", force_ascii=False)),
+        "independencia": {a: n for a, df in origens.items() if (n := _notas_independencia(df))},
+        "aviso": AVISO_ROTULOS_IA if tem_rotulos_ia(origens) else None,
+    }
+
+
+def fontes_por_unidade(
+    origens: Mapping[str, pd.DataFrame], dim: Dimensao, referencia: pd.DataFrame
+) -> pd.DataFrame:
+    """Matriz unidades x avaliadores com a origem (`ia`/`humano`) do rótulo, como em `rotulos_por_unidade`."""
+    como_rotulos = {a: df.rename(columns={"origem": dim.nome}) for a, df in origens.items()}
+    return rotulos_por_unidade(como_rotulos, dim, referencia)
+
+
+# --------------------------------------------------------------------------- #
 # Divergências e consenso
 # --------------------------------------------------------------------------- #
 def votar(votos: Sequence[str]) -> tuple[str | None, str]:
@@ -553,17 +719,90 @@ def gerar_modelo_consenso(
     return base[ordem]
 
 
+def votar_automatico(votos: Sequence[str], dim: Dimensao) -> tuple[str, str]:
+    """Maioria simples sem reunião: 1-1-1 vira a categoria "não classificável" da dimensão.
+
+    Retorna `(rótulo, origem)` com origem `unanimidade`, `maioria` ou `desempate_automatico`.
+    `release_corretiva` é binária e, com 3 avaliadores, nunca empata 1-1-1.
+    """
+    rotulo, origem = votar(votos)
+    if rotulo is not None:
+        return rotulo, origem
+    if dim.nome not in DESEMPATE_AUTOMATICO:  # pragma: no cover - binária não empata
+        raise ConcordanciaError(f"{dim.nome}: sem regra de desempate automático para {list(votos)}")
+    return DESEMPATE_AUTOMATICO[dim.nome], ORIGEM_DESEMPATE_AUTOMATICO
+
+
+def gerar_consenso_automatico(
+    rotulos: Mapping[str, pd.DataFrame],
+    origens: Mapping[str, pd.DataFrame],
+    referencia: pd.DataFrame,
+) -> pd.DataFrame:
+    """Consenso por maioria **sem reunião** (`consenso_modo=automatico_maioria`).
+
+    Maioria por unidade (repositório em `tipo_projeto`/`entrega_real`; release em
+    `release_corretiva`); 1-1-1 → `tipo_projeto=outro` / `entrega_real=incerto` com origem
+    `desempate_automatico`. Para cada dimensão acrescenta `<dim>_votos_ia` e
+    `<dim>_votos_humano`: quantos dos votos da unidade vieram de execuções de IA e de pessoas.
+    """
+    base = referencia[COLUNAS_IDENTIFICACAO].copy()
+    contagens: dict[str, list[int]] = {}
+    notas = [""] * len(base)
+    for dim in DIMENSOES:
+        matriz = rotulos_por_unidade(rotulos, dim, referencia)
+        fontes = fontes_por_unidade(origens, dim, referencia)
+        if fontes.isna().any().any():
+            raise ConcordanciaError(f"{dim.nome}: há unidades sem origem declarada")
+        resultado = {
+            chave: votar_automatico(list(linha), dim)
+            for chave, linha in zip(matriz.index, matriz.itertuples(index=False))
+        }
+        chaves = _chaves(base, dim)
+        base[dim.nome] = [resultado[k][0] for k in chaves]
+        base[f"{dim.nome}_origem"] = [resultado[k][1] for k in chaves]
+        for fonte in FONTES_VALIDAS:
+            por_chave = (fontes == fonte).sum(axis=1)
+            contagens[f"{dim.nome}_votos_{fonte}"] = [int(por_chave[k]) for k in chaves]
+        for i, k in enumerate(chaves):
+            if resultado[k][1] == ORIGEM_DESEMPATE_AUTOMATICO:
+                notas[i] = (notas[i] + " " if notas[i] else "") + (
+                    f"{dim.nome}: desempate automático 1-1-1 -> {resultado[k][0]}"
+                )
+    base["notas_consenso"] = notas
+    base["consenso_modo"] = MODO_AUTOMATICO_MAIORIA
+    for coluna, valores in contagens.items():
+        base[coluna] = valores
+    ordem = [
+        "repo_idx", "repo_name", "repo_url", "tipo_projeto", "tipo_projeto_origem",
+        "entrega_real", "entrega_real_origem", "release_idx", "tag_name", "published_at",
+        "release_url", "release_corretiva", "release_corretiva_origem", "notas_consenso",
+        "consenso_modo", *contagens,
+    ]  # fmt: skip
+    return base[ordem]
+
+
 def validar_consenso(df: pd.DataFrame, referencia: pd.DataFrame) -> list[str]:
     """Valida o `consenso.csv` final: formato, valores permitidos e nenhuma pendência."""
     erros = validar_rotulos(df, referencia)
     faltantes = [f"{d.nome}_origem" for d in DIMENSOES if f"{d.nome}_origem" not in df.columns]
     if faltantes:
         return erros + [f"colunas ausentes: {', '.join(faltantes)}"]
+    automatico = pd.Series(False, index=df.index)
+    if "consenso_modo" in df.columns:
+        modo = df["consenso_modo"]
+        _resumir(
+            erros,
+            f"consenso_modo fora de {list(MODOS_CONSENSO)} (linhas)",
+            [f"{i + 2}='{modo[i]}'" for i in df.index[~modo.isin(MODOS_CONSENSO)]],
+        )
+        automatico = modo == MODO_AUTOMATICO_MAIORIA
     for dim in DIMENSOES:
         origem = df[f"{dim.nome}_origem"]
         pendentes = origem == ORIGEM_PENDENTE
         _resumir(erros, f"{dim.nome} ainda pendente de reunião (linhas)", [str(i + 2) for i in df.index[pendentes]])
-        invalidas = ~pendentes & ~origem.isin(ORIGENS_VALIDAS)
+        # `desempate_automatico` só vale no modo sem reunião (consenso_modo=automatico_maioria)
+        validas = origem.isin(ORIGENS_VALIDAS) | ((origem == ORIGEM_DESEMPATE_AUTOMATICO) & automatico)
+        invalidas = ~pendentes & ~validas
         _resumir(
             erros,
             f"{dim.nome}_origem fora de {list(ORIGENS_VALIDAS)} (linhas)",
@@ -613,9 +852,14 @@ def _construir_parser() -> argparse.ArgumentParser:
     )
     sub = parser.add_subparsers(dest="comando", required=True)
 
-    def comum(p: argparse.ArgumentParser, avaliadores: bool = False) -> None:
+    def comum(p: argparse.ArgumentParser, avaliadores: bool = False, origens: bool = True) -> None:
         p.add_argument("--validacao-dir", default=DEFAULT_VALIDACAO_DIR, help="Diretório com rotulos_<id>.csv")
         p.add_argument("--planilha", default=DEFAULT_PLANILHA, help="Planilha em branco de referência (chaves)")
+        if origens:
+            p.add_argument(
+                "--origens", action="store_true",
+                help="Carrega rotulos_<id>_origem.csv (proveniência ia/humano) e a reporta na saída",
+            )  # fmt: skip
         if avaliadores:
             p.add_argument(
                 "--avaliadores", nargs="+", default=IDS_AVALIADORES, choices=IDS_AVALIADORES,
@@ -637,9 +881,13 @@ def _construir_parser() -> argparse.ArgumentParser:
     comum(p_cons)
     p_cons.add_argument("--saida", required=True, help="Caminho do CSV de consenso (obrigatório, sem default)")
     p_cons.add_argument("--forcar", action="store_true", help="Sobrescreve a saída se existir")
+    p_cons.add_argument(
+        "--modo-automatico", action="store_true",
+        help="Consenso por maioria SEM reunião (1-1-1 -> outro/incerto); exige --origens",
+    )  # fmt: skip
 
     p_ver = sub.add_parser("verificar-consenso", help="Verifica o consenso.csv final (sem pendências)")
-    comum(p_ver)
+    comum(p_ver, origens=False)
     p_ver.add_argument("--consenso", default=DEFAULT_CONSENSO, help="Caminho do consenso.csv")
     return parser
 
@@ -649,6 +897,7 @@ def _executar(args: argparse.Namespace) -> int:
 
     if args.comando == "validar":
         rotulos = carregar_avaliadores(args.validacao_dir, referencia, args.avaliadores)
+        origens = carregar_origens(args.validacao_dir, rotulos) if args.origens else None
         for avaliador, df in rotulos.items():
             n_invalidas = len(referencia) - len(df)
             extra = (
@@ -658,30 +907,51 @@ def _executar(args: argparse.Namespace) -> int:
                 else ""
             )
             print(f"[ok] rotulos_{avaliador}.csv: {len(df)} linhas válidas{extra}")
+            if origens is not None:
+                print(f"[ok] rotulos_{avaliador}{SUFIXO_ORIGEM}: {len(origens[avaliador])} linhas de origem")
+        if origens is not None:
+            print(formatar_proveniencia(origens))
         return 0
 
     if args.comando == "verificar-consenso":
         path = Path(args.consenso)
         if not path.is_file():
             raise ConcordanciaError(f"Consenso não encontrado: {path}")
-        erros = validar_consenso(carregar_csv(path), referencia)
+        consenso = carregar_csv(path)
+        erros = validar_consenso(consenso, referencia)
         if erros:
             raise RotulosInvalidosError(str(path), erros)
         print(f"[ok] {path}: consenso completo e válido")
+        if "consenso_modo" in consenso.columns:
+            print(
+                f"!!! AVISO: consenso gerado sem reunião (consenso_modo={MODO_AUTOMATICO_MAIORIA}): "
+                "não é um consenso deliberado entre pessoas !!!"
+            )
         return 0
 
+    if args.comando == "consenso" and args.modo_automatico and not args.origens:
+        raise ConcordanciaError(
+            "--modo-automatico exige --origens: sem o registro de proveniência não há como "
+            "declarar quantos votos vieram de IA e de pessoas."
+        )
+
     rotulos = carregar_avaliadores(args.validacao_dir, referencia)
+    origens = carregar_origens(args.validacao_dir, rotulos) if args.origens else None
+    if origens is not None:
+        print(formatar_proveniencia(origens))
 
     if args.comando == "kappa":
         resultados = calcular_kappas(rotulos, referencia)
         print(formatar_relatorio_kappa(resultados))
+        if origens is not None and tem_rotulos_ia(origens):
+            print(f"!!! {AVISO_ROTULOS_IA} !!!")
         if args.saida_json:
             destino = Path(args.saida_json)
             destino.parent.mkdir(parents=True, exist_ok=True)
-            destino.write_text(
-                json.dumps([asdict(r) for r in resultados], ensure_ascii=False, indent=2) + "\n",
-                encoding="utf-8",
-            )
+            dados: object = [asdict(r) for r in resultados]
+            if origens is not None:  # com --origens o JSON vira objeto (resultados + proveniência)
+                dados = {"resultados": dados, "proveniencia": proveniencia_para_json(origens)}
+            destino.write_text(json.dumps(dados, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
         return 0
 
     if args.comando == "divergencias":
@@ -692,6 +962,22 @@ def _executar(args: argparse.Namespace) -> int:
         if args.saida:
             _gravar_csv(div, Path(args.saida), args.forcar)
             print(f"[*] Divergências gravadas em {args.saida}")
+        return 0
+
+    if args.comando == "consenso" and args.modo_automatico:
+        assert origens is not None  # garantido pela checagem acima
+        automatico = gerar_consenso_automatico(rotulos, origens, referencia)
+        _gravar_csv(automatico, Path(args.saida), args.forcar)
+        for dim in DIMENSOES:
+            contagem = automatico[f"{dim.nome}_origem"].value_counts()
+            print(
+                f"{dim.nome}: "
+                + ", ".join(f"{o}={int(contagem.get(o, 0))}" for o in (ORIGEM_UNANIMIDADE, ORIGEM_MAIORIA, ORIGEM_DESEMPATE_AUTOMATICO))
+                + " (linhas)"
+            )
+        print(f"[*] Consenso automático (sem reunião, {MODO_AUTOMATICO_MAIORIA}) gravado em {args.saida}")
+        if tem_rotulos_ia(origens):
+            print(f"!!! {AVISO_ROTULOS_IA} !!!")
         return 0
 
     if args.comando == "consenso":

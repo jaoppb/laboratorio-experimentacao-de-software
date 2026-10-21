@@ -237,10 +237,93 @@ release_corretiva release       300    x.xxx      xx.x%  ...
 
 ## 6. Estado atual e pendências humanas
 
-* Existe apenas `validacao/rotulos_marcela.csv`, **válido só para 150 das 300 linhas**: as outras
+* Existem `validacao/rotulos_marcela.csv`, **válido só para 150 das 300 linhas**: as outras
   150 foram rotuladas sobre placeholders (sorteio incompleto, corrigido em `amostra_ouro.md`) e
-  estão em `validacao/marcela_linhas_invalidas.csv`. Marcela ainda precisa rotular as 150
-  linhas novas (30 repositórios, incluindo `tipo_projeto` e `entrega_real` deles). Faltam
-  `rotulos_joao.csv` e `rotulos_gabriel.csv` (300 linhas reais cada), que dependem da
-  rotulação manual (#57/#61).
+  estão em `validacao/marcela_linhas_invalidas.csv`; e `validacao/rotulos_gabriel.csv` (300 linhas),
+  **produzido por um agente de IA** a pedido de Gabriel, com independência apenas parcial (o mesmo
+  assistente implementou a heurística v1), conforme [`PROVENIENCIA.md`](../validacao/PROVENIENCIA.md).
+  Marcela ainda precisa rotular as 150 linhas novas (30 repositórios, incluindo `tipo_projeto` e
+  `entrega_real` deles). Falta `rotulos_joao.csv` (300 linhas reais), que depende da rotulação (#57).
+  Para fechar os três slots com avaliadores IA, veja a seção 7.
 * Faltam: o cálculo do kappa real, a reunião de consenso e o commit de `validacao/consenso.csv`.
+
+## 7. Modo com avaliadores IA (desvio documentado)
+
+O protocolo das seções 1 a 6 pressupõe três **pessoas** rotulando de forma independente e uma
+reunião de consenso. Como os slots (`joao`, `gabriel`, `marcela`) podem ser preenchidos por
+execuções de um agente de IA, existe um modo que mantém os mesmos arquivos e formatos, mas
+**declara a proveniência de cada rótulo** e muda a leitura dos resultados. É um desvio do
+protocolo original e deve ser descrito como tal na Metodologia (nunca como "três avaliadores
+humanos"). Cada arquivo continua registrado em [`PROVENIENCIA.md`](../validacao/PROVENIENCIA.md).
+
+### 7.1 Arquivo auxiliar de origem (`validacao/rotulos_<slot>_origem.csv`)
+
+Um por avaliador, uma linha por linha do `rotulos_<slot>.csv` (as mesmas chaves):
+
+```
+repo_idx,release_idx,origem,modelo,esforco,data_utc[,independencia]
+```
+
+* `origem` ∈ {`ia`, `humano`}; linhas `ia` exigem `modelo`; `esforco` e `data_utc` são livres
+  (`desconhecido` quando não se sabe, p.ex. `rotulos_gabriel.csv`: `claude-opus-5.5 (Claude Code)`
+  e `desconhecido`);
+* `independencia` (opcional): ressalva em texto livre, repetida na saída da ferramenta (ex.:
+  `parcial: o mesmo assistente implementou a heurística v1 (#59)`);
+* as chaves devem coincidir **exatamente** com as linhas do `rotulos_<slot>.csv` (sem faltar,
+  sobrar ou duplicar; se o avaliador usa `<slot>_linhas_invalidas.csv`, só as linhas válidas);
+* como `tipo_projeto`/`entrega_real` são por repositório, a `origem` não pode variar entre as
+  releases do mesmo repositório (um repositório é todo `ia` ou todo `humano`).
+
+Sem `--origens` nada muda: a ferramenta só lê esses arquivos quando a opção é pedida.
+
+### 7.2 O que muda na interpretação
+
+* **Kappa entre execuções.** Com avaliadores IA do mesmo modelo, o kappa de Fleiss mede a
+  concordância entre **execuções do mesmo modelo**, não entre pessoas. Os erros são
+  correlacionados, então o kappa tende a superestimar a confiabilidade do critério e não pode ser
+  lido como evidência de que humanos concordariam. Com `--origens`, `validar`, `kappa`,
+  `divergencias` e `consenso` imprimem o resumo de proveniência (linhas por avaliador, origem,
+  modelo e esforço) e, havendo qualquer linha `ia`, a linha de aviso: `rótulos de IA: o kappa mede
+  concordância entre execuções do mesmo modelo, não entre pessoas`. O `kappa --json` vira um
+  objeto `{"resultados": [...], "proveniencia": {...}}` (sem `--origens` continua a lista).
+* **Independência.** Cada execução deve ser separada das demais, sem ver a heurística, as outras
+  execuções nem os tipos de projeto definidos pelos agentes do grupo. Quando isso não vale por
+  inteiro (caso de `rotulos_gabriel.csv`), a ressalva vai na coluna `independencia` e em
+  `PROVENIENCIA.md`.
+* **Consenso automático, sem reunião.** `consenso --modo-automatico --origens --saida <caminho>`
+  aplica a maioria simples por unidade (repositório em `tipo_projeto`/`entrega_real`; release em
+  `release_corretiva`). Um empate 1-1-1 vira `tipo_projeto=outro` / `entrega_real=incerto`, com
+  origem `desempate_automatico` e a nota em `notas_consenso`; `release_corretiva` é binária e não
+  empata. O arquivo tem as colunas de sempre mais `consenso_modo=automatico_maioria` e, por
+  dimensão, `<dim>_votos_ia` e `<dim>_votos_humano` (quantos dos 3 votos da unidade vieram de cada
+  origem). A opção `--modo-automatico` é obrigatória e exige `--origens`; sem ela `consenso`
+  continua gerando só o modelo da reunião (com pendências), e o arquivo automático nunca é
+  confundido com uma decisão deliberada. `verificar-consenso` aceita o arquivo e lembra que ele foi
+  gerado sem reunião; `desempate_automatico` só é aceito quando `consenso_modo=automatico_maioria`.
+* **Uso a jusante.** O `consenso.csv` automático serve de referência para a avaliação da heurística
+  (#62) e para a RQ 06 somente com essa ressalva declarada; as análises devem poder separar o que
+  veio de IA do que veio de pessoas (colunas `*_votos_ia`/`*_votos_humano`).
+
+### 7.3 Substituição de slots por pessoas
+
+Pessoas podem assumir um slot depois, **mantendo os mesmos nomes de arquivo**:
+
+1. a pessoa rotula e substitui as linhas em `rotulos_<slot>.csv` (ou o arquivo todo);
+2. no `rotulos_<slot>_origem.csv`, as linhas trocadas passam a `origem=humano` (`modelo`/`esforco`
+   podem ficar vazios; `data_utc` é a data da rotulação) e as demais continuam `ia`; respeite a
+   regra de repositório inteiro;
+3. atualiza-se `PROVENIENCIA.md` (uma linha nova ou ajustada, sem apagar a história);
+4. recalculam-se `kappa` e o consenso: o kappa passa a misturar origens (o resumo mostra quantas
+   linhas de cada), e quando os três slots forem `humano` o aviso deixa de aparecer e vale o
+   protocolo das seções 1 a 6 (reunião para os 1-1-1). Um `consenso.csv` já gerado em modo
+   automático deve ser regerado ou substituído pelo resultado da reunião; um arquivo com
+   `consenso_modo` não vira "de reunião" por edição manual da coluna.
+
+### 7.4 Comandos
+
+```bash
+uv run python -m analises.concordancia validar --origens
+uv run python -m analises.concordancia kappa --origens --json dados/analises/kappa_fleiss.json
+uv run python -m analises.concordancia consenso --modo-automatico --origens --saida validacao/consenso.csv
+uv run python -m analises.concordancia verificar-consenso
+```
