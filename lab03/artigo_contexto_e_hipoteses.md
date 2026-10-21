@@ -35,7 +35,7 @@ As hipóteses a seguir foram formuladas a priori, **antes da inspeção empíric
 
 ### Hipótese da RQ 01
 - **Questão de Pesquisa 01:** *Qual a frequência de deploys dos repositórios populares que usam CI/CD?*
-- **Definição Operacional:** Número de releases publicadas divididas por 52,1 semanas na janela de observação de 12 meses.
+- **Definição Operacional:** Número de releases publicadas divididas por 52,14 semanas (365/7) na janela de observação de 12 meses (365 dias).
 - **Hipótese Informal:** Espera-se que a grande maioria dos repositórios open-source populares se enquadre nas faixas **Medium** (entre 1 release por mês e 1 por semana) e **High** (entre 1 e 7 releases por semana), com mediana inferior a 0,5 releases/semana, e que a ocorrência de repositórios no nível **Elite** (≥ 7 releases por semana, ou seja, quase diária) seja extremamente rara.
 - **Justificativa Teórica:** No ecossistema open-source, releases públicas implicam geração de artefatos estáveis, controle de versionamento semântico (SemVer) e testes de regressão mais extensos antes do lançamento público para a comunidade de usuários externos. Ao contrário de serviços web internos com integração e implantação contínuas totalmente automatizadas onde múltiplos deploys diários são habituais, o ciclo de empacotamento de bibliotecas e ferramentas públicas costuma ter cadência espaçada (quinzenal ou mensal).
 

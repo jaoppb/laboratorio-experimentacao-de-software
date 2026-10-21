@@ -39,7 +39,7 @@ import pyarrow.parquet as pq
 import yaml
 
 from metricas.cfr_b import DEFAULT_HEURISTIC, HEURISTICS
-from metricas.schemas import Commit, Release, _parse_datetime
+from metricas.schemas import Commit, Release, _parse_datetime, parse_window_end
 from pipeline.commits import ComparisonStatus, ReleaseCommits
 from pipeline.http_client import GitHubClient
 from pipeline.orchestrator import (
@@ -150,7 +150,7 @@ async def backfill_cfr_b(
     janela = config.get("janela", {})
     dirs = config.get("diretorios", {})
     window_start = _parse_datetime(janela.get("inicio", "2025-10-01"))
-    window_end = _parse_datetime(janela.get("fim", "2026-09-30"))
+    window_end = parse_window_end(janela.get("fim", "2026-09-30"))
     heuristic = _resolve_heuristic(config)
 
     dados_dir = Path(dirs.get("dados", "dados"))

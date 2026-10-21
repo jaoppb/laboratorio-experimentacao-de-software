@@ -13,7 +13,7 @@ from typing import Any
 import pyarrow as pa
 import pyarrow.parquet as pq
 
-from metricas.schemas import WorkflowRun, _parse_datetime
+from metricas.schemas import WorkflowRun, _parse_datetime, parse_window_end
 from metricas.stability import ConclusionCategory, classify_conclusion
 from pipeline.http_client import GitHubClient
 
@@ -399,7 +399,8 @@ async def collect_workflow_runs(
         if end_date is None:
             end_dt = datetime.now(timezone.utc)
         else:
-            end_dt = _to_utc_datetime(end_date)
+            # A date-only end_date means the end of that day (see `parse_window_end`).
+            end_dt = _to_utc_datetime(parse_window_end(end_date))  # type: ignore[arg-type]
 
         if start_date is None:
             start_dt = end_dt.replace(year=end_dt.year - 1)

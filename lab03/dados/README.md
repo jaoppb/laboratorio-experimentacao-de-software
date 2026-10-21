@@ -20,6 +20,18 @@ Este diretório contém os artefatos de dados gerados pelo pipeline de mineraç�
 
 ---
 
+### Janela de observação
+
+`janela.inicio` e `janela.fim` (`config.yaml`) definem a janela. Regras (Issue #56, decisão do grupo):
+
+- `inicio` só com data (`"2025-10-01"`) vale `2025-10-01T00:00:00Z`.
+- `fim` só com data (`"2026-09-30"`) vale o **fim do dia**: o último instante é `2026-09-30T23:59:59.999999Z` (equivale ao limite exclusivo `2026-10-01T00:00:00Z`). Releases e runs de todo o dia 30/09 entram na janela. Um `fim` com horário (`"2026-09-30T00:00:00Z"`) é usado como está.
+- A interpretação de `fim` está em um único ponto, `metricas/schemas.py::parse_window_end`, usado pelo filtro de releases (`pipeline/releases.py::filter_window`), pela coleta de runs (`created=início..fim`), pelo corte de censura do CFR (b) (`fim − 7 dias` = `2026-09-23T23:59:59.999999Z`) e pelas amostras-ouro.
+- A janela tem **365 dias = 365/7 ≈ 52,14 semanas** (antes: 364 dias, divisor 52,1). Esse é o denominador das frequências de deploy (`deployment_frequency`, `c2_`, `c3_`) e do limiar mensal (12/(365/7) ≈ 0,230 deploys/semana).
+- Os 330 repositórios (seleção) e a amostra-ouro foram escolhidos com a janela antiga (`fim` = 30/09 00:00Z); isso é um desvio documentado: a regeneração recoleta os mesmos 330 com a janela nova.
+
+---
+
 ## 2. Dicionário de Dados: `repositorios.parquet` e `repositorios.csv`
 
 | Coluna | Tipo | Unidade | Descrição / Origem |
@@ -32,12 +44,12 @@ Este diretório contém os artefatos de dados gerados pelo pipeline de mineraç�
 | `default_branch` | String | - | Branch principal do repositório (`defaultBranchRef.name`; `main` se ausente). |
 | `created_at` | String (ISO 8601 UTC) | timestamp | Data e hora de criação do repositório no GitHub. |
 | `contributors_count` | Inteiro | pessoas | Total de contribuidores inferido pelo último número de página do cabeçalho `Link` de `GET /repos/.../contributors?per_page=1&anon=true` (sem `Link`, usa o tamanho da página; `0` se a requisição falhar). |
-| `releases_count_window` | Inteiro | releases | Total de releases publicadas (`draft = false` e `prerelease = false`) com `published_at` dentro da janela de 12 meses (`janela.inicio` a `janela.fim` do `config.yaml`, limites inclusivos). |
+| `releases_count_window` | Inteiro | releases | Total de releases publicadas (`draft = false` e `prerelease = false`) com `published_at` dentro da janela de 12 meses (`janela.inicio` a `janela.fim` do `config.yaml`, limites inclusivos; `fim` só com data vale até o **fim do dia**, ver subseção "Janela de observação"). |
 | `total_releases` | Inteiro | releases | Total de releases publicadas coletadas, **incluindo pré-releases e excluindo rascunhos** (`isDraft` e releases sem `publishedAt` são descartadas na coleta). A coleta pagina da mais recente para a mais antiga e para na página que contém a release âncora (última release estável anterior à janela); portanto **não é o histórico completo** do repositório. |
 | `workflow_runs_count_window` | Inteiro | runs | Quantidade de workflow runs válidos dentro da janela (`event = push`, default branch). Run válido é o de conclusão `success` ou de falha, onde falha = `failure`, `timed_out` ou `startup_failure` (`metricas/stability.py::classify_conclusion`). Conclusões `cancelled`, `skipped`, `neutral`, `action_required`, `stale` e nulas (em andamento) não contam. |
 | `total_workflow_runs` | Inteiro | runs | Total de workflow runs (`event = push`, default branch) recuperados na janela, de qualquer conclusão, deduplicados por `id`. Sempre `>= workflow_runs_count_window`. |
-| `deployment_frequency` | Float | releases/semana | Frequência de entrega: `releases_count_window / 52.1 semanas`. |
-| `deployment_tier` | String | faixa | Nível DORA de frequência (`Elite`: $\ge 7$/sem, `High`: $1 \le x < 7$/sem, `Medium`: $\ge 12/52.1$/sem, `Low`: $< 12/52.1$/sem). |
+| `deployment_frequency` | Float | releases/semana | Frequência de entrega: `releases_count_window / (365/7) semanas` (≈ 52,14; a janela tem 365 dias). |
+| `deployment_tier` | String | faixa | Nível DORA de frequência (`Elite`: $\ge 7$/sem, `High`: $1 \le x < 7$/sem, `Medium`: $\ge 12/(365/7)$/sem ≈ 0,230, `Low`: abaixo disso). |
 | `lead_time_a_hours` | Float | horas | Mediana do lead time por release (variante a): tempo decorrido entre o commit mais antigo da release (data de autor) e sua publicação. Valores negativos por relógio adiantado são limitados a 0. Releases sem commits novos ou sem comparação (`first_release`, `not_found`) não entram. Nulo quando nenhuma release da janela pôde ser avaliada. |
 | `lead_time_b_hours` | Float | horas | Mediana do lead time por commit (variante b): mediana de `publicação da release − data de autor do commit` sobre todos os commits de todas as releases avaliadas (mesmas regras de exclusão e limite em 0 da variante a). Nulo quando nenhuma release foi avaliada. |
 | `lead_time_tier` | String | faixa | Nível DORA de lead time baseado na variante (a) em dias (`Elite`: $< 1$ dia, `High`: $1 \le x < 7$ dias, `Medium`: $7 \le x < 30$ dias, `Low`: $\ge 30$ dias). Quando `lead_time_a_hours` é nulo (falta de dado), a faixa também é **nula** (não é `Low` nem `Elite`) e a métrica sai da nota geral (regra de nulos, decisão Q18b). |
@@ -52,22 +64,22 @@ Este diretório contém os artefatos de dados gerados pelo pipeline de mineraç�
 | `total_prereleases` | Inteiro | releases | Total de pré-releases (não rascunho) entre as releases coletadas; está contido em `total_releases` e sujeito ao mesmo limite de coleta (até a release âncora). |
 | `tags_count_window` | Inteiro | tags | Total de Git tags apontando para commits dentro da janela de 12 meses. |
 | `total_tags` | Inteiro | tags | Total de Git tags encontradas no repositório. |
-| `c2_deployment_frequency` | Float | deploys/semana | Frequência de deploy sob a combinação C2: `(releases + pré-releases na janela) / 52.1 semanas`. |
+| `c2_deployment_frequency` | Float | deploys/semana | Frequência de deploy sob a combinação C2: `(releases + pré-releases na janela) / (365/7) semanas`. |
 | `c2_lead_time_b_hours` | Float | horas | Mediana do lead time por commit (variante b) para todos os commits entregues em releases e pré-releases da janela. |
-| `c3_deployment_frequency` | Float | tags/semana | Frequência de deploy sob a combinação C3: `tags na janela / 52.1 semanas`. |
+| `c3_deployment_frequency` | Float | tags/semana | Frequência de deploy sob a combinação C3: `tags na janela / (365/7) semanas`. |
 | `c3_lead_time_b_hours` | Float | horas | Mediana do lead time por commit (variante b) para commits entregues entre tags consecutivas da janela. |
 | `cfr_b` | Float | proporção (0.0 a 1.0) | Change Failure Rate variante (b), proxy de entrega: `cfr_b_failed_releases / cfr_b_evaluated_releases`. Nulo quando `cfr_b_evaluated_releases = 0` (todas as releases da janela censuradas ou ignoradas). Definição na subseção 2.1. |
 | `cfr_b_tier` | String | faixa | Nível DORA de CFR sobre `cfr_b`, com as mesmas faixas de `cfr_tier` (`Elite`: $\le 15\%$, `High`: $15\% < x \le 30\%$, `Medium`: $30\% < x \le 45\%$, `Low`: $> 45\%$). Diferente de `cfr_tier`, é **nulo** (e não `Low`) quando `cfr_b` é nulo. |
 | `cfr_b_failed_releases` | Inteiro | releases | Releases da janela classificadas como falhas (seguidas, em até 7 dias, de uma release corretiva). Numerador de `cfr_b`; nunca nulo. |
 | `cfr_b_evaluated_releases` | Inteiro | releases | Releases avaliadas (falhas + sem falha). Denominador de `cfr_b`; nunca nulo. |
-| `cfr_b_censored_releases` | Inteiro | releases | Releases publicadas nos últimos 7 dias da janela (`published_at > janela.fim − 7 dias`), que ainda não podem ser avaliadas e ficam fora do denominador; nunca nulo. |
+| `cfr_b_censored_releases` | Inteiro | releases | Releases publicadas nos últimos 7 dias da janela (`published_at > janela.fim − 7 dias`, com `janela.fim` = fim do dia: para `2026-09-30`, o corte é `2026-09-23T23:59:59.999999Z`), que ainda não podem ser avaliadas e ficam fora do denominador; nunca nulo. |
 | `cfr_b_skipped_releases` | Inteiro | releases | Releases ignoradas porque a próxima release veio em até 7 dias, mas seus commits são desconhecidos (`status` `first_release` ou `not_found`), então não dá para julgar se ela é corretiva; ficam fora do denominador; nunca nulo. |
 
 ### 2.1 CFR (b): release corretiva (`metricas/cfr_b.py`)
 
 O CFR (b) mede falhas de **entrega** a partir das releases da definição principal (C1: publicadas, sem pré-releases), as mesmas de `releases/`. Para cada release `R` da janela, em ordem cronológica:
 
-1. **Censurada** (`cfr_b_censored_releases`): `R` foi publicada depois de `janela.fim − 7 dias`. Não há tempo de observação suficiente; fica fora do denominador.
+1. **Censurada** (`cfr_b_censored_releases`): `R` foi publicada depois de `janela.fim − 7 dias` (corte em `2026-09-23T23:59:59.999999Z` para `fim: "2026-09-30"`). Não há tempo de observação suficiente; fica fora do denominador.
 2. **Sem falha**: não existe próxima release ou ela veio mais de 7 dias depois de `R`. Conta no denominador.
 3. **Ignorada** (`cfr_b_skipped_releases`): a próxima release veio em até 7 dias, mas os commits dela são desconhecidos (`status ≠ ok` em `releases/`). Fica fora do denominador.
 4. Caso contrário, a próxima release `N` (em até 7 dias) é avaliada pela **heurística de release corretiva**: se `N` é corretiva, `R` é **falha** (`cfr_b_failed_releases`); senão, `R` é sem falha.

@@ -1,7 +1,7 @@
 """Unit tests for Deployment Frequency calculation and DORA classification.
 
 Follows requirements of Issue #32:
-- deployment_frequency: releases publicadas / 52.1 semanas
+- deployment_frequency: releases publicadas / 52,14 semanas (365 dias)
 - Classificação Elite/High/Medium/Low pela tabela do enunciado
 - Classificação geral: mediana das notas disponíveis (4, ou 3 se lead time nulo), arredondada para baixo
 - Testes: (4, 3, 3, 1) -> High; valores nos limites das faixas; repositório com 0 releases
@@ -36,13 +36,13 @@ class TestDeploymentFrequencyCalculation:
         assert freq == 0.0
 
     def test_repository_with_valid_releases(self):
-        """Calculate frequency correctly over default 52.1 weeks."""
+        """Calculate frequency correctly over default 365/7 weeks (52.14)."""
         releases = [
             Release(tag_name=f"v1.{i}.0", published_at=f"2026-0{i+1}-01T00:00:00Z")
             for i in range(5)
         ]
         freq = calculate_deployment_frequency(releases)
-        assert pytest.approx(freq) == 5 / 52.1
+        assert pytest.approx(freq) == 5 / (365 / 7)
 
     def test_ignores_drafts_and_prereleases(self):
         """Drafts and prereleases must be ignored in primary deployment frequency."""
