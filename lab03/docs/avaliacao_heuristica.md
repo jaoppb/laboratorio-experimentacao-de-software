@@ -4,9 +4,10 @@
 **Heurísticas:** `metricas/cfr_b.py` (`HEURISTICS`, `DEFAULT_HEURISTIC`)
 **Referência:** `validacao/consenso.csv` (Issue #65) · **Dados de releases:** `dados/releases/*.parquet`
 
-> Este documento descreve a **ferramenta e o protocolo**. Ele não traz números reais: o
-> `consenso.csv` e os Parquet de releases só existem depois das etapas humanas (seção 6).
-> A tabela da seção 5 é um **modelo** a ser preenchido com a saída real da ferramenta.
+> Este documento descreve a **ferramenta e o protocolo** e traz, na seção 5, a tabela da execução real
+> (21/10/2026). A análise completa (recortes, análise de erros, avisos de validade e reprodução) está em
+> [`resultados_avaliacao_heuristica.md`](./resultados_avaliacao_heuristica.md). **A referência é um consenso automático
+> majoritariamente de IA, não de pessoas** (`../validacao/PROVENIENCIA.md`).
 
 ## 1. Objetivo
 
@@ -127,28 +128,39 @@ não um resultado):
      parte dos repositórios só para a avaliação final.
   4. Cada versão testada, mesmo as que falharam, entra na tabela do artigo.
 
-## 5. Modelo da tabela de resultados (preencher com a saída real)
+## 5. Resultados da execução real (Issue #62)
 
-Data da execução: `__/__/____` · commit do código: `_______` · consenso: `validacao/consenso.csv`
-(commit `_______`) · releases no consenso: `300` · avaliadas: `___` · excluídas: `___`
+Data da execução: `21/10/2026` · commit do código: `11a80a5` · consenso: `validacao/consenso.csv`
+(commit `76ff38b`, **consenso automático por maioria, majoritariamente de IA, sem reunião**) · releases no consenso: `300` ·
+avaliadas: `298` · excluídas: `2`
 
-| Versão | Regra                                                          | Precisão | Recall | F1  | N avaliadas | N excluídas | VP | FP | FN | VN | F1 ≥ 0,70 |
-|--------|----------------------------------------------------------------|---------:|-------:|----:|------------:|------------:|---:|---:|---:|---:|:---------:|
-| v1     | só o patch muda E algum commit cita revert/hotfix/fix          | _        | _      | _   | _           | _           | _  | _  | _  | _  | _         |
-| v2     | _(preencher se a v1 ficar abaixo da meta)_                     | _        | _      | _   | _           | _           | _  | _  | _  | _  | _         |
+Referência (a): o `consenso.csv` inteiro (janela padrão). Os recortes (b1) rótulo humano de Marcela, (b2) consenso nas
+mesmas 150 linhas, (c) linhas unânimes e (d) linhas só de IA estão em
+[`resultados_avaliacao_heuristica.md`](./resultados_avaliacao_heuristica.md), seção 3.
 
-Exclusões por motivo: sem arquivo de releases `_` · tag ausente `_` · `status != ok` `_` ·
-sem release anterior `_`.
+| Versão          | Regra                                                          | Precisão | Recall |   F1  | N avaliadas | N excluídas |  VP |  FP |  FN |  VN | F1 ≥ 0,70 |
+|-----------------|----------------------------------------------------------------|---------:|-------:|------:|------------:|------------:|----:|----:|----:|----:|:---------:|
+| v1              | só o patch muda E algum commit cita revert/hotfix/fix          |    0,614 |  0,638 | 0,625 |         298 |           2 |  81 |  51 |  46 | 120 | não       |
+| v1_full_message | igual à v1, lendo a mensagem completa (assunto + corpo)        |    0,599 |  0,646 | 0,621 |         298 |           2 |  82 |  55 |  45 | 116 | não       |
+| v2              | _(a escrever por Gabriel, pois nenhuma versão atingiu a meta)_ |        _ |      _ |     _ |           _ |           _ |   _ |   _ |   _ |   _ | _         |
 
-**Versão final para o pipeline:** `____` (F1 = `____`). Justificativa: `____`.
+Exclusões por motivo: sem arquivo de releases `0` · tag ausente `0` · `status != ok` `2` (`first_release`) ·
+sem release anterior `0`.
+
+Contra o **rótulo humano** de Marcela (150 linhas, 30 repositórios): F1 de 0,437 (`v1`) e 0,443 (`v1_full_message`).
+
+**Versão final para o pipeline:** `não definida` (F1 máximo = 0,667, em um recorte; 0,625 na janela padrão). Justificativa:
+nenhuma versão atingiu F1 ≥ 0,70 em nenhuma das cinco referências; pela regra da seção 4 (passo 2) o próximo passo é a
+`heuristic_v2`. `DEFAULT_HEURISTIC` continua `v1` até lá.
 
 ## 6. Estado atual e pendências humanas
 
-Nada neste repositório contém resultados reais. Pendente:
+Feito: rótulos (#57, #61, #64), kappa e consenso automático (#65, sem reunião), persistência de `dados/releases/` com
+mensagens completas e execução real da avaliação (seção 5 e `resultados_avaliacao_heuristica.md`). Pendente:
 
-* rotulação independente de `rotulos_joao.csv` e `rotulos_gabriel.csv` (#57, #61); já existe `rotulos_marcela.csv` (#64);
-* cálculo do kappa, reunião de consenso e commit de `validacao/consenso.csv` (#65);
-* persistência de `dados/releases/` da amostra-ouro (`analises.persistir_amostra_ouro`, com token e rede);
-* execução real da avaliação e preenchimento da tabela da seção 5;
-* se o F1 da v1 for < 0,70: análise de erros, `heuristic_v2` e reavaliação;
-* decisão da versão final (`DEFAULT_HEURISTIC`) e registro no artigo.
+* `heuristic_v2` por Gabriel (nenhuma versão atingiu 0,70) e reavaliação, de preferência com repositórios reservados só para
+  o teste (a v2 será desenhada sobre as mesmas 300 releases);
+* decisão da versão final (`DEFAULT_HEURISTIC`), em commit próprio, e registro no artigo;
+* reunião de consenso e/ou segunda pessoa rotulando as 150 releases humanas, que reduziria a incerteza da referência;
+* o texto do artigo deve citar a referência como consenso automático de avaliadores de IA (com uma avaliadora humana em
+  metade da amostra) e reportar as exclusões e o IC95% por repositório.
