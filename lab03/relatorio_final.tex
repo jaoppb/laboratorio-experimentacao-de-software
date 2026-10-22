@@ -1,6 +1,15 @@
 \documentclass[12pt]{article}
 
-\usepackage{sbc-template}
+\IfFileExists{sbc-template.sty}{
+  \usepackage{sbc-template}
+}{
+  \usepackage[a4paper,top=3.5cm,left=3cm,right=3cm,bottom=2.5cm]{geometry}
+  \usepackage{times}
+  \providecommand{\inst}[1]{$^{#1}$}
+  \providecommand{\address}[1]{\vspace{-0.3cm}\begin{center}\small #1\end{center}\vspace{0.3cm}}
+  \newenvironment{resumo}{\begin{abstract}\renewcommand{\abstractname}{Resumo}}{\end{abstract}}
+}
+
 \usepackage{graphicx,url}
 \usepackage[utf8]{inputenc}
 \usepackage[brazil]{babel}
@@ -22,8 +31,8 @@
 \author{Marcela Mendes Campos\inst{1}, Gabriel Assis de Souza\inst{1}, João Pedro Peres Barbosa\inst{1}}
 
 \address{Curso de Engenharia de Software -- Pontifícia Universidade Católica de Minas Gerais (PUC Minas)\\
-  Belo Horizonte -- MG -- Brasil
-  \email{\{marcelacamposm2, dunkrells23, joaopedroperes06\}@gmail.com}
+  Belo Horizonte -- MG -- Brasil\\
+  \texttt{\{marcelacamposm2, dunkrells23, joaopedroperes06\}@gmail.com}
 }
 
 \begin{document} 
@@ -62,7 +71,7 @@ Formuladas \textit{a priori} antes da inspeção dos dados:
 \subsection{Engenharia do Pipeline e Funil de Amostragem}
 A coleta foi realizada por scripts próprios via API REST e GraphQL (sem bibliotecas prontas como PyGithub). O pipeline conta com cache SQLite em WAL mode, tratamento de rate limit com \textit{backoff} exponencial, bissecção recursiva para paginações acima de 1.000 itens e clone Git \textit{blobless} local para extração de tags sem consumo de cota de rede.
 
-A janela de observação cobriu o período oficial de 12 meses: 2025-10-01 a 2026-09-30 (365 dias). O funil de seleção avaliou 753 candidatos da Search API em ordem decrescente de estrelas, restando 697 com Actions ativas, 382 com $\ge 5$ releases na janela, 332 com $\ge 50$ runs válidos no default branch e **330 repositórios** qualificados na amostra final congelada.
+A janela de observação cobriu o período oficial de 12 meses: 2025-10-01 a 2026-09-30 (365 dias). O funil de seleção avaliou 753 candidatos da Search API em ordem decrescente de estrelas, restando 697 com Actions ativas, 382 com $\ge 5$ releases na janela, 332 com $\ge 50$ runs válidos no default branch e \textbf{330 repositórios} qualificados na amostra final congelada.
 
 \subsection{Validação Manual da Amostra-Ouro}
 Foram sorteados 60 repositórios da amostra final com semente fixa (\texttt{random\_state=42}). Três integrantes rotularam de forma independente 5 releases sorteadas por projeto (300 releases), além do tipo de projeto e natureza das entregas. O coeficiente Kappa de Fleiss atingiu $\kappa = 0{,}787$ (tipo de projeto), $\kappa = 0{,}492$ (entrega real) e $\kappa = 0{,}625$ (release corretiva, substancial). A heurística automática v1 obteve Precisão de 61,4\%, Recall de 63,8\% e F1 de 0,625 frente ao consenso.
@@ -91,7 +100,7 @@ Recuperação & mediana/workflow & horas & 312 & 2,61 & 1,07 & 6,73 & 5,67 & Hig
 \end{tabular}
 \end{table*}
 
-A classificação geral DORA consolidada em C1 distribuiu os projetos em: **Elite (6,7\%)**, **High (43,3\%)**, **Medium (44,2\%)** e **Low (5,8\%)**.
+A classificação geral DORA consolidada em C1 distribuiu os projetos em: \textbf{Elite (6,7\%)}, \textbf{High (43,3\%)}, \textbf{Medium (44,2\%)} e \textbf{Low (5,8\%)}.
 
 \subsection{RQ 05: Frequência de Deploy vs. Taxa de Falha}
 A correlação de Spearman revelou comportamentos divergentes:
@@ -153,7 +162,6 @@ Reconhecem-se as seguintes ameaças principais: \textit{(i) De construto:} relea
 \section{Conclusão}
 A mineração de métricas DORA no GitHub demonstra que projetos open-source populares operam predominantemente nas faixas High e Medium. Equipes maiores e projetos mais antigos enfrentam lead times significativamente maiores, e as conclusões DORA dependem da transparência dos proxies adotados, visto que 25,5\% dos projetos mudam de categoria sob definições alternativas.
 
-\bibliographystyle{sbc}
 \begin{thebibliography}{1}
 \bibitem{forsgren2018accelerate}
 Nicole Forsgren, Jez Humble, and Gene Kim.
