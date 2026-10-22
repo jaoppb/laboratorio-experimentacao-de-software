@@ -54,3 +54,6 @@ lab03/dados/c2_c3_meta/
 
 # Regeneração final (#56): estado de trabalho
 lab03/dados/.regenerar/
+
+# Clone aninhado acidental
+/laboratorio-experimentacao-de-software/
