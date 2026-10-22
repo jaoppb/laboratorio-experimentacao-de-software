@@ -1136,3 +1136,14 @@ def test_cli_runs_the_git_phase_in_a_child_unless_told_otherwise(env, fakes, tmp
     regenerar.main([*base, "--sem-subprocesso"])
     assert captured == [True, False]
     assert RegenSettings.from_config({"janela": {"inicio": "2025-10-01", "fim": "2026-09-30"}}).git_subprocess is False
+
+
+def test_report_summarises_the_runs_totals():
+    old, new = _ok_records(), _ok_records()
+    old[0]["total_workflow_runs"], new[0]["total_workflow_runs"] = 100, 250
+    old[1]["total_workflow_runs"], new[1]["total_workflow_runs"] = 10, 10
+    text = render_report(
+        compare_datasets(old, new), [], generated_on="2026-10-22", window=("a", "b"), heuristic="v1"
+    )
+    assert "Runs coletados (soma de `total_workflow_runs`): 110 antes, 260 depois" in text
+    assert "MemoryHigh=6G" in text

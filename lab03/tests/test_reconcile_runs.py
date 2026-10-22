@@ -210,7 +210,12 @@ def test_count_runs_in_interval_asks_for_one_run_with_the_collector_filters():
 
 @pytest.mark.parametrize(
     ("previous", "api", "needle"),
-    [(1000, 1200, "truncado"), (3, 5, "mais runs"), (5, 3, "menos runs")],
+    [
+        (1000, 1200, "truncado"),
+        (3, 5, "mais runs"),
+        (5, 3, "menos runs"),
+        (8000, 2500, "teto de 2.500"),  # the API caps total_count: not "fewer runs"
+    ],
 )
 def test_refetch_reason(previous, api, needle):
     from pipeline.regeneracao_relatorio import refetch_reason

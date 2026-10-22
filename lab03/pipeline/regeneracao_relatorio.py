@@ -215,6 +215,9 @@ class Comparison:
     runs_modes: dict[str, int] = field(default_factory=dict)
     # intervals reconciled by the API count: kept / refetched / tail (all repositories)
     reconciled_totals: dict[str, int] = field(default_factory=dict)
+    # sum of `total_workflow_runs` before / after
+    runs_before: int = 0
+    runs_after: int = 0
     # (repository, start, end, previous count, API count, reason) of every re-fetched interval
     refetched: list[tuple[str, str, str, int, int, str]] = field(default_factory=list)
 
@@ -252,6 +255,10 @@ def compare_datasets(
                 (name, e["start"], e["end"], e["previous_count"], e["api_count"],
                  refetch_reason(e["previous_count"], e["api_count"]))
             )
+    comparison.runs_before = sum(
+        (old_by_name.get(r["full_name"], {}).get("total_workflow_runs") or 0) for r in new
+    )
+    comparison.runs_after = sum((r.get("total_workflow_runs") or 0) for r in new)
     comparison.runs_modes = dict(modes)
     comparison.reconciled_totals = dict(totals)
 
@@ -311,8 +318,18 @@ def compare_datasets(
     return comparison
 
 
+# The runs endpoint never reports a `total_count` above this value (observed maximum over
+# 292 re-fetched intervals); a bigger interval is simply reported as 2,500.
+API_COUNT_CAP = 2500
+
+
 def refetch_reason(previous: int, api: int) -> str:
     """Why a reconciled interval had to be fetched again (counts differ)."""
+    if api >= API_COUNT_CAP:
+        return (
+            "a contagem da API chegou ao teto de 2.500 (intervalo muito grande, a coleta anterior "
+            "estava truncada); recoletado com divisão recursiva"
+        )
     if api > previous and previous >= 1000:
         return "intervalo truncado em 1.000 runs na coleta anterior"
     if api > previous:
@@ -357,6 +374,12 @@ def render_report(
         f"{len([c for c in comparison.changed_columns if c.column not in METADATA_COLUMNS])}."
     )
     add(f"- Repositórios com a faixa geral (`overall_dora_tier`) alterada: {len(comparison.overall_changes)}.")
+    if comparison.runs_before or comparison.runs_after:
+        add(
+            f"- Runs coletados (soma de `total_workflow_runs`): {comparison.runs_before:,} antes, "
+            f"{comparison.runs_after:,} depois (a divisão recursiva sem piso recuperou os runs que a "
+            "coleta anterior truncava em 1.000 por intervalo)."
+        )
     add("")
 
     add("## Invariantes")
@@ -504,7 +527,7 @@ def render_report(
         "iniciou: `supervisor.sh` (instância única por `flock`, reinício com espera crescente de 60 s "
         "a 10 min) executa `python -m pipeline.regenerar --resume --runs-modo reconciliar`, é lançado por "
         "`systemd-run --user --unit=regen-sup` (com `systemd-inhibit` quando permitido e orçamento de memória "
-        "`MemoryHigh=5G`/`MemoryMax=7G`, `Nice=15`, E/S ociosa e `CPUWeight=20`, porque a máquina é compartilhada; "
+        "`MemoryHigh=6G`/`MemoryMax=8G`, `Nice=15`, E/S ociosa e `CPUWeight=20`, porque a máquina é compartilhada; "
         "o próprio pipeline também não inicia novos repositórios com menos de 3 GiB de RAM disponível, processa "
         "no máximo um repositório \"pesado\" por vez e usa 2 workers) e, ao concluir, "
         "ele mesmo gera `outputs-<data UTC>.tar.gz` (dataset, `runs/`, este relatório, resultado das "
