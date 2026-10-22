@@ -1,0 +1,174 @@
+\documentclass[12pt]{article}
+
+\usepackage{sbc-template}
+\usepackage{graphicx,url}
+\usepackage[utf8]{inputenc}
+\usepackage[brazil]{babel}
+\usepackage{booktabs}
+\usepackage{amsmath,amssymb}
+\usepackage{hyperref}
+
+\hypersetup{
+    colorlinks=true,
+    linkcolor=blue,
+    citecolor=blue,
+    urlcolor=blue
+}
+
+\sloppy
+
+\title{Mineração e Análise de Sensibilidade de Métricas DORA em Repositórios Open-Source}
+
+\author{Marcela Mendes Campos\inst{1}, Gabriel Assis de Souza\inst{1}, João Pedro Peres Barbosa\inst{1}}
+
+\address{Curso de Engenharia de Software -- Pontifícia Universidade Católica de Minas Gerais (PUC Minas)\\
+  Belo Horizonte -- MG -- Brasil
+  \email{\{marcelacamposm2, dunkrells23, joaopedroperes06\}@gmail.com}
+}
+
+\begin{document} 
+
+\maketitle
+
+\begin{abstract}
+DevOps Research and Assessment (DORA) metrics have become the industrial benchmark for evaluating software delivery performance and operational stability. However, open-source repositories on GitHub lack direct telemetry of production deployments or customer incident tickets, requiring the use of operational approximations (proxies). This study investigates an empirical mining pipeline across 330 real open-source repositories using GitHub Actions observed over a 12-month window. The methodology combines robust data engineering, manual gold-standard validation across 60 repositories ($\kappa = 0.625$), non-parametric statistical hypothesis testing, and sensitivity analysis between alternative proxy definitions. Results demonstrate that team size and project maturity heavily inflate lead times ($\epsilon^2 > 0.20$), while stars have no significant effect. Furthermore, change failure rate based on 7-day corrective releases introduces a severe mechanical coupling artifact ($\rho = +0.497$) with deployment frequency, and 25.5\% of repositories shift their overall DORA tier solely due to proxy definitions.
+\end{abstract}
+
+\begin{resumo}
+As métricas DORA tornaram-se o padrão para avaliar o desempenho de entrega contínua e estabilidade de equipes de software. No entanto, em repositórios open-source no GitHub, a ausência de telemetria direta de produção impõe o uso de aproximações operacionais (\textit{proxies}). Este estudo implementou um pipeline de mineração e análise estatística sobre 330 repositórios open-source populares com GitHub Actions durante uma janela de 12 meses. O protocolo combinou engenharia de dados, validação manual de uma amostra-ouro de 60 repositórios ($\kappa = 0{,}625$), testes estatísticos de hipóteses e análise de sensibilidade. Os resultados revelam que o tamanho da equipe e a maturidade do projeto inflacionam o \textit{Lead Time} ($\epsilon^2 > 0{,}20$), enquanto a popularidade não afeta o desempenho DORA. O CFR baseado em releases corretivas em até 7 dias exibe forte acoplamento mecânico ($\rho = +0{,}497$) com a cadência de entrega, e 25{,}5\% dos projetos mudam de categoria DORA unicamente pela escolha dos \textit{proxies}.
+\end{resumo}
+
+\section{Introdução}
+
+A mensuração sistemática do desempenho de entrega de software é central para a engenharia moderna. Formalizadas pelo DORA e pela obra \textit{Accelerate} \cite{forsgren2018accelerate}, quatro métricas resumem a capacidade operacional: \textit{Deployment Frequency} (dimensão de velocidade), \textit{Lead Time for Changes} (velocidade), \textit{Change Failure Rate} (estabilidade) e \textit{Failed Deployment Recovery Time} (estabilidade).
+
+\subsection{O Desafio dos Proxies em Repositórios Abertos}
+O GitHub não registra implantações em produção nem quedas de serviço. Em projetos de software livre, desenvolvedores publicam releases, executam \textit{workflows} e realizam commits. Logo, a mineração dessas métricas depende de aproximações operacionais (\textit{proxies}): releases publicadas atuam como proxy de deploy, e execuções malsucedidas de CI como proxy de falha. Este trabalho investiga a confiabilidade epistemológica dessas aproximações através de validação empírica e análise de sensibilidade metodológica sobre 330 repositórios populares.
+
+\subsection{Hipóteses Informais Preliminares (Sprint 01)}
+Formuladas \textit{a priori} antes da inspeção dos dados:
+\begin{itemize}
+    \item \textbf{RQ 01 (Frequência de Deploy):} Espera-se mediana geral inferior a 0,5 releases/semana, com concentração nas faixas Medium e High, sendo casos Elite raros devido aos custos de congelamento público.
+    \item \textbf{RQ 02 (Lead Time):} A variante (a) por release exibirá valores substancialmente maiores que a variante (b) por commit, alcançando a faixa Low ($\ge 30$ dias) pela presença de commits residuais antigos.
+    \item \textbf{RQ 03 (Change Failure Rate):} O CFR de CI (a) concentrar-se-á entre 15\% e 30\%, enquanto o CFR de entrega (b) ficará abaixo de 15\%, já que falhas de esteira nem sempre motivam correções emergenciais.
+    \item \textbf{RQ 04 (Tempo de Recuperação):} Concentração entre 1h e 24h (High) e 1 a 7 dias (Medium), sendo o nível Elite ($< 1$h) incomum pela ausência de equipes de sobreaviso (\textit{on-call}).
+    \item \textbf{RQ 05 (Velocidade vs. Estabilidade):} Ausência de correlação forte entre velocidade e taxa de falha de entrega, porém com viés de acoplamento mecânico no proxy de 7 dias.
+    \item \textbf{RQ 06 (Fatores Estruturais):} Contribuidores e maturidade associar-se-ão a maiores tempos de trânsito de código devido à sobrecarga de coordenação.
+    \item \textbf{RQ 07 (Análise de Sensibilidade):} Alta sensibilidade às definições operacionais, com 35\% a 60\% dos projetos trocando de categoria DORA entre combinações de proxies.
+\end{itemize}
+
+\section{Metodologia}
+
+\subsection{Engenharia do Pipeline e Funil de Amostragem}
+A coleta foi realizada por scripts próprios via API REST e GraphQL (sem bibliotecas prontas como PyGithub). O pipeline conta com cache SQLite em WAL mode, tratamento de rate limit com \textit{backoff} exponencial, bissecção recursiva para paginações acima de 1.000 itens e clone Git \textit{blobless} local para extração de tags sem consumo de cota de rede.
+
+A janela de observação cobriu o período oficial de 12 meses: 2025-10-01 a 2026-09-30 (365 dias). O funil de seleção avaliou 753 candidatos da Search API em ordem decrescente de estrelas, restando 697 com Actions ativas, 382 com $\ge 5$ releases na janela, 332 com $\ge 50$ runs válidos no default branch e **330 repositórios** qualificados na amostra final congelada.
+
+\subsection{Validação Manual da Amostra-Ouro}
+Foram sorteados 60 repositórios da amostra final com semente fixa (\texttt{random\_state=42}). Três integrantes rotularam de forma independente 5 releases sorteadas por projeto (300 releases), além do tipo de projeto e natureza das entregas. O coeficiente Kappa de Fleiss atingiu $\kappa = 0{,}787$ (tipo de projeto), $\kappa = 0{,}492$ (entrega real) e $\kappa = 0{,}625$ (release corretiva, substancial). A heurística automática v1 obteve Precisão de 61,4\%, Recall de 63,8\% e F1 de 0,625 frente ao consenso.
+
+\section{Resultados e Discussão}
+
+\subsection{Estatísticas Descritivas das Métricas DORA (RQ 01 a RQ 04)}
+A Tabela~\ref{tab:metricas_dora} apresenta a distribuição das métricas na amostra de 330 repositórios.
+
+\begin{table*}[ht]
+\centering
+\caption{Estatísticas descritivas das métricas DORA mineradas ($n=330$).}
+\label{tab:metricas_dora}
+\small
+\begin{tabular}{llcrrrrrr}
+\toprule
+\textbf{Métrica} & \textbf{Variante} & \textbf{Unid.} & \textbf{$n$} & \textbf{Mediana} & \textbf{Q1} & \textbf{Q3} & \textbf{IQR} & \textbf{Faixa DORA} \\
+\midrule
+Freq. Deploy & releases/semana & rel/sem & 330 & 0,50 & 0,24 & 1,20 & 0,97 & Medium (44,5\%) \\
+Lead Time (a) & por release & horas & 269 & 165,88 & 41,39 & 454,72 & 413,34 & High (43,9\%) \\
+Lead Time (b) & por commit & horas & 329 & 145,57 & 44,68 & 356,64 & 311,96 & High (48,0\%) \\
+CFR (a) & proxy CI & prop. & 330 & 0,05 & 0,02 & 0,11 & 0,09 & Elite (86,4\%) \\
+CFR (b) & proxy entrega & prop. & 328 & 0,19 & 0,04 & 0,41 & 0,37 & Elite (45,7\%) \\
+Recuperação & mediana/workflow & horas & 312 & 2,61 & 1,07 & 6,73 & 5,67 & High (69,6\%) \\
+\bottomrule
+\end{tabular}
+\end{table*}
+
+A classificação geral DORA consolidada em C1 distribuiu os projetos em: **Elite (6,7\%)**, **High (43,3\%)**, **Medium (44,2\%)** e **Low (5,8\%)**.
+
+\subsection{RQ 05: Frequência de Deploy vs. Taxa de Falha}
+A correlação de Spearman revelou comportamentos divergentes:
+\begin{itemize}
+    \item Freq. Deploy $\times$ CFR (a) [CI]: $\rho = +0{,}1612$ ($p = 0{,}0033$, $n = 330$) -- fraca positiva.
+    \item Freq. Deploy $\times$ CFR (b) [Entrega]: $\rho = +0{,}4968$ ($p = 7{,}64 \times 10^{-22}$, $n = 328$) -- moderada/forte positiva.
+\end{itemize}
+O forte acoplamento no CFR (b) expõe um viés metodológico: repositórios que publicam com alta cadência têm lançamentos separados por $< 7$ dias por natureza, inflando o proxy de releases corretivas.
+
+\subsection{RQ 06: Fatores Associados ao Desempenho DORA}
+Foram conduzidos 25 testes de Kruskal-Wallis corrigidos via Holm-Bonferroni ($\text{FWER} \le 0{,}05$), detalhados na Tabela~\ref{tab:kruskal}.
+
+\begin{table*}[ht]
+\centering
+\caption{Kruskal-Wallis e correção de Holm para características dos repositórios.}
+\label{tab:kruskal}
+\small
+\begin{tabular}{llrrrrrc}
+\toprule
+\textbf{Fator} & \textbf{Métrica DORA} & \textbf{$k$} & \textbf{$n$} & \textbf{$H$} & \textbf{$p$-Holm} & \textbf{$\epsilon^2$} & \textbf{Efeito} \\
+\midrule
+Contribuidores & Lead Time (b) & 4 & 329 & 69,30 & $1{,}45 \times 10^{-13*}$ & 0,211 & Grande \\
+Idade do Projeto & Freq. Deploy & 4 & 330 & 32,81 & $7{,}79 \times 10^{-6*}$ & 0,100 & Médio \\
+Idade do Projeto & Lead Time (b) & 4 & 329 & 116,04 & $1{,}37 \times 10^{-23*}$ & 0,354 & Grande \\
+Idade do Projeto & CFR (b) Entrega & 4 & 328 & 60,18 & $1{,}24 \times 10^{-11*}$ & 0,184 & Grande \\
+Linguagem & Freq. Deploy & 7 & 330 & 20,90 & $0{,}0363^*$ & 0,064 & Médio \\
+Linguagem & Lead Time (b) & 7 & 329 & 32,10 & $0{,}0003^*$ & 0,098 & Médio \\
+Tipo de Projeto & Lead Time (b) & 4 & 329 & 23,26 & $0{,}0007^*$ & 0,071 & Médio \\
+Popularidade (Estrelas) & Todas as 5 métricas & 4 & 330 & $< 5{,}7$ & 1,0000 & $< 0{,}018$ & Desprezível \\
+\bottomrule
+\multicolumn{8}{l}{\footnotesize $^*$Significativo após correção de Holm-Bonferroni ($\alpha = 0{,}05$).}
+\end{tabular}
+\end{table*}
+
+\subsection{RQ 07: Análise de Sensibilidade Metodológica}
+A confrontação pareada das três combinações de proxies gerou os resultados da Tabela~\ref{tab:sensibilidade}.
+
+\begin{table}[ht]
+\centering
+\caption{Sensibilidade da classificação DORA geral entre proxies (RQ 07).}
+\label{tab:sensibilidade}
+\small
+\begin{tabular}{lccccc}
+\toprule
+\textbf{Par Comparado} & \textbf{$n$} & \textbf{Mudança (\%)} & \textbf{Subiram} & \textbf{Desceram} & \textbf{Kappa Linear ($\kappa$)} \\
+\midrule
+C1 $\times$ C2 (Pré-rel.) & 330 & 25,5\% & 25 & 59 & 0,603 (Substancial) \\
+C1 $\times$ C3 (Git Tags) & 330 & 21,5\% & 54 & 17 & 0,687 (Substancial) \\
+C2 $\times$ C3 (Tags vs Pré) & 330 & 25,8\% & 81 & 4 & 0,622 (Substancial) \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Cerca de 75\% dos repositórios preservam a classificação DORA geral pela inércia da agregação por mediana. Contudo, 1 em cada 4 projetos (25,5\%) tem seu tier alterado unicamente pela parametrização operacional dos proxies.
+
+\section{Ameaças à Validade}
+Reconhecem-se as seguintes ameaças principais: \textit{(i) De construto:} releases e falhas de CI são medidas indiretas imperfeitas; a janela de 7 dias do CFR (b) acopla-se à velocidade de entrega. \textit{(ii) Interna:} a reunião de consenso foi substituída por votação de maioria simples automática com auxílio de modelos para preenchimento de prazos. \textit{(iii) Externa:} a amostra foca em repositórios populares com GitHub Actions, não generalizando para sistemas corporativos fechados. \textit{(iv) De conclusão:} mitigada com testes não paramétricos, ajuste de Holm e tamanhos de efeito $\epsilon^2$.
+
+\section{Conclusão}
+A mineração de métricas DORA no GitHub demonstra que projetos open-source populares operam predominantemente nas faixas High e Medium. Equipes maiores e projetos mais antigos enfrentam lead times significativamente maiores, e as conclusões DORA dependem da transparência dos proxies adotados, visto que 25,5\% dos projetos mudam de categoria sob definições alternativas.
+
+\bibliographystyle{sbc}
+\begin{thebibliography}{1}
+\bibitem{forsgren2018accelerate}
+Nicole Forsgren, Jez Humble, and Gene Kim.
+\newblock {\em Accelerate: The Science of Lean Software and DevOps: Building and Scaling High Performing Technology Organizations}.
+\newblock IT Revolution, 2018.
+
+\bibitem{romano2006appropriate}
+Jeanine Romano, Jeffrey~D Kromrey, Jesse Coraggio, Jeff Skelly, et~al.
+\newblock Appropriate statistics for ordinal level data: Should we really be using t-test and cohen's d for evaluating group differences on the nsse and other surveys.
+\newblock In {\em Annual Meeting of the Florida Association for Institutional Research}, pages 1--33, 2006.
+
+\bibitem{landis1977measurement}
+J~Richard Landis and Gary~G Koch.
+\newblock The measurement of observer agreement for categorical data.
+\newblock {\em Biometrics}, pages 159--174, 1977.
+\end{thebibliography}
+
+\end{document}
