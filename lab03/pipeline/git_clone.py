@@ -7,12 +7,14 @@ to achieve zero API quota consumption when computing commit lead time.
 from __future__ import annotations
 
 import asyncio
-from contextlib import asynccontextmanager
+import codecs
+from contextlib import aclosing, asynccontextmanager
 import logging
 import os
 import re
 from pathlib import Path
 import shutil
+import time
 from typing import TYPE_CHECKING, AsyncIterator
 
 from metricas.schemas import Commit, Release, truncate_full_message
@@ -42,8 +44,26 @@ _FIELD_SEP = "\x1f"
 _RECORD_SPLIT_RE = re.compile(r"\x1e(?=[0-9a-f]{40,64}\x1f)")
 
 
+# `git log base..head` is streamed: a hard limit on the whole command (seconds)
+# and the block size read from its stdout.
+GIT_LOG_TIMEOUT = 900.0
+GIT_LOG_BLOCK_BYTES = 1 << 20
+# Longest `<sha><unit separator>` that follows a record separator (64 hex + 1)
+# plus the separator itself: a block boundary inside it cannot be decided yet.
+_RECORD_LOOKAHEAD = 66
+
+
 class GitCloneError(Exception):
     """Raised when git clone fails."""
+
+
+class GitCommandError(Exception):
+    """A streamed git command exited with a non-zero status."""
+
+    def __init__(self, returncode: int, stderr: str) -> None:
+        super().__init__(f"git exited with {returncode}: {stderr.strip()}")
+        self.returncode = returncode
+        self.stderr = stderr
 
 
 def safe_rmtree(path: Path | str) -> None:
@@ -101,6 +121,90 @@ async def run_git_command(
         except ProcessLookupError:
             pass
         raise TimeoutError(f"Git command timed out after {timeout}s: git {' '.join(args)}")
+
+
+async def stream_git_stdout(
+    args: list[str],
+    cwd: Path | str | None = None,
+    timeout: float = GIT_LOG_TIMEOUT,
+    block_size: int = GIT_LOG_BLOCK_BYTES,
+    env: dict[str, str] | None = None,
+) -> AsyncIterator[str]:
+    """Run a git command and yield its stdout as decoded text, block by block.
+
+    The whole output is never held: the child's stdout is read in blocks of
+    `block_size` bytes and decoded incrementally (UTF-8, undecodable bytes
+    replaced, like `run_git_command`). `timeout` is a deadline for the whole
+    command; the child is killed when it expires or when the consumer stops
+    early. Raises `TimeoutError` on timeout and `GitCommandError` (with the
+    stderr) if git exits with a non-zero status after the output was read.
+    """
+    cmd_env = dict(os.environ)
+    cmd_env["GIT_TERMINAL_PROMPT"] = "0"
+    if env:
+        cmd_env.update(env)
+
+    proc = await asyncio.create_subprocess_exec(
+        "git",
+        *args,
+        cwd=str(cwd) if cwd else None,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+        env=cmd_env,
+    )
+    assert proc.stdout is not None and proc.stderr is not None
+    stderr_chunks: list[bytes] = []
+
+    async def drain_stderr() -> None:
+        # Keep only the head: it is enough to explain a failure and it cannot fill the pipe
+        kept = 0
+        while chunk := await proc.stderr.read(65536):  # type: ignore[union-attr]
+            if kept < 65536:
+                stderr_chunks.append(chunk)
+                kept += len(chunk)
+
+    stderr_task = asyncio.create_task(drain_stderr())
+    decoder = codecs.getincrementaldecoder("utf-8")(errors="replace")
+    deadline = time.monotonic() + timeout
+    finished = False
+    try:
+        while True:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise asyncio.TimeoutError
+            block = await asyncio.wait_for(proc.stdout.read(block_size), timeout=remaining)
+            if not block:
+                break
+            text = decoder.decode(block)
+            if text:
+                yield text
+        tail = decoder.decode(b"", final=True)
+        if tail:
+            yield tail
+        remaining = max(deadline - time.monotonic(), 0.001)
+        await asyncio.wait_for(proc.wait(), timeout=remaining)
+        await stderr_task
+        finished = True
+        if proc.returncode:
+            raise GitCommandError(
+                proc.returncode, b"".join(stderr_chunks).decode("utf-8", errors="replace")
+            )
+    except asyncio.TimeoutError:
+        raise TimeoutError(
+            f"Git command timed out after {timeout}s: git {' '.join(args)}"
+        ) from None
+    finally:
+        if not finished:
+            try:
+                proc.kill()
+            except ProcessLookupError:
+                pass
+            await proc.wait()
+            stderr_task.cancel()
+            try:
+                await stderr_task
+            except (asyncio.CancelledError, Exception):
+                pass
 
 
 async def fetch_all_tags(git_dir: Path | str, auth_args: list[str] | None = None) -> bool:
@@ -204,12 +308,78 @@ async def clone_repository(
     raise GitCloneError(f"git clone failed for {owner}/{repo} (exit {retcode}): {stderr.strip()}")
 
 
+async def _iter_log_records(chunks: AsyncIterator[str]) -> AsyncIterator[str]:
+    """Split a stream of `git log` text into records, one at a time.
+
+    Same boundaries as `_RECORD_SPLIT_RE.split` over the whole output: a record
+    separator only cuts when it is followed by `<sha><unit separator>`, so a
+    stray one inside a body does not. A block boundary can fall inside the
+    lookahead; the pending tail then stays in the buffer until the next block.
+    """
+    buffer = ""
+    scanned = 0  # no unresolved separator before this offset of `buffer`
+    async for chunk in chunks:
+        buffer += chunk
+        start = 0
+        for match in _RECORD_SPLIT_RE.finditer(buffer, scanned):
+            yield buffer[start : match.start()]
+            start = match.end()
+        buffer = buffer[start:]
+        scanned = max(0, len(buffer) - _RECORD_LOOKAHEAD)
+    yield buffer
+
+
+def _parse_log_record(
+    record: str,
+    commit_cache: dict[str, Commit] | None,
+    fresh: dict[str, Commit],
+) -> Commit | None:
+    """Parse one `git log` record; reuse the commit of a SHA already seen.
+
+    The SHA is read first: when it is in `commit_cache` (or already parsed in
+    this range) nothing else is built. New commits go to `fresh`.
+    """
+    record = record.strip()
+    if not record:
+        return None
+    sep = record.find(_FIELD_SEP)
+    if sep < 0:
+        return None
+    sha = record[:sep]
+    if commit_cache is not None:
+        known = commit_cache.get(sha)
+        if known is not None:
+            return known
+    parts = record.split(_FIELD_SEP, 3)
+    if len(parts) >= 3:
+        commit = Commit(
+            sha=parts[0],
+            committed_at=parts[1],
+            message=parts[2].strip(),
+            full_message=truncate_full_message(parts[3]) if len(parts) == 4 else None,
+        )
+    else:
+        commit = Commit(sha=parts[0], committed_at=parts[1], message="")
+    fresh[sha] = commit
+    return commit
+
+
 async def get_commits_between_tags(
     git_dir: Path | str,
     base_tag: str,
     head_tag: str,
+    commit_cache: dict[str, Commit] | None = None,
+    timeout: float = GIT_LOG_TIMEOUT,
+    block_size: int = GIT_LOG_BLOCK_BYTES,
 ) -> list[Commit]:
-    """Retrieve commits between base_tag and head_tag using git log in bare repository."""
+    """Retrieve commits between base_tag and head_tag using git log in bare repository.
+
+    The log is streamed and parsed one record at a time (the output is never
+    held whole). With `commit_cache` (SHA -> `Commit`, one table per
+    repository) a commit already in the table is reused instead of built
+    again, and the new ones are added to it when the range succeeds, so the
+    ranges of a repository share one `Commit` object per SHA.
+    """
     git_path = Path(git_dir)
     target_git_dir = git_path / ".git" if (git_path / ".git").is_dir() else git_path
     fmt = f"{_RECORD_START}%H{_FIELD_SEP}%aI{_FIELD_SEP}%s{_FIELD_SEP}%B"
@@ -220,38 +390,36 @@ async def get_commits_between_tags(
         f"--format={fmt}",
     ]
 
-    retcode, stdout, stderr = await run_git_command(args)
-    if retcode != 0:
-        logger.debug(
-            "git log failed for %s..%s in %s: %s", base_tag, head_tag, git_path, stderr.strip()
-        )
-        raise KeyError(f"Tags not resolvable: {base_tag}..{head_tag}")
-
     commits: list[Commit] = []
-    for record in _RECORD_SPLIT_RE.split(stdout):
-        record = record.strip()
-        if not record:
-            continue
-        parts = record.split(_FIELD_SEP, 3)
-        if len(parts) >= 3:
-            commits.append(
-                Commit(
-                    sha=parts[0],
-                    committed_at=parts[1],
-                    message=parts[2].strip(),
-                    full_message=truncate_full_message(parts[3]) if len(parts) == 4 else None,
-                )
-            )
-        elif len(parts) == 2:
-            commits.append(Commit(sha=parts[0], committed_at=parts[1], message=""))
+    fresh: dict[str, Commit] = {}
+    try:
+        async with (
+            aclosing(stream_git_stdout(args, timeout=timeout, block_size=block_size)) as stream,
+            aclosing(_iter_log_records(stream)) as records,
+        ):
+            async for record in records:
+                commit = _parse_log_record(record, commit_cache, fresh)
+                if commit is not None:
+                    commits.append(commit)
+    except GitCommandError as exc:
+        logger.debug(
+            "git log failed for %s..%s in %s: %s", base_tag, head_tag, git_path, exc.stderr.strip()
+        )
+        raise KeyError(f"Tags not resolvable: {base_tag}..{head_tag}") from None
+    if commit_cache is not None:
+        commit_cache.update(fresh)
     return commits
 
 
 async def collect_release_commits_from_git(
     git_dir: Path | str,
     window: WindowReleases,
+    commit_cache: dict[str, Commit] | None = None,
 ) -> list[ReleaseCommits]:
-    """Collect commits of in-window releases using local git log."""
+    """Collect commits of in-window releases using local git log.
+
+    `commit_cache` is the per-repository SHA table (see `get_commits_between_tags`).
+    """
     ordered = window.with_anchor()
     offset = 1 if window.anchor is not None else 0
     results: list[ReleaseCommits] = []
@@ -269,6 +437,7 @@ async def collect_release_commits_from_git(
                 git_dir=git_dir,
                 base_tag=previous.tag_name,
                 head_tag=release.tag_name,
+                **({"commit_cache": commit_cache} if commit_cache is not None else {}),
             )
             results.append(ReleaseCommits(release, previous, ComparisonStatus.OK, commits))
         except KeyError:

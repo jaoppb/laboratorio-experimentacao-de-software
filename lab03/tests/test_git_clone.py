@@ -12,6 +12,7 @@ from metricas.schemas import MAX_FULL_MESSAGE_CHARS
 from pipeline.git_clone import (
     CLONE_FILTER,
     GitCloneError,
+    GitCommandError,
     clone_repository,
     fetch_all_tags,
     collect_release_commits_from_git,
@@ -23,6 +24,21 @@ from pipeline.http_client import TokenPool
 from pipeline.releases import WindowReleases
 
 
+def fake_git_stream(stdout, block=7, error=None):
+    """Replacement of `stream_git_stdout`: yields `stdout` in blocks, optionally failing at the end."""
+    calls = []
+
+    async def stream(args, *_, **__):
+        calls.append(args)
+        for i in range(0, len(stdout), block):
+            yield stdout[i : i + block]
+        if error is not None:
+            raise error
+
+    stream.calls = calls
+    return stream
+
+
 async def test_get_commits_between_tags_parsing():
     """Verify parsing of git log output (subject kept as `message`)."""
     fake_stdout = (
@@ -30,8 +46,7 @@ async def test_get_commits_between_tags_parsing():
         + _record("b" * 40, "2026-02-18T18:00:00Z", "fix: resolve bug (#123)")
     )
 
-    with patch("pipeline.git_clone.run_git_command", new_callable=AsyncMock) as mock_cmd:
-        mock_cmd.return_value = (0, fake_stdout, "")
+    with patch("pipeline.git_clone.stream_git_stdout", fake_git_stream(fake_stdout)):
         commits = await get_commits_between_tags(
             git_dir="/tmp/repo.git",
             base_tag="v1.0.0",
@@ -54,15 +69,15 @@ _SHA = "a" * 40
 
 
 async def _parse(stdout):
-    with patch("pipeline.git_clone.run_git_command", new_callable=AsyncMock) as mock_cmd:
-        mock_cmd.return_value = (0, stdout, "")
-        return await get_commits_between_tags("/tmp/repo.git", "v1", "v2"), mock_cmd
+    stream = fake_git_stream(stdout)
+    with patch("pipeline.git_clone.stream_git_stdout", stream):
+        return await get_commits_between_tags("/tmp/repo.git", "v1", "v2"), stream
 
 
 async def test_get_commits_requests_subject_and_full_message():
-    commits, mock_cmd = await _parse("")
+    commits, stream = await _parse("")
     assert commits == []
-    fmt = next(a for a in mock_cmd.call_args.args[0] if a.startswith("--format="))
+    fmt = next(a for a in stream.calls[0] if a.startswith("--format="))
     assert fmt == "--format=\x1e%H\x1f%aI\x1f%s\x1f%B"
 
 
@@ -105,8 +120,8 @@ async def test_get_commits_truncates_huge_message():
 
 async def test_get_commits_between_tags_not_found():
     """Verify KeyError is raised when tags cannot be resolved in git."""
-    with patch("pipeline.git_clone.run_git_command", new_callable=AsyncMock) as mock_cmd:
-        mock_cmd.return_value = (128, "", "fatal: ambiguous argument 'v1..v2': unknown revision")
+    error = GitCommandError(128, "fatal: ambiguous argument 'v1..v2': unknown revision")
+    with patch("pipeline.git_clone.stream_git_stdout", fake_git_stream("", error=error)):
         with pytest.raises(KeyError):
             await get_commits_between_tags(
                 git_dir="/tmp/repo.git",
@@ -122,7 +137,7 @@ async def test_collect_release_commits_from_git():
     r3 = Release(tag_name="v1.2.0", published_at=datetime(2025, 12, 10))
     window = WindowReleases(in_window=[r1, r2, r3], anchor=None)
 
-    async def fake_get_commits(git_dir, base_tag, head_tag):
+    async def fake_get_commits(git_dir, base_tag, head_tag, **kwargs):
         if head_tag == "v1.1.0":
             from metricas.schemas import Commit
             return [Commit(sha="abc", committed_at=datetime(2025, 11, 1), message="msg")]
