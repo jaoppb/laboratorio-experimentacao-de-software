@@ -338,14 +338,16 @@ def stem(full_name: str) -> str:
 
 
 def load_release_rows(full_name: str):
-    """[(Release, status, previous_tag, [Commit])] ordenado por data."""
-    data = pq.read_table(D / "releases" / f"{stem(full_name)}.parquet").to_pydict()
-    rows = []
-    for i, tag in enumerate(data["tag_name"]):
-        rel = Release(tag_name=tag, published_at=data["published_at"][i], prerelease=data["prerelease"][i])
-        commits = [Commit(sha=c["sha"], committed_at=c["committed_at"], message=c["message"])
-                   for c in (data["commits"][i] or [])]
-        rows.append((rel, data["status"][i], data["previous_release"][i], commits))
+    """[(Release, status, previous_tag, [Commit])] ordenado por data.
+
+    Lê pelo leitor único (`pipeline.commit_store`): `releases/` guarda só os SHAs e os
+    commits ficam em `commits/` (layout normalizado, Issue #56).
+    """
+    from pipeline.commit_store import load_release_commits
+
+    units = load_release_commits(D / "releases" / f"{stem(full_name)}.parquet",
+                                 D / "commits" / f"{stem(full_name)}.parquet")
+    rows = [(u.release, u.status.value, u.previous_name, u.commits) for u in units]
     return sorted(rows, key=lambda r: r[0].published_at)
 
 
@@ -484,13 +486,11 @@ print("\n== 5. CFR (b): corte de censura = fim - 7 dias ==")
 
 
 def carregar(n):
-    d = pq.read_table(D / "releases" / f"{n.replace('/', '__')}.parquet").to_pydict()
-    out = []
-    for i, tag in enumerate(d["tag_name"]):
-        if d["prerelease"][i]:
-            continue
-        cs = [Commit(c["sha"], c["committed_at"], c["message"]) for c in (d["commits"][i] or [])]
-        out.append((Release(tag, d["published_at"][i]), cs if d["status"][i] == "ok" else None))
+    from pipeline.commit_store import load_release_commits
+
+    stem_ = n.replace('/', '__')
+    units = load_release_commits(D / "releases" / f"{stem_}.parquet", D / "commits" / f"{stem_}.parquet")
+    out = [(u.release, u.commits_or_none) for u in units if not u.release.prerelease]
     return sorted(out, key=lambda x: x[0].published_at)
 
 
@@ -789,14 +789,12 @@ def carregar(full_name):
 
 
 def _ler(full_name):
-    d = pq.read_table(D / "releases" / f"{full_name.replace('/', '__')}.parquet").to_pydict()
-    rows = []
-    for i, tag in enumerate(d["tag_name"]):
-        if d["prerelease"][i]:
-            continue
-        cs = [Commit(c["sha"], c["committed_at"], c["message"]) for c in (d["commits"][i] or [])]
-        rows.append(dict(rel=Release(tag, d["published_at"][i]), status=d["status"][i],
-                         prev=d["previous_release"][i], commits=cs))
+    from pipeline.commit_store import load_release_commits
+
+    stem_ = full_name.replace('/', '__')
+    units = load_release_commits(D / "releases" / f"{stem_}.parquet", D / "commits" / f"{stem_}.parquet")
+    rows = [dict(rel=u.release, status=u.status.value, prev=u.previous_name, commits=u.commits)
+            for u in units if not u.release.prerelease]
     return sorted(rows, key=lambda r: r["rel"].published_at)
 
 

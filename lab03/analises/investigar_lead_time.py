@@ -32,6 +32,7 @@ import pyarrow.parquet as pq
 from metricas.cfr_b import parse_semver
 from metricas.lead_time import calculate_lead_time, commit_lead_times, release_lead_time
 from metricas.schemas import Commit, Release
+from pipeline.commit_store import commits_dir_for, load_release_commits
 
 STATUS_OK = "ok"
 STATUS_FIRST = "first_release"
@@ -77,18 +78,13 @@ def is_out_of_line(previous_tag: str | None, tag: str) -> bool:
     return prev is not None and cur is not None and prev > cur
 
 
-def load_releases(path: Path) -> list[tuple[Release, str, list[Commit]]]:
+def load_releases(path: Path, commits_path: Path) -> list[tuple[Release, str, list[Commit]]]:
     """Releases of one repository with their status and commits, oldest first."""
-    data = pq.read_table(path).to_pydict()
     rows = []
-    for i, tag in enumerate(data["tag_name"]):
-        release = Release(tag_name=tag, published_at=data["published_at"][i])
-        commits = [
-            Commit.from_record(c)
-            for c in data["commits"][i] or []
-        ]
-        release.previous_tag = data["previous_release"][i]  # type: ignore[attr-defined]
-        rows.append((release, data["status"][i], commits))
+    for unit in load_release_commits(path, commits_path):
+        release = unit.release
+        release.previous_tag = unit.previous_name  # type: ignore[attr-defined]
+        rows.append((release, unit.status.value, unit.commits))
     return sorted(rows, key=lambda r: r[0].published_at)
 
 
@@ -98,14 +94,16 @@ def motivo_nulo(statuses: Counter[str]) -> str:
     return " + ".join(parts) if parts else "sem releases na janela"
 
 
-def diagnose(full_name: str, releases_dir: Path) -> RepoDiagnostico:
-    path = releases_dir / f"{full_name.replace('/', '__')}.parquet"
-    if not path.is_file():
+def diagnose(full_name: str, releases_dir: Path, commits_dir: Path | None = None) -> RepoDiagnostico:
+    name = f"{full_name.replace('/', '__')}.parquet"
+    path = releases_dir / name
+    commits_path = (commits_dir or commits_dir_for(releases_dir)) / name
+    if not (path.is_file() and commits_path.is_file()):
         return RepoDiagnostico(
             full_name, 0, 0, 0, 0, 0, None, None, MOTIVO_SEM_ARQUIVO, False, None, 0, 0, None, 0, 0
         )
 
-    rows = load_releases(path)
+    rows = load_releases(path, commits_path)
     statuses: Counter[str] = Counter()
     for _, status, commits in rows:
         statuses["empty" if status == STATUS_OK and not commits else status] += 1
@@ -149,9 +147,10 @@ def diagnose(full_name: str, releases_dir: Path) -> RepoDiagnostico:
     )
 
 
-def explain_inversion(full_name: str, releases_dir: Path) -> list[str]:
+def explain_inversion(full_name: str, releases_dir: Path, commits_dir: Path | None = None) -> list[str]:
     """Per-release table (commits, LT a) for a manual check of one LT(b) > LT(a) case."""
-    rows = load_releases(releases_dir / f"{full_name.replace('/', '__')}.parquet")
+    name = f"{full_name.replace('/', '__')}.parquet"
+    rows = load_releases(releases_dir / name, (commits_dir or commits_dir_for(releases_dir)) / name)
     lines = [f"  {'release':<32} {'commits':>7} {'LT(a) h':>10} {'mediana LT(b) h':>16}"]
     for rel, status, commits in rows:
         if status != STATUS_OK or not commits:
@@ -166,6 +165,9 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--dataset", default="dados/repositorios.parquet")
     parser.add_argument("--releases-dir", default="dados/releases")
+    parser.add_argument(
+        "--commits-dir", default=None, help="Padrão: dados/commits/, ao lado de --releases-dir"
+    )
     parser.add_argument("--saida", default="dados/analises/lead_time_diagnostico.csv")
     parser.add_argument("--exemplos", type=int, default=3)
     args = parser.parse_args()
@@ -186,7 +188,8 @@ def main() -> int:
     }
 
     releases_dir = Path(args.releases_dir)
-    diags = [diagnose(n, releases_dir) for n in names]
+    commits_dir = Path(args.commits_dir) if args.commits_dir else None
+    diags = [diagnose(n, releases_dir, commits_dir) for n in names]
 
     out = Path(args.saida)
     out.parent.mkdir(parents=True, exist_ok=True)
@@ -231,7 +234,7 @@ def main() -> int:
             f"LT(b) = {d.lead_time_b_hours:.1f} h, maior release {d.maior_release} "
             f"com {d.maior_release_commits}/{d.total_commits} commits"
         )
-        print("\n".join(explain_inversion(d.full_name, releases_dir)))
+        print("\n".join(explain_inversion(d.full_name, releases_dir, commits_dir)))
 
     print(f"\nDiagnóstico por repositório: {out}")
     return 0

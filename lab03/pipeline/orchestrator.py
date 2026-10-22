@@ -26,7 +26,7 @@ from metricas.dora import (
 )
 from metricas.cfr_b import DEFAULT_HEURISTIC, HEURISTICS, calculate_cfr_b
 from metricas.lead_time import calculate_lead_time
-from metricas.schemas import Release, _parse_datetime, parse_window_end, window_length
+from metricas.schemas import Commit, Release, _parse_datetime, parse_window_end, window_length
 from metricas.stability import (
     calculate_cfr_a,
     calculate_recovery_time,
@@ -46,8 +46,7 @@ from pipeline.metadata import (
 from pipeline.releases import (
     fetch_releases,
     filter_window,
-    save_releases_to_parquet,
-    save_tags_to_parquet,
+    save_repository_units,
 )
 from pipeline.repo_selector import iter_candidates_by_stars
 from pipeline.workflow_runs import collect_workflow_runs, save_runs_to_parquet
@@ -138,67 +137,28 @@ def compute_cfr_b_columns(
     }
 
 
-def compute_metric_columns(
+def compute_commit_columns(
     *,
     releases: Sequence[Release],
-    window_releases: WindowReleases,
-    runs: Sequence[WorkflowRun],
-    valid_runs_count: int,
     release_commits_c1: Sequence[ReleaseCommits],
     units: C2C3Units,
-    window_start: datetime,
     window_end: datetime,
     window_weeks: float,
     cfr_b_heuristic: str = DEFAULT_HEURISTIC,
 ) -> dict[str, Any]:
-    """Compute every metric column of one repository (all but the metadata ones).
+    """The metric columns that only need the commits of the deploy units.
 
-    Shared by the pipeline (`evaluate_candidate`) and the final regeneration
-    (`pipeline.regenerar`), so both apply the same definitions: C1 reference
-    metrics, CFR (a)/(b), recovery time, DORA tiers and the C2/C3 columns
-    (including CFR (b) over C2, Issue #56).
+    Lead time of C1 (`lead_time_a_hours`, `lead_time_b_hours`), the C2/C3
+    columns and CFR (b) over C1 and C2. They are all small scalars, so the git
+    phase of one repository can run in a short-lived child process and return
+    just this dictionary (see `pipeline.git_phase`).
     """
     lead_time_c1 = calculate_lead_time(
         [(rc.release, rc.commits_or_none) for rc in release_commits_c1]
     )
-    dep_freq = calculate_deployment_frequency(
-        releases=releases,
-        window_weeks=window_weeks,
-        start_date=window_start,
-        end_date=window_end,
-    )
-    cfr_a = calculate_cfr_a(runs)
-    recovery_result = calculate_recovery_time(runs)
-
-    lead_time_a = lead_time_c1.median_a_hours
-    lead_time_days = (lead_time_a / 24.0) if lead_time_a is not None else None
-    dora_eval = evaluate_repository_dora(
-        deployment_frequency=dep_freq,
-        lead_time_days=lead_time_days,
-        cfr=cfr_a,
-        recovery_hours=recovery_result.median_hours,
-        failure_episodes=recovery_result.total_episodes,
-    )
-
     return {
-        "releases_count_window": window_releases.count,
-        "total_releases": len(releases),
-        "workflow_runs_count_window": valid_runs_count,
-        "total_workflow_runs": len(runs),
-        "deployment_frequency": dep_freq,
-        "deployment_tier": dora_eval.deployment_tier.value,
-        "lead_time_a_hours": lead_time_a,
+        "lead_time_a_hours": lead_time_c1.median_a_hours,
         "lead_time_b_hours": lead_time_c1.median_b_hours,
-        "lead_time_tier": (
-            dora_eval.lead_time_tier.value if dora_eval.lead_time_tier is not None else None
-        ),
-        "cfr_a": cfr_a,
-        "cfr_tier": dora_eval.cfr_tier.value,
-        "recovery_hours": recovery_result.median_hours,
-        "recovery_tier": dora_eval.recovery_tier.value,
-        "censored_episodes_ratio": recovery_result.censored_ratio,
-        "overall_dora_score": dora_eval.overall_score,
-        "overall_dora_tier": dora_eval.overall_tier.value,
         **compute_c2_c3_columns(
             units.release_commits_c2,
             units.tag_commits_c3,
@@ -220,6 +180,122 @@ def compute_metric_columns(
     }
 
 
+def compute_run_columns(
+    *,
+    releases: Sequence[Release],
+    window_releases: WindowReleases,
+    runs: Sequence[WorkflowRun],
+    valid_runs_count: int,
+    lead_time_a_hours: float | None,
+    lead_time_b_hours: float | None,
+    window_start: datetime,
+    window_end: datetime,
+    window_weeks: float,
+) -> dict[str, Any]:
+    """The metric columns derived from the releases and the workflow runs.
+
+    Deployment frequency, CFR (a), recovery time and the DORA tiers. The C1
+    lead times come from `compute_commit_columns` (the lead time tier and the
+    overall DORA score need them) and are repeated in the result, in their
+    place in the column order.
+    """
+    dep_freq = calculate_deployment_frequency(
+        releases=releases,
+        window_weeks=window_weeks,
+        start_date=window_start,
+        end_date=window_end,
+    )
+    cfr_a = calculate_cfr_a(runs)
+    recovery_result = calculate_recovery_time(runs)
+
+    lead_time_days = (
+        (lead_time_a_hours / 24.0) if lead_time_a_hours is not None else None
+    )
+    dora_eval = evaluate_repository_dora(
+        deployment_frequency=dep_freq,
+        lead_time_days=lead_time_days,
+        cfr=cfr_a,
+        recovery_hours=recovery_result.median_hours,
+        failure_episodes=recovery_result.total_episodes,
+    )
+
+    return {
+        "releases_count_window": window_releases.count,
+        "total_releases": len(releases),
+        "workflow_runs_count_window": valid_runs_count,
+        "total_workflow_runs": len(runs),
+        "deployment_frequency": dep_freq,
+        "deployment_tier": dora_eval.deployment_tier.value,
+        "lead_time_a_hours": lead_time_a_hours,
+        "lead_time_b_hours": lead_time_b_hours,
+        "lead_time_tier": (
+            dora_eval.lead_time_tier.value if dora_eval.lead_time_tier is not None else None
+        ),
+        "cfr_a": cfr_a,
+        "cfr_tier": dora_eval.cfr_tier.value,
+        "recovery_hours": recovery_result.median_hours,
+        "recovery_tier": dora_eval.recovery_tier.value,
+        "censored_episodes_ratio": recovery_result.censored_ratio,
+        "overall_dora_score": dora_eval.overall_score,
+        "overall_dora_tier": dora_eval.overall_tier.value,
+    }
+
+
+def compose_metric_columns(
+    run_columns: dict[str, Any], commit_columns: dict[str, Any]
+) -> dict[str, Any]:
+    """Join the two halves of the metric columns (same keys and order as always)."""
+    lead_times = {"lead_time_a_hours", "lead_time_b_hours"}
+    return {
+        **run_columns,
+        **{k: v for k, v in commit_columns.items() if k not in lead_times},
+    }
+
+
+def compute_metric_columns(
+    *,
+    releases: Sequence[Release],
+    window_releases: WindowReleases,
+    runs: Sequence[WorkflowRun],
+    valid_runs_count: int,
+    release_commits_c1: Sequence[ReleaseCommits],
+    units: C2C3Units,
+    window_start: datetime,
+    window_end: datetime,
+    window_weeks: float,
+    cfr_b_heuristic: str = DEFAULT_HEURISTIC,
+) -> dict[str, Any]:
+    """Compute every metric column of one repository (all but the metadata ones).
+
+    Shared by the pipeline (`evaluate_candidate`) and the final regeneration
+    (`pipeline.regenerar`), so both apply the same definitions: C1 reference
+    metrics, CFR (a)/(b), recovery time, DORA tiers and the C2/C3 columns
+    (including CFR (b) over C2, Issue #56). It is the composition of
+    `compute_commit_columns` and `compute_run_columns`, which the regeneration
+    calls separately when the git phase runs in a child process.
+    """
+    commit_columns = compute_commit_columns(
+        releases=releases,
+        release_commits_c1=release_commits_c1,
+        units=units,
+        window_end=window_end,
+        window_weeks=window_weeks,
+        cfr_b_heuristic=cfr_b_heuristic,
+    )
+    run_columns = compute_run_columns(
+        releases=releases,
+        window_releases=window_releases,
+        runs=runs,
+        valid_runs_count=valid_runs_count,
+        lead_time_a_hours=commit_columns["lead_time_a_hours"],
+        lead_time_b_hours=commit_columns["lead_time_b_hours"],
+        window_start=window_start,
+        window_end=window_end,
+        window_weeks=window_weeks,
+    )
+    return compose_metric_columns(run_columns, commit_columns)
+
+
 @dataclass
 class C2C3Units:
     """Deploy units of the C2 (releases + pre-releases) and C3 (tags) definitions."""
@@ -234,12 +310,14 @@ async def collect_c2_c3_units(
     releases: Sequence[Release],
     window_start: datetime | str,
     window_end: datetime | str,
+    commit_cache: dict[str, Commit] | None = None,
 ) -> C2C3Units:
     """Collect the C2 and C3 deploy units (and their commits) from a local clone.
 
     C2 = published releases plus pre-releases in the window; C3 = every Git tag
     (dated by the commit author date) in the window. Shared by the orchestrator
     and the dataset backfill so both follow the exact same definition.
+    `commit_cache` is the per-repository SHA table (`None`: no sharing).
     """
     all_tags = await extract_tags_from_git(git_dir)
     window_releases_c2 = filter_window(
@@ -255,10 +333,10 @@ async def collect_c2_c3_units(
         include_prerelease=False,
     )
     release_commits_c2 = await collect_release_commits_from_git(
-        git_dir=git_dir, window=window_releases_c2
+        git_dir=git_dir, window=window_releases_c2, commit_cache=commit_cache
     )
     tag_commits_c3 = await collect_release_commits_from_git(
-        git_dir=git_dir, window=window_tags_c3
+        git_dir=git_dir, window=window_tags_c3, commit_cache=commit_cache
     )
     return C2C3Units(all_tags, release_commits_c2, tag_commits_c3)
 
@@ -515,6 +593,7 @@ class PipelineOrchestrator:
         self.tags_dir = self.dados_dir / "tags"
         self.releases_dir = self.dados_dir / "releases"
         self.releases_c2_dir = self.dados_dir / "releases_c2"
+        self.commits_dir = self.dados_dir / "commits"
         self.cache_dir = Path(dirs.get("cache", "cache"))
         self.git_cache_dir = Path(dirs.get("git_cache", "cache/git_repos"))
         self.limpeza_git_cache: bool = config.get("limpeza_git_cache", True)
@@ -532,6 +611,7 @@ class PipelineOrchestrator:
         self.tags_dir.mkdir(parents=True, exist_ok=True)
         self.releases_dir.mkdir(parents=True, exist_ok=True)
         self.releases_c2_dir.mkdir(parents=True, exist_ok=True)
+        self.commits_dir.mkdir(parents=True, exist_ok=True)
         self.cache_dir.mkdir(parents=True, exist_ok=True)
         self.git_cache_dir.mkdir(parents=True, exist_ok=True)
 
@@ -664,6 +744,8 @@ class PipelineOrchestrator:
 
         # Stage 4: Collect commits between releases & tags via local git blobless clone
         try:
+            # One table of commits per repository, shared by C1, C2 and C3
+            commit_cache: dict[str, Commit] = {}
             async with temporary_git_clone(
                 owner=owner,
                 repo=repo,
@@ -681,6 +763,7 @@ class PipelineOrchestrator:
                     repo=repo,
                     window=window_releases_c1,
                     git_dir=git_dir,
+                    commit_cache=commit_cache,
                 )
 
                 # 3. C2 (releases + pre-releases) and C3 (tags) from the local clone
@@ -689,30 +772,19 @@ class PipelineOrchestrator:
                     releases=releases,
                     window_start=self.window_start,
                     window_end=self.window_end,
+                    commit_cache=commit_cache,
                 )
-            release_commits_c2 = c2_c3_units.release_commits_c2
-            tag_commits_c3 = c2_c3_units.tag_commits_c3
 
             # Persist C1 releases (main definition: lead time, CFR b and gold
-            # sample), C2 releases + pre-releases and C3 tags to Parquet
-            save_releases_to_parquet(
-                release_commits=release_commits_c1,
-                owner=owner,
-                repo=repo,
-                output_path=self.releases_dir / f"{owner}__{repo}.parquet",
-            )
-            save_releases_to_parquet(
-                release_commits=release_commits_c2,
-                owner=owner,
-                repo=repo,
-                output_path=self.releases_c2_dir / f"{owner}__{repo}.parquet",
-            )
-            tags_path = self.tags_dir / f"{owner}__{repo}.parquet"
-            save_tags_to_parquet(
-                tag_commits=tag_commits_c3,
-                owner=owner,
-                repo=repo,
-                output_path=tags_path,
+            # sample), C2 releases + pre-releases, C3 tags and the commit store
+            save_repository_units(
+                self.dados_dir,
+                owner,
+                repo,
+                release_commits_c1,
+                c2_c3_units.release_commits_c2,
+                c2_c3_units.tag_commits_c3,
+                commit_cache,
             )
         except Exception as exc:
             logger.warning("Error calculating lead time or tags via git clone for %s: %s", full_name, exc)

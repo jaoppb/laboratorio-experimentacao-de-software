@@ -10,6 +10,7 @@ import pytest
 
 from metricas.schemas import Commit, Release
 from pipeline import backfill_cfr_b
+from pipeline.commit_store import distinct_commits, load_release_commits, save_commits_to_parquet
 from pipeline.commits import ComparisonStatus, ReleaseCommits
 from pipeline.orchestrator import SCHEMA_REPOSITORIOS, save_repositories_dataset
 from pipeline.releases import save_releases_to_parquet
@@ -104,9 +105,11 @@ def dataset(tmp_path: Path) -> list[dict]:
 def _persist(histories, releases_dir: Path, names) -> None:
     for name in names:
         owner, repo = name.split("/")
-        save_releases_to_parquet(
-            histories[name], owner, repo, releases_dir / f"{owner}__{repo}.parquet"
+        file_name = f"{owner}__{repo}.parquet"
+        save_commits_to_parquet(
+            distinct_commits(histories[name]).values(), releases_dir.parent / "commits" / file_name
         )
+        save_releases_to_parquet(histories[name], owner, repo, releases_dir / file_name)
 
 
 def _read_parquet(tmp_path: Path) -> list[dict]:
@@ -119,9 +122,11 @@ def _read_csv(tmp_path: Path) -> list[dict]:
 
 
 def test_load_release_commits_roundtrip(histories, tmp_path):
-    _persist(histories, tmp_path, ["org/skipped"])
+    _persist(histories, tmp_path / "releases", ["org/skipped"])
 
-    loaded = backfill_cfr_b.load_release_commits(tmp_path / "org__skipped.parquet")
+    loaded = load_release_commits(
+        tmp_path / "releases" / "org__skipped.parquet", tmp_path / "commits" / "org__skipped.parquet"
+    )
 
     assert [rc.release.tag_name for rc in loaded] == ["v1.0.0", "v1.0.1"]
     assert [rc.status for rc in loaded] == [ComparisonStatus.OK, ComparisonStatus.NOT_FOUND]

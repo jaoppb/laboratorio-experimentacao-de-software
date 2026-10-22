@@ -14,6 +14,7 @@ import yaml
 
 from metricas.schemas import Commit, Release, _parse_datetime, parse_window_end
 from pipeline import backfill_c2_c3
+from pipeline.commit_store import distinct_commits, load_tag_commits, save_commits_to_parquet
 from pipeline.commits import ComparisonStatus, ReleaseCommits
 from pipeline.orchestrator import (
     SCHEMA_REPOSITORIOS,
@@ -169,6 +170,9 @@ def _persist(units, dados: Path, names) -> None:
     for name in names:
         owner, repo = name.split("/")
         paths = backfill_c2_c3.repo_paths(dados, name)
+        save_commits_to_parquet(
+            distinct_commits(units[name]["c2"], units[name]["c3"]).values(), paths.commits
+        )
         save_releases_to_parquet(units[name]["c2"], owner, repo, paths.releases_c2)
         save_tags_to_parquet(units[name]["c3"], owner, repo, paths.tags)
         backfill_c2_c3.write_meta(
@@ -217,7 +221,9 @@ def test_compute_columns_semantics(units):
 def test_load_tag_commits_roundtrip(units, tmp_path):
     _persist(units, tmp_path, ["org/full"])
 
-    loaded = backfill_c2_c3.load_tag_commits(tmp_path / "tags" / "org__full.parquet")
+    loaded = load_tag_commits(
+        tmp_path / "tags" / "org__full.parquet", tmp_path / "commits" / "org__full.parquet"
+    )
 
     assert [rc.release.tag_name for rc in loaded] == ["t1", "t2"]
     assert [rc.status for rc in loaded] == [ComparisonStatus.FIRST_RELEASE, ComparisonStatus.OK]

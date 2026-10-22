@@ -250,7 +250,7 @@ def mock_git_clone_for_integration(monkeypatch):
             Release(tag_name="v1.1", published_at="2026-02-15T12:00:00Z", commit_sha="sha-t1"),
         ]
 
-    async def fake_collect_from_git(git_dir, window):
+    async def fake_collect_from_git(git_dir, window, commit_cache=None):
         ordered = window.with_anchor()
         offset = 1 if window.anchor is not None else 0
         res = []
@@ -267,7 +267,7 @@ def mock_git_clone_for_integration(monkeypatch):
                 res.append(ReleaseCommits(rel, prev, ComparisonStatus.OK, commits))
         return res
 
-    async def fake_collect_commits(client, owner, repo, window, git_dir=None):
+    async def fake_collect_commits(client, owner, repo, window, git_dir=None, commit_cache=None):
         return await fake_collect_from_git(git_dir, window)
 
     monkeypatch.setattr("pipeline.orchestrator.temporary_git_clone", fake_temporary_clone)
@@ -598,7 +598,7 @@ async def test_pipeline_exports_cfr_b_columns(
 ):
     """E2E: orchestrator computes CFR (b) on C1 releases and persists the columns."""
 
-    async def fake_collect_commits(client, owner, repo, window, git_dir=None):
+    async def fake_collect_commits(client, owner, repo, window, git_dir=None, commit_cache=None):
         return _synthetic_release_commits()
 
     monkeypatch.setattr("pipeline.orchestrator.collect_release_commits", fake_collect_commits)

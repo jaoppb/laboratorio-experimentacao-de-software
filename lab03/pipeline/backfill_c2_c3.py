@@ -11,9 +11,10 @@ command keeps the repository set and fills only those columns:
 1. for every repository, in file order, it collects (when missing) the C2
    units (releases + pre-releases, via GraphQL) and the C3 units (every Git
    tag of a blobless clone) with the same functions as the orchestrator
-   (`collect_c2_c3_units`), and persists them to `releases_c2/` and `tags/`
-   plus a small `c2_c3_meta/` JSON with the totals that the window files do
-   not carry (`total_prereleases`, `total_tags`);
+   (`collect_c2_c3_units`), and persists them to `releases_c2/` and `tags/`,
+   their commits to the repository's commit store (`commits/`, shared with
+   `releases/`) and a small `c2_c3_meta/` JSON with the totals that the window
+   files do not carry (`total_prereleases`, `total_tags`);
 2. it computes the columns from those persisted files with
    `compute_c2_c3_columns`, the function the orchestrator uses;
 3. it rewrites `repositorios.parquet` and `repositorios.csv` with the full
@@ -23,7 +24,7 @@ Execution (from `lab03/`, token in `GITHUB_TOKEN`):
     uv run python -m pipeline.backfill_c2_c3 --config config.yaml
 
 The command is idempotent (same inputs, same output) and resumable: a
-repository whose three files exist is not collected again. `--offline` skips
+repository whose files (C2, C3, commit store and totals) exist is not collected again. `--offline` skips
 the network and fails for repositories without them.
 """
 
@@ -39,18 +40,23 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 
-import pyarrow.parquet as pq
 import yaml
 
 from metricas.schemas import (
     Commit,
-    Release,
     _parse_datetime,
     parse_window_end,
     window_length,
 )
-from pipeline.backfill_cfr_b import load_release_commits, releases_path
-from pipeline.commits import ComparisonStatus, ReleaseCommits
+from pipeline.backfill_cfr_b import releases_path
+from pipeline.commit_store import (
+    commit_store_file,
+    distinct_commits,
+    load_commit_store,
+    load_release_commits,
+    load_tag_commits,
+    save_commits_to_parquet,
+)
 from pipeline.git_clone import temporary_git_clone
 from pipeline.http_client import GitHubClient
 from pipeline.orchestrator import (
@@ -87,6 +93,7 @@ class RepoPaths:
     releases_c2: Path
     tags: Path
     meta: Path
+    commits: Path
 
     def complete(self, window: tuple[datetime, datetime] | None = None) -> bool:
         """The meta file is written last, so its presence marks a finished collection.
@@ -95,7 +102,8 @@ class RepoPaths:
         observation window (the C2/C3 units depend on it); files collected for
         another window are stale and collected again.
         """
-        if not (self.releases_c2.is_file() and self.tags.is_file() and self.meta.is_file()):
+        files = (self.releases_c2, self.tags, self.meta, self.commits)
+        if not all(f.is_file() for f in files):
             return False
         if window is None:
             return True
@@ -103,41 +111,18 @@ class RepoPaths:
 
 
 def repo_paths(dados_dir: Path, full_name: str) -> RepoPaths:
-    """Locations of the C2, C3 and totals files of `full_name`."""
+    """Locations of the C2, C3, totals and commit store files of `full_name`."""
     return RepoPaths(
         releases_c2=releases_path(dados_dir / "releases_c2", full_name),
         tags=releases_path(dados_dir / "tags", full_name),
         meta=releases_path(dados_dir / "c2_c3_meta", full_name).with_suffix(".json"),
+        commits=commit_store_file(dados_dir, full_name),
     )
 
 
 def window_key(window_start: datetime, window_end: datetime) -> list[str]:
     """Window identity stored in the meta file."""
     return [window_start.isoformat(), window_end.isoformat()]
-
-
-def load_tag_commits(path: str | Path) -> list[ReleaseCommits]:
-    """Rebuild the `ReleaseCommits` of the C3 tags of a repository from its `tags/` Parquet.
-
-    The file does not keep the comparison status: a tag with a previous tag is
-    loaded as `OK` (even when the original comparison was `NOT_FOUND`, which is
-    saved with no commits) and one without as `FIRST_RELEASE`. The columns of
-    this backfill only use the window count and the commit lead times, which
-    are the same either way (no commits contribute to the median).
-    """
-    result: list[ReleaseCommits] = []
-    for row in pq.read_table(path).to_pylist():
-        tag = Release(
-            tag_name=row["tag_name"],
-            published_at=row["published_at"],
-            commit_sha=row["commit_sha"],
-        )
-        if row["previous_tag"] is None:
-            result.append(ReleaseCommits(tag, None, ComparisonStatus.FIRST_RELEASE))
-            continue
-        commits = [Commit.from_record(c) for c in row["commits"] or []]
-        result.append(ReleaseCommits(tag, None, ComparisonStatus.OK, commits))
-    return result
 
 
 def write_meta(path: Path, meta: dict[str, Any]) -> None:
@@ -165,6 +150,11 @@ async def collect_repository_c2_c3(
     """Collect and persist the C2/C3 units of one repository (same path as the orchestrator)."""
     owner, repo = full_name.split("/", 1)
     paths = repo_paths(dados_dir, full_name)
+    # The commit store is shared with `releases/` (C1, written by persist_releases):
+    # keep what is there and add the C2/C3 commits.
+    commit_cache: dict[str, Commit] = (
+        load_commit_store(paths.commits) if paths.commits.is_file() else {}
+    )
     releases = await fetch_releases(
         client=client, owner=owner, repo=repo, window_start=window_start, use_graphql=True
     )
@@ -181,8 +171,13 @@ async def collect_repository_c2_c3(
             releases=releases,
             window_start=window_start,
             window_end=window_end,
+            commit_cache=commit_cache,
         )
 
+    store = distinct_commits(
+        units.release_commits_c2, units.tag_commits_c3, known=commit_cache
+    )
+    save_commits_to_parquet(store.values(), paths.commits)
     save_releases_to_parquet(units.release_commits_c2, owner, repo, paths.releases_c2)
     save_tags_to_parquet(units.tag_commits_c3, owner, repo, paths.tags)
     write_meta(
@@ -236,10 +231,11 @@ def apply_c2_c3(
     inside the (closed) window were removed or re-dated.
     """
     meta = read_meta(paths.meta)
+    commits = load_commit_store(paths.commits)  # once per repository, shared by both files
     record.update(
         compute_c2_c3_columns(
-            load_release_commits(paths.releases_c2),
-            load_tag_commits(paths.tags),
+            load_release_commits(paths.releases_c2, commits),
+            load_tag_commits(paths.tags, commits),
             total_prereleases=meta["total_prereleases"],
             total_tags=meta["total_tags"],
             window_weeks=window_weeks,

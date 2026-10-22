@@ -25,7 +25,13 @@ from typing import Any
 import pyarrow.parquet as pq
 import yaml
 
-from metricas.schemas import _parse_datetime, parse_window_end
+from metricas.schemas import Commit, _parse_datetime, parse_window_end
+from pipeline.commit_store import (
+    commits_dir_for,
+    distinct_commits,
+    load_commit_store,
+    save_commits_to_parquet,
+)
 from pipeline.commits import collect_release_commits
 from pipeline.git_clone import temporary_git_clone
 from pipeline.http_client import GitHubClient
@@ -42,6 +48,12 @@ def accepted_repositories(dataset_path: str | Path) -> list[str]:
     return [str(n) for n in pq.read_table(path, columns=["full_name"]).column(0).to_pylist()]
 
 
+def is_persisted(releases_dir: Path, full_name: str) -> bool:
+    """True when the `releases/` file of `full_name` and its commit store exist."""
+    name = f"{full_name.replace('/', '__')}.parquet"
+    return (releases_dir / name).is_file() and (commits_dir_for(releases_dir) / name).is_file()
+
+
 async def persist_repository_releases(
     client: GitHubClient,
     full_name: str,
@@ -51,8 +63,15 @@ async def persist_repository_releases(
     git_cache_dir: Path,
     auto_cleanup: bool = True,
 ) -> Path:
-    """Collect the in-window releases (+ anchor) of one repository and save them."""
+    """Collect the in-window releases (+ anchor) of one repository and save them.
+
+    The commits go to the repository's commit store (`dados/commits/`, next to
+    `releases_dir`). When a store already exists (for example with the commits of
+    C2/C3) it is kept and extended, since all the unit files share it.
+    """
     owner, repo = full_name.split("/", 1)
+    store_path = commits_dir_for(releases_dir) / f"{owner}__{repo}.parquet"
+    commit_cache: dict[str, Commit] = load_commit_store(store_path) if store_path.is_file() else {}
     releases = await fetch_releases(
         client=client, owner=owner, repo=repo, window_start=window_start, use_graphql=True
     )
@@ -66,9 +85,16 @@ async def persist_repository_releases(
         token_pool=client.token_pool,
     ) as git_dir:
         release_commits = await collect_release_commits(
-            client=client, owner=owner, repo=repo, window=window, git_dir=git_dir
+            client=client,
+            owner=owner,
+            repo=repo,
+            window=window,
+            git_dir=git_dir,
+            commit_cache=commit_cache,
         )
 
+    store = distinct_commits(release_commits, known=commit_cache)
+    save_commits_to_parquet(store.values(), store_path)
     return save_releases_to_parquet(
         release_commits=release_commits,
         owner=owner,
@@ -96,9 +122,7 @@ async def persist_all(
     names = accepted_repositories(dados_dir / "repositorios.parquet")
     if limit is not None:
         names = names[:limit]
-    pending = [
-        n for n in names if not (releases_dir / f"{n.replace('/', '__')}.parquet").is_file()
-    ]
+    pending = [n for n in names if not is_persisted(releases_dir, n)]
     logger.info("%d accepted repositories, %d pending", len(names), len(pending))
 
     owns_client = client is None

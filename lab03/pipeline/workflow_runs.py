@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import asyncio
 import calendar
+import dataclasses
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 import logging
@@ -107,6 +109,8 @@ class WorkflowRunsCollectionResult:
     parquet_path: Path | None = None
     api_requests: int = 0
     unsplittable_intervals: list[dict[str, Any]] = field(default_factory=list)
+    # Only for `reconcile_workflow_runs`: one entry per coarse interval (see there)
+    reconciliation: list[dict[str, Any]] = field(default_factory=list)
 
 
 @dataclass
@@ -253,6 +257,66 @@ def _floor_to_second(dt: datetime) -> datetime:
     return dt.astimezone(timezone.utc).replace(microsecond=0)
 
 
+def _runs_url(owner: str, repo: str) -> str:
+    return f"/repos/{owner}/{repo}/actions/runs"
+
+
+def _runs_query_params(
+    branch: str, start_str: str, end_str: str, per_page: int, page: int
+) -> dict[str, Any]:
+    """Query of the runs endpoint: the filters of the collection, shared by every caller."""
+    return {
+        "branch": branch,
+        "event": "push",
+        "created": f"{start_str}..{end_str}",
+        "per_page": per_page,
+        "page": page,
+    }
+
+
+# The only fields of a run payload that are used; the rest (full `repository`,
+# `head_repository`, `head_commit`, ... objects) is ~10x bigger and is dropped at once.
+_RUN_FIELDS = (
+    "id",
+    "workflow_id",
+    "conclusion",
+    "created_at",
+    "run_started_at",
+    "updated_at",
+    "name",
+    "event",
+    "head_branch",
+)
+
+
+def _slim_runs(raw_runs: Sequence[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Keep only the fields of `_RUN_FIELDS` of each run payload (bounded memory)."""
+    return [{k: r.get(k) for k in _RUN_FIELDS if k in r} for r in raw_runs]
+
+
+def _workflow_run_from_raw(r_dict: dict[str, Any]) -> WorkflowRun:
+    """Convert a run of the API payload into a `WorkflowRun`."""
+    started = r_dict.get("run_started_at") or r_dict.get("created_at")
+    updated = r_dict.get("updated_at") or started
+    return WorkflowRun(
+        id=r_dict.get("id"),
+        workflow_id=r_dict.get("workflow_id", ""),
+        conclusion=r_dict.get("conclusion"),
+        run_started_at=started,
+        updated_at=updated,
+        name=r_dict.get("name"),
+        event=r_dict.get("event"),
+        branch=r_dict.get("head_branch"),
+    )
+
+
+def _is_valid_run(run: WorkflowRun) -> bool:
+    return classify_conclusion(run.conclusion) in (
+        ConclusionCategory.SUCCESS,
+        ConclusionCategory.FAILURE,
+    )
+
+
 async def _fetch_runs_for_interval(
     client: GitHubClient,
     owner: str,
@@ -283,24 +347,18 @@ async def _fetch_runs_for_interval(
     end_dt = _floor_to_second(end_dt)
     start_str = _format_iso(start_dt)
     end_str = _format_iso(end_dt)
-    date_filter = f"{start_str}..{end_str}"
 
-    url = f"/repos/{owner}/{repo}/actions/runs"
+    url = _runs_url(owner, repo)
 
     def page_params(page: int) -> dict[str, Any]:
-        return {
-            "branch": branch,
-            "event": "push",
-            "created": date_filter,
-            "per_page": RUNS_PER_PAGE,
-            "page": page,
-        }
+        return _runs_query_params(branch, start_str, end_str, RUNS_PER_PAGE, page)
 
     stats.api_requests += 1
     first_resp = await client.get(url, params=page_params(1))
     data = first_resp.json()
     total_count = data.get("total_count", 0)
-    page_runs = data.get("workflow_runs", [])
+    page_runs = _slim_runs(data.get("workflow_runs", []))
+    del data, first_resp  # the full payload is not needed any more
 
     saturated = total_count >= threshold_ceiling
     interval_seconds = int((end_dt - start_dt).total_seconds())
@@ -360,7 +418,8 @@ async def _fetch_runs_for_interval(
         page_tasks = [client.get(url, params=page_params(p)) for p in range(2, max_page + 1)]
         page_responses = await asyncio.gather(*page_tasks)
         for resp in page_responses:
-            all_runs.extend(resp.json().get("workflow_runs", []))
+            all_runs.extend(_slim_runs(resp.json().get("workflow_runs", [])))
+        del page_responses
 
     if saturated:
         # Smallest unit (1 s) and still >= ceiling: read what is readable and report.
@@ -453,29 +512,8 @@ async def collect_workflow_runs(
                 if run_id is not None:
                     raw_runs_by_id[run_id] = run_dict
 
-        workflow_runs: list[WorkflowRun] = []
-        valid_runs_count = 0
-
-        for r_dict in raw_runs_by_id.values():
-            started = r_dict.get("run_started_at") or r_dict.get("created_at")
-            updated = r_dict.get("updated_at") or started
-            conclusion = r_dict.get("conclusion")
-
-            wf_run = WorkflowRun(
-                id=r_dict.get("id"),
-                workflow_id=r_dict.get("workflow_id", ""),
-                conclusion=conclusion,
-                run_started_at=started,
-                updated_at=updated,
-                name=r_dict.get("name"),
-                event=r_dict.get("event"),
-                branch=r_dict.get("head_branch"),
-            )
-            workflow_runs.append(wf_run)
-
-            cat = classify_conclusion(conclusion)
-            if cat in (ConclusionCategory.SUCCESS, ConclusionCategory.FAILURE):
-                valid_runs_count += 1
+        workflow_runs = [_workflow_run_from_raw(r) for r in raw_runs_by_id.values()]
+        valid_runs_count = sum(1 for r in workflow_runs if _is_valid_run(r))
 
         passed_t4 = valid_runs_count >= 50
 
@@ -503,3 +541,169 @@ async def collect_workflow_runs(
     finally:
         if owns_client:
             await client.close()
+
+
+async def count_runs_in_interval(
+    client: GitHubClient,
+    owner: str,
+    repo: str,
+    branch: str,
+    start_dt: datetime,
+    end_dt: datetime,
+) -> int:
+    """`total_count` of the runs of a closed interval, asking for a single run (1 request).
+
+    Same filters as the collection (default branch, ``event=push``, ``created``
+    range in whole seconds); only ``per_page`` changes.
+    """
+    start_str = _format_iso(_floor_to_second(start_dt))
+    end_str = _format_iso(_floor_to_second(end_dt))
+    resp = await client.get(
+        _runs_url(owner, repo), params=_runs_query_params(branch, start_str, end_str, 1, 1)
+    )
+    return int(resp.json().get("total_count", 0))
+
+
+def _with_api_workflow_id(run: WorkflowRun) -> WorkflowRun:
+    """Give a stored run the `workflow_id` type the API returns (int).
+
+    Parquet keeps `workflow_id` as a string while the API payload has an integer; mixing
+    both would split one workflow in two groups in the CFR/recovery calculations.
+    """
+    if isinstance(run.workflow_id, str) and run.workflow_id.isdigit():
+        return dataclasses.replace(run, workflow_id=int(run.workflow_id))
+    return run
+
+
+def _in_interval(run: WorkflowRun, start_dt: datetime, end_dt: datetime) -> bool:
+    started = _floor_to_second(_to_utc_datetime(run.run_started_at))
+    return _floor_to_second(start_dt) <= started <= _floor_to_second(end_dt)
+
+
+async def reconcile_workflow_runs(
+    owner: str,
+    repo: str,
+    previous_runs: Sequence[WorkflowRun],
+    client: GitHubClient,
+    start_date: datetime | str,
+    previous_end_date: datetime | str,
+    end_date: datetime | str,
+    branch: str,
+    threshold_ceiling: int = 1000,
+) -> WorkflowRunsCollectionResult:
+    """Rebuild the runs of the window from a previous collection, spending few requests.
+
+    `previous_runs` were collected for ``[start_date, previous_end_date]``. The
+    previous window is cut in the same calendar-month intervals as the full
+    collection; for each one the API is asked only for ``total_count``
+    (`count_runs_in_interval`):
+
+    - equal to the number of previous runs in the interval: the previous runs
+      are kept (a full re-collection, with any slicing, returns that same set);
+    - different (interval truncated at 1,000, deleted or expired runs, runs
+      that moved across the boundary): the interval is fetched again with the
+      collector's recursive splitting (`_fetch_runs_for_interval`).
+
+    The tail ``(previous_end_date, end_date]`` is always fetched with the same
+    collector. Returns the same result type as `collect_workflow_runs`, with
+    `reconciliation` describing every interval (action ``kept``/``refetched``/``tail``).
+
+    Runs are matched to an interval by ``run_started_at`` (the stored
+    timestamp) while the API filters on ``created_at``; a re-run of an old run
+    makes the counts differ, which only costs a re-fetch of that interval.
+    """
+    start_dt = _to_utc_datetime(start_date)
+    prev_end_dt = _to_utc_datetime(previous_end_date)
+    end_dt = _to_utc_datetime(parse_window_end(end_date))  # type: ignore[arg-type]
+
+    bisection_events: list[dict[str, Any]] = []
+    stats = _FetchStats()
+
+    intervals = split_window_into_months(start_dt, prev_end_dt)
+    tail: tuple[datetime, datetime] | None = None
+    tail_start = _floor_to_second(prev_end_dt) + timedelta(seconds=1)
+    if tail_start <= _floor_to_second(end_dt):
+        tail = (tail_start, end_dt)
+
+    async def handle(slice_start: datetime, slice_end: datetime) -> tuple[list[WorkflowRun], list[dict[str, Any]], dict[str, Any]]:
+        committed = [
+            _with_api_workflow_id(r)
+            for r in previous_runs
+            if _in_interval(r, slice_start, slice_end)
+        ]
+        stats.api_requests += 1
+        api_count = await count_runs_in_interval(client, owner, repo, branch, slice_start, slice_end)
+        entry: dict[str, Any] = {
+            "start": _format_iso(_floor_to_second(slice_start)),
+            "end": _format_iso(_floor_to_second(slice_end)),
+            "previous_count": len(committed),
+            "api_count": api_count,
+        }
+        if api_count == len(committed):
+            entry["action"] = "kept"
+            return committed, [], entry
+        raw = await _fetch_runs_for_interval(
+            client=client,
+            owner=owner,
+            repo=repo,
+            branch=branch,
+            start_dt=slice_start,
+            end_dt=slice_end,
+            threshold_ceiling=threshold_ceiling,
+            bisection_events=bisection_events,
+            stats=stats,
+        )
+        entry["action"] = "refetched"
+        entry["fetched_count"] = len(raw)
+        return [], raw, entry
+
+    async def fetch_tail(slice_start: datetime, slice_end: datetime) -> tuple[list[WorkflowRun], list[dict[str, Any]], dict[str, Any]]:
+        raw = await _fetch_runs_for_interval(
+            client=client,
+            owner=owner,
+            repo=repo,
+            branch=branch,
+            start_dt=slice_start,
+            end_dt=slice_end,
+            threshold_ceiling=threshold_ceiling,
+            bisection_events=bisection_events,
+            stats=stats,
+        )
+        entry = {
+            "start": _format_iso(_floor_to_second(slice_start)),
+            "end": _format_iso(_floor_to_second(slice_end)),
+            "action": "tail",
+            "fetched_count": len(raw),
+        }
+        return [], raw, entry
+
+    tasks = [handle(s, e) for s, e in intervals]
+    if tail is not None:
+        tasks.append(fetch_tail(*tail))
+    outcomes = await asyncio.gather(*tasks)
+
+    by_id: dict[int | str, WorkflowRun] = {}
+    reconciliation: list[dict[str, Any]] = []
+    for kept_runs, raw_runs, entry in outcomes:
+        reconciliation.append(entry)
+        for run in kept_runs:
+            by_id[run.id] = run  # type: ignore[index]
+        for raw in raw_runs:
+            if raw.get("id") is not None:
+                by_id[raw["id"]] = _workflow_run_from_raw(raw)
+
+    workflow_runs = list(by_id.values())
+    valid_runs_count = sum(1 for r in workflow_runs if _is_valid_run(r))
+    return WorkflowRunsCollectionResult(
+        owner=owner,
+        repo=repo,
+        branch=branch,
+        runs=workflow_runs,
+        total_runs=len(workflow_runs),
+        valid_runs_count=valid_runs_count,
+        passed_t4=valid_runs_count >= 50,
+        bisection_events=bisection_events,
+        api_requests=stats.api_requests,
+        unsplittable_intervals=stats.unsplittable_intervals,
+        reconciliation=reconciliation,
+    )

@@ -606,3 +606,544 @@ def test_schema_has_cfr_b_columns_for_c2():
                    "_censored_releases", "_skipped_releases"):
         assert f"c2_cfr_b{suffix}" in names
     assert set(METADATA_COLUMNS) <= set(names)
+
+
+# ------------------------------------------------- unavailable repositories
+
+
+def test_unavailable_repository_keeps_previous_values(env, fakes, client):
+    import dataclasses
+
+    fakes.fail.add("acme/beta")
+    old_beta = [r for r in load_repositories_dataset(env.dataset_parquet) if r["name"] == "beta"][0]
+    old_run = (env.runs_dir / "acme__beta.parquet").read_bytes()
+    settings = dataclasses.replace(env, keep_previous=frozenset({"acme/beta"}))
+
+    summary = _run(settings, client)
+
+    assert summary.ok and summary.finalized
+    assert list(summary.kept) == ["acme/beta"] and "RuntimeError" in summary.kept["acme/beta"]
+    assert "ghp_" not in summary.kept["acme/beta"]
+    records = {r["name"]: r for r in load_repositories_dataset(env.dataset_parquet)}
+    # previous values untouched (including nulls the new schema cannot fill), the other one regenerated
+    assert records["beta"] == old_beta
+    assert records["alpha"]["c2_cfr_b_evaluated_releases"] == 6
+    assert (env.runs_dir / "acme__beta.parquet").read_bytes() == old_run
+    report = env.report_path.read_text(encoding="utf-8")
+    assert "## Repositórios mantidos com os valores anteriores" in report
+    assert "| acme/beta | RuntimeError" in report
+
+
+def test_unavailable_repository_outside_the_keep_list_still_fails(env, fakes, client):
+    fakes.fail.add("acme/beta")
+    summary = _run(env, client)
+    assert list(summary.failed) == ["acme/beta"] and not summary.kept
+
+
+def test_keep_list_comes_from_config_and_cli_flag():
+    settings = RegenSettings.from_config(
+        {"regeneracao": {"manter_valores_anteriores": ["a/a"]}}, keep_previous=["b/b"]
+    )
+    assert settings.keep_previous == frozenset({"a/a", "b/b"})
+
+
+def test_check_invariants_exempts_kept_repositories_from_the_null_check():
+    old = _ok_records()
+    new = [dict(r) for r in old]
+    new[1]["c2_cfr_b_evaluated_releases"] = None
+    assert check_invariants(old, new)
+    assert check_invariants(old, new, kept={"b/b"}) == []
+
+
+# ------------------------------------------- reconcile mode, status, bundle
+
+
+def _reconcile_settings(env, tmp_path, **extra):
+    import dataclasses
+
+    from pipeline.workflow_runs import save_runs_to_parquet
+
+    # real "previous" runs for the reconciliation (the fixture's files are placeholders)
+    for name in ("alpha", "beta"):
+        save_runs_to_parquet(_runs()[:3], "acme", name, env.runs_dir / f"acme__{name}.parquet")
+    from datetime import datetime, timezone
+
+    return dataclasses.replace(
+        env,
+        runs_mode="reconciliar",
+        previous_window_start=datetime(2025, 10, 1, tzinfo=timezone.utc),
+        previous_window_end=datetime(2026, 9, 30, tzinfo=timezone.utc),
+        status_path=tmp_path / "status.json",
+        bundle_dir=tmp_path / "bundle",
+        **extra,
+    )
+
+
+@pytest.fixture
+def reconciling(monkeypatch: pytest.MonkeyPatch, fakes: Fakes):
+    seen: dict[str, Any] = {}
+
+    async def fake_reconcile(owner, repo, previous_runs, client, start_date, previous_end_date,
+                             end_date, branch, **kw):
+        name = f"{owner}/{repo}"
+        seen[name] = {"previous": len(previous_runs), "previous_end": previous_end_date, "branch": branch}
+        runs = _runs()
+        beta = name == "acme/beta"
+        entries = [
+            {"start": "2025-10-01T00:00:00Z", "end": "2025-10-31T23:59:59Z", "action": "kept",
+             "previous_count": 2, "api_count": 2},
+            {"start": "2025-11-01T00:00:00Z", "end": "2025-11-30T23:59:59Z",
+             "action": "refetched" if beta else "kept", "previous_count": 1000, "api_count": 1300,
+             "fetched_count": 1300},
+            {"start": "2026-09-30T00:00:01Z", "end": "2026-09-30T23:59:59Z", "action": "tail",
+             "fetched_count": 0},
+        ]
+        return WorkflowRunsCollectionResult(
+            owner=owner, repo=repo, branch=branch, runs=runs, total_runs=len(runs),
+            valid_runs_count=len(runs), passed_t4=False, api_requests=3 + (5 if beta else 0),
+            reconciliation=entries,
+        )
+
+    monkeypatch.setattr(regenerar, "reconcile_workflow_runs", fake_reconcile)
+    return seen
+
+
+def test_reconcile_mode_uses_the_baseline_runs_and_reports_refetched_intervals(env, fakes, client, tmp_path, reconciling):
+    settings = _reconcile_settings(env, tmp_path)
+    summary = _run(settings, client)
+
+    assert summary.ok and summary.finalized
+    # the previous runs come from the snapshot taken before anything was published
+    assert reconciling["acme/alpha"]["previous"] == 3 and reconciling["acme/beta"]["previous"] == 3
+    assert reconciling["acme/alpha"]["previous_end"].isoformat() == "2026-09-30T00:00:00+00:00"
+    assert fakes.run_calls == {}  # the full collector was never used
+    assert (env.state_dir / "baseline_runs" / "acme__alpha.parquet").is_file()
+
+    done = load_checkpoint(env.checkpoint_path, env.fingerprint())
+    diag = done["acme/beta"]["diagnostics"]
+    assert diag["runs_mode"] == "reconciliar"
+    assert diag["reconciled"] == {"kept": 1, "refetched": 1, "tail": 1}
+    assert diag["refetched_intervals"][0]["api_count"] == 1300
+
+    report = settings.report_path.read_text(encoding="utf-8")
+    assert "## Coleta dos runs: reconciliação com a API" in report
+    assert "| acme/beta | 2025-11-01T00:00:00Z .. 2025-11-30T23:59:59Z | 1000 | 1300 | intervalo truncado" in report
+    assert "reconciliar: 2" in report
+    assert "## Execução desacoplada" in report and "status.json" in report
+
+
+def test_reconcile_mode_requires_the_previous_window_and_files(env, fakes, client, tmp_path, reconciling):
+    import dataclasses
+
+    settings = dataclasses.replace(_reconcile_settings(env, tmp_path), previous_window_end=None)
+    summary = _run(settings, client)
+    assert set(summary.failed) == {"acme/alpha", "acme/beta"}
+    assert all("janela_anterior" in v for v in summary.failed.values())
+
+
+def test_a_checkpoint_from_the_full_mode_is_reused_in_reconcile_mode(env, fakes, client, tmp_path, reconciling):
+    settings = _reconcile_settings(env, tmp_path)  # also writes the previous runs
+    _run(env, client, limit=1)  # alpha collected in full mode
+    summary = _run(settings, client, resume=True)
+
+    assert summary.reused == 1 and summary.collected == ["acme/beta"]
+    assert list(reconciling) == ["acme/beta"]
+    assert summary.finalized
+
+
+def test_status_json_is_written_and_has_no_secrets(env, fakes, client, tmp_path, reconciling):
+    settings = _reconcile_settings(env, tmp_path)
+    client.token_pool = SimpleNamespace(
+        tokens=[SimpleNamespace(token="ghp_" + "s" * 36, remaining=4200, reset_ts=1_800_000_000.0,
+                                cooldown_until=0.0),
+                SimpleNamespace(token="ghp_" + "t" * 36, remaining=None, reset_ts=None,
+                                cooldown_until=float("inf"))]
+    )
+    _run(settings, client)
+
+    text = settings.status_path.read_text(encoding="utf-8")
+    status = json.loads(text)
+    assert "ghp_" not in text
+    assert status["state"] == "finished"
+    assert (status["done"], status["total"], status["runs_mode"]) == (2, 2, "reconciliar")
+    assert status["requests_this_run"] == 3 + 8
+    assert status["quota"][0]["remaining"] == 4200 and status["quota"][0]["reset_at"]
+    assert status["quota"][1]["disabled"] is True
+    assert (status["tokens_total"], status["tokens_usable"]) == (2, 1)
+    assert status["current"] == [] and status["last_error"] is None and status["pid"] > 0
+
+
+def test_status_json_records_failures_and_partial_state(env, fakes, client, tmp_path):
+    import dataclasses
+
+    fakes.fail.add("acme/beta")
+    settings = dataclasses.replace(env, status_path=tmp_path / "status.json")
+    _run(settings, client)
+
+    status = json.loads(settings.status_path.read_text(encoding="utf-8"))
+    assert status["state"] == "failed" and status["failed_this_run"] == 1
+    assert status["done"] == 1 and "acme/beta" in status["last_error"]
+    assert "ghp_" not in status["last_error"]
+
+
+def test_bundle_has_everything_and_verifiable_checksums(env, fakes, client, tmp_path):
+    import dataclasses
+    import hashlib
+    import tarfile
+
+    settings = dataclasses.replace(env, bundle_dir=tmp_path / "bundle")
+    summary = _run(settings, client)
+
+    archive = summary.bundle
+    assert archive is not None and archive.name.startswith("outputs-") and archive.name.endswith(".tar.gz")
+    digest = (archive.parent / f"{archive.name}.sha256").read_text().split()[0]
+    assert digest == hashlib.sha256(archive.read_bytes()).hexdigest()
+
+    with tarfile.open(archive) as tar:
+        names = tar.getnames()
+        for expected in (
+            "outputs/dados/repositorios.csv",
+            "outputs/dados/repositorios.parquet",
+            "outputs/dados/runs/acme__alpha.parquet",
+            "outputs/dados/runs/acme__beta.parquet",
+            "outputs/docs/regeneracao_final.md",
+            "outputs/INVARIANTES.txt",
+            "outputs/DIFF_STAT.txt",
+            "outputs/SHA256SUMS",
+        ):
+            assert expected in names
+        assert not any("elastic" in n for n in names)  # the orphan is not part of the result
+        assert not any(".env" in n for n in names)  # secrets never go into the bundle
+        assert tar.extractfile("outputs/INVARIANTES.txt").read().decode().startswith("OK")
+        sums = tar.extractfile("outputs/SHA256SUMS").read().decode().splitlines()
+        for line in sums:
+            sha, member = line.split("  ", 1)
+            assert hashlib.sha256(tar.extractfile(f"outputs/{member}").read()).hexdigest() == sha
+    assert "Pacote de saídas" in regenerar.format_summary(summary)
+
+
+def test_settings_reject_unknown_runs_mode_and_parse_previous_window():
+    with pytest.raises(ValueError, match="runs_mode"):
+        RegenSettings.from_config({}, runs_mode="nope")
+    settings = RegenSettings.from_config(
+        {"regeneracao": {"janela_anterior": {"inicio": "2025-10-01", "fim": "2026-09-30"}}},
+        runs_mode="reconciliar",
+    )
+    assert settings.previous_window_end.isoformat() == "2026-09-30T00:00:00+00:00"  # literal, not end of day
+    assert settings.previous_window_start.isoformat() == "2025-10-01T00:00:00+00:00"
+
+
+def test_validate_reconciliation_compares_ids_and_derived_metrics(env, fakes, client, tmp_path, monkeypatch):
+    import dataclasses
+
+    from pipeline.regenerar import format_validation, validate_reconciliation
+
+    settings = _reconcile_settings(env, tmp_path)
+    _run(dataclasses.replace(env, runs_mode="completo"), client, limit=1)  # alpha: full result staged
+    from pipeline.regenerar import prepare_baseline
+
+    prepare_baseline(settings)
+
+    async def fake_reconcile(owner, repo, previous_runs, client, start_date, previous_end_date,
+                             end_date, branch, **kw):
+        runs = _runs() if repo == "alpha" else _runs()[:3]  # beta: the reconciliation lost a run
+        return WorkflowRunsCollectionResult(
+            owner=owner, repo=repo, branch=branch, runs=runs, total_runs=len(runs),
+            valid_runs_count=len(runs), passed_t4=False, api_requests=2,
+            reconciliation=[{"start": "a", "end": "b", "action": "kept"}],
+        )
+
+    monkeypatch.setattr(regenerar, "reconcile_workflow_runs", fake_reconcile)
+    import asyncio
+
+    results = asyncio.run(validate_reconciliation(settings, client, ["acme/alpha", "acme/beta"]))
+
+    alpha, beta = results
+    assert alpha["full_source"] == "checkpoint" and alpha["same_ids"] and alpha["same_metrics"]
+    assert beta["full_source"] == "coleta completa" and not beta["same_ids"]
+    assert beta["only_in_full"] == 1
+    assert alpha["requests_full"] == 7 and alpha["requests_reconciled"] == 2
+    assert (settings.state_dir / "validacao_reconciliacao.json").is_file()
+    assert "acme/beta" in format_validation(results)
+
+
+# ------------------------------------------------------- memory budget
+
+
+def test_wait_for_memory_pauses_until_enough_ram_is_available():
+    import asyncio
+
+    readings = iter([1000, 1500, 4000])
+    calls = []
+
+    def reader():
+        value = next(readings)
+        calls.append(value)
+        return {"rss": 1, "peak_rss": 1, "available": value}
+
+    waited = asyncio.run(regenerar.wait_for_memory(3072, poll_seconds=0.01, reader=reader))
+    assert calls == [1000, 1500, 4000] and waited == pytest.approx(0.02)
+    # unknown memory (not Linux) never blocks
+    assert asyncio.run(
+        regenerar.wait_for_memory(3072, 0.01, reader=lambda: {"available": None})
+    ) == 0.0
+
+
+def test_read_memory_has_the_expected_keys():
+    mem = regenerar.read_memory()
+    assert set(mem) == {"rss", "peak_rss", "available"}
+    if Path("/proc/self/status").exists():
+        assert mem["rss"] > 0 and mem["peak_rss"] >= mem["rss"] and mem["available"] > 0
+
+
+def test_is_heavy_by_runs_releases_or_tags():
+    assert regenerar.is_heavy({"total_workflow_runs": 50_000})
+    # tag-heavy repositories (CI tags) are heavy too, even with few runs and releases
+    assert regenerar.is_heavy({"total_workflow_runs": 93, "releases_count_window": 70, "tags_count_window": 1000})
+    assert regenerar.is_heavy({"tags_count_window": 9_458})
+    assert not regenerar.is_heavy({"tags_count_window": 999})
+    assert not regenerar.is_heavy({"tags_count_window": None})
+    assert regenerar.is_heavy({"total_workflow_runs": 10, "releases_count_window": 2576})
+    assert not regenerar.is_heavy({"total_workflow_runs": 4_000, "releases_count_window": 28})
+    assert not regenerar.is_heavy({})
+
+
+def test_only_one_heavy_repository_at_a_time(env, fakes, client, monkeypatch):
+    import asyncio
+
+    # both repositories are heavy; four workers must still serialise them
+    old = load_repositories_dataset(env.dataset_parquet)
+    for r in old:
+        r["total_workflow_runs"] = 99_999
+    save_repositories_dataset(old, env.dataset_parquet, env.dataset_csv)
+    env.baseline_parquet.unlink(missing_ok=True)
+    env.baseline_csv.unlink(missing_ok=True)
+
+    active = {"now": 0, "max": 0}
+    original = fakes.fetch_releases
+
+    async def tracking(*a, **kw):
+        active["now"] += 1
+        active["max"] = max(active["max"], active["now"])
+        await asyncio.sleep(0.05)
+        try:
+            return await original(*a, **kw)
+        finally:
+            active["now"] -= 1
+
+    monkeypatch.setattr(regenerar, "fetch_releases", tracking)
+    summary = _run(env, client, num_workers=4)
+    assert summary.ok and summary.finalized
+    assert active["max"] == 1
+
+
+def test_light_repositories_run_in_parallel(env, fakes, client, monkeypatch):
+    import asyncio
+
+    active = {"now": 0, "max": 0}
+    original = fakes.fetch_releases
+
+    async def tracking(*a, **kw):
+        active["now"] += 1
+        active["max"] = max(active["max"], active["now"])
+        await asyncio.sleep(0.05)
+        try:
+            return await original(*a, **kw)
+        finally:
+            active["now"] -= 1
+
+    monkeypatch.setattr(regenerar, "fetch_releases", tracking)
+    assert _run(env, client, num_workers=2).ok
+    assert active["max"] == 2
+
+
+def test_status_reports_memory_and_the_peak_per_repository(env, fakes, client, tmp_path):
+    import dataclasses
+
+    settings = dataclasses.replace(env, status_path=tmp_path / "status.json")
+    _run(settings, client)
+    status = json.loads(settings.status_path.read_text(encoding="utf-8"))
+    assert set(status["memory_mb"]) == {"rss", "peak_rss", "available"}
+    done = load_checkpoint(env.checkpoint_path, env.fingerprint())
+    assert all("peak_rss_mb" in e["diagnostics"] for e in done.values())
+    if Path("/proc/self/status").exists():
+        assert status["memory_mb"]["rss"] > 0 and status["peak_rss_mb_per_repo"]
+
+
+def test_only_restricts_the_scope_and_publishes_nothing(env, fakes, client):
+    csv_before = env.dataset_csv.read_bytes()
+    summary = _run(env, client, only=["acme/beta"])
+    assert summary.collected == ["acme/beta"] and not summary.finalized
+    assert env.dataset_csv.read_bytes() == csv_before
+    with pytest.raises(RegenerationError, match="fora do dataset"):
+        _run(env, client, only=["nope/nope"], resume=True)
+
+
+# ------------------------------------------------- git phase in a child process
+
+
+def _records_by_name(settings):
+    return {r["full_name"]: r for r in load_repositories_dataset(settings.dataset_parquet)}
+
+
+def test_child_process_record_equals_the_in_process_record(env, fakes, client, tmp_path):
+    import dataclasses
+    import shutil
+
+    in_process = _run(env, client)
+    assert in_process.ok and in_process.finalized
+    expected = _records_by_name(env)
+    expected_csv = env.dataset_csv.read_bytes()
+    expected_files = {
+        p.relative_to(env.dados_dir).as_posix(): p.read_bytes()
+        for folder in ("commits", "releases", "releases_c2", "tags")
+        for p in (env.dados_dir / folder).glob("*.parquet")
+    }
+    assert set(expected_files) == {
+        f"{folder}/acme__{repo}.parquet"
+        for folder in ("commits", "releases", "releases_c2", "tags")
+        for repo in ("alpha", "beta")
+    }
+
+    # again from scratch, now with the git phase in a child per repository
+    shutil.rmtree(env.state_dir)
+    for folder in ("commits", "releases", "releases_c2", "tags"):
+        shutil.rmtree(env.dados_dir / folder)
+    old = [r for r in load_repositories_dataset(env.dataset_parquet)]
+    # start again from the dataset that existed before the first run
+    baseline = [_old_record("acme/alpha", 111), _old_record("acme/beta", 222)]
+    save_repositories_dataset(baseline, env.dataset_parquet, env.dataset_csv)
+    child_settings = dataclasses.replace(env, git_subprocess=True)
+    summary = _run(child_settings, client)
+
+    assert summary.ok and summary.finalized and old
+    assert _records_by_name(env) == expected  # same columns, same floats
+    assert env.dataset_csv.read_bytes() == expected_csv  # byte for byte
+    for name, content in expected_files.items():
+        assert (env.dados_dir / name).read_bytes() == content, name
+    done = load_checkpoint(env.checkpoint_path, env.fingerprint())
+    peaks = [e["diagnostics"]["peak_rss_mb"] for e in done.values()]
+    assert all(isinstance(p, int) and p > 0 for p in peaks)  # the child's own peak
+
+
+def test_child_peak_goes_to_status_json(env, fakes, client, tmp_path):
+    import dataclasses
+
+    settings = dataclasses.replace(env, git_subprocess=True, status_path=tmp_path / "status.json")
+    _run(settings, client)
+    status = json.loads(settings.status_path.read_text(encoding="utf-8"))
+    done = load_checkpoint(env.checkpoint_path, env.fingerprint())
+    assert status["peak_rss_mb_per_repo"] == {
+        name: e["diagnostics"]["peak_rss_mb"] for name, e in done.items()
+    }
+
+
+def test_a_failing_child_is_a_repository_failure_and_is_retried_on_resume(
+    env, fakes, client, monkeypatch
+):
+    import dataclasses
+
+    child_settings = dataclasses.replace(env, git_subprocess=True)
+    real = regenerar.run_git_phase_in_child
+    attempts = []
+
+    async def flaky(spec, timeout):
+        attempts.append(spec.repo)
+        if spec.repo == "beta" and attempts.count("beta") == 1:  # only its first attempt fails
+            raise regenerar.GitPhaseError(
+                f"git phase of acme/beta failed (exit -9): killed ghp_{'z' * 30}"
+            )
+        return await real(spec, timeout=timeout)
+
+    monkeypatch.setattr(regenerar, "run_git_phase_in_child", flaky)
+    csv_before = env.dataset_csv.read_bytes()
+    summary = _run(child_settings, client)
+
+    assert list(summary.failed) == ["acme/beta"]
+    assert "exit -9" in summary.failed["acme/beta"] and "ghp_" not in summary.failed["acme/beta"]
+    assert not summary.finalized and env.dataset_csv.read_bytes() == csv_before
+    done = load_checkpoint(env.checkpoint_path, env.fingerprint())
+    assert list(done) == ["acme/alpha"]
+
+    summary = _run(child_settings, client, resume=True)  # beta is retried; alpha is not
+    assert summary.ok and summary.finalized and summary.collected == ["acme/beta"]
+    assert attempts.count("alpha") == 1 and attempts.count("beta") == 2
+    assert not list(env.dados_dir.rglob("*.tmp"))
+
+
+def test_a_timing_out_child_keeps_previous_values_when_listed(env, fakes, client, monkeypatch):
+    import dataclasses
+
+    (env.dados_dir / "runs").joinpath("acme__beta.parquet").write_bytes(b"old beta")
+    child_settings = dataclasses.replace(
+        env, git_subprocess=True, keep_previous=frozenset({"acme/beta"})
+    )
+
+    real = regenerar.run_git_phase_in_child
+
+    async def dispatch(spec, timeout):
+        if spec.repo == "beta":
+            raise regenerar.GitPhaseError("git phase of acme/beta timed out after 3600s")
+        return await real(spec, timeout=timeout)
+
+    monkeypatch.setattr(regenerar, "run_git_phase_in_child", dispatch)
+    summary = _run(child_settings, client)
+
+    assert summary.ok and summary.finalized
+    assert "timed out" in summary.kept["acme/beta"]
+
+
+def test_child_timeout_comes_from_the_settings(env, fakes, client, monkeypatch):
+    import dataclasses
+
+    seen = []
+
+    async def spy(spec, timeout):
+        seen.append(timeout)
+        raise regenerar.GitPhaseError("stop")
+
+    monkeypatch.setattr(regenerar, "run_git_phase_in_child", spy)
+    _run(dataclasses.replace(env, git_subprocess=True, child_timeout=123.0), client, limit=1)
+    assert seen == [123.0]
+
+
+def test_cli_runs_the_git_phase_in_a_child_unless_told_otherwise(env, fakes, tmp_path, monkeypatch):
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text(
+        yaml.safe_dump(
+            {
+                "janela": {"inicio": "2025-10-01", "fim": "2026-09-30"},
+                "amostra": {"tamanho_final": 2},
+                "diretorios": {
+                    "dados": str(env.dados_dir),
+                    "cache": str(env.cache_dir),
+                    "git_cache": str(env.git_cache_dir),
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    captured = []
+
+    async def fake_run(settings, **kwargs):
+        captured.append(settings.git_subprocess)
+        return regenerar.RegenSummary()
+
+    monkeypatch.setattr(regenerar, "run_regeneration", fake_run)
+    monkeypatch.setenv("GITHUB_TOKEN", "ghp_" + "s" * 36)
+    base = ["--config", str(config_path), "--relatorio", str(tmp_path / "r.md")]
+    regenerar.main(base)
+    regenerar.main([*base, "--sem-subprocesso"])
+    assert captured == [True, False]
+    assert RegenSettings.from_config({"janela": {"inicio": "2025-10-01", "fim": "2026-09-30"}}).git_subprocess is False
+
+
+def test_report_summarises_the_runs_totals():
+    old, new = _ok_records(), _ok_records()
+    old[0]["total_workflow_runs"], new[0]["total_workflow_runs"] = 100, 250
+    old[1]["total_workflow_runs"], new[1]["total_workflow_runs"] = 10, 10
+    text = render_report(
+        compare_datasets(old, new), [], generated_on="2026-10-22", window=("a", "b"), heuristic="v1"
+    )
+    assert "Runs coletados (soma de `total_workflow_runs`): 110 antes, 260 depois" in text
+    assert "MemoryHigh=6G" in text

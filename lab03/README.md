@@ -58,7 +58,7 @@ O comando executa automaticamente todo o fluxo:
 4. **Filtro de Workflow Runs:** Coleta execuções de push no default branch e exige $\ge 50$ runs válidos.
 5. **Metadados e Commits:** Coleta estrelas, linguagem, contribuidores e commits entre releases consecutivas.
 6. **Cálculo de Métricas DORA:** Computa Deployment Frequency, Lead Time (a) e (b), Change Failure Rate (CFR a e CFR b) e Tempo de Recuperação, além do tier DORA final e das combinações C2 (releases + pré-releases) e C3 (tags).
-7. **Exportação e Funil:** Salva incrementalmente `dados/repositorios.parquet`, `dados/repositorios.csv`, `dados/funil.csv`, `dados/runs/*.parquet`, `dados/releases/*.parquet`, `dados/releases_c2/*.parquet` e `dados/tags/*.parquet`.
+7. **Exportação e Funil:** Salva incrementalmente `dados/repositorios.parquet`, `dados/repositorios.csv`, `dados/funil.csv`, `dados/runs/*.parquet`, `dados/releases/*.parquet`, `dados/releases_c2/*.parquet`, `dados/tags/*.parquet` e o repositório de commits normalizado `dados/commits/*.parquet`.
 
 Para regenerar o dataset final (requisitos, `--clean` e o que é versionado), veja a seção 7 do [Dicionário de Dados](./dados/README.md#7-como-regenerar-o-dataset-final).
 
@@ -127,15 +127,16 @@ lab03/
 ├── config.yaml               # Configurações do pipeline (janela, limites e filtros)
 ├── pyproject.toml            # Dependências gerenciadas via uv
 ├── README.md                 # Guia de execução do zero e documentação do projeto
-├── dados/                    # Diretório de saída dos dados (releases/ e releases_c2/ não são versionados)
+├── dados/                    # Diretório de saída dos dados (releases/, releases_c2/, tags/ e commits/ não são versionados)
 │   ├── README.md             # Dicionário de dados completo de todas as colunas e métricas
 │   ├── funil.csv             # Tabela do funil de amostragem com contagens e descartes (T4)
 │   ├── repositorios.parquet  # Dataset consolidado em formato Parquet columnar (Snappy)
 │   ├── repositorios.csv      # Dataset consolidado em CSV para replicação cruzada
 │   ├── runs/                 # Execuções brutas de workflow por repositório ({owner}__{repo}.parquet)
-│   ├── releases/             # Releases C1 e commits por release (não versionado; regenerável)
-│   ├── releases_c2/          # Releases + pré-releases (C2) e commits (não versionado; regenerável)
-│   ├── tags/                 # Tags Git (C3) e commits entre tags consecutivas
+│   ├── commits/              # Repositório de commits normalizado, um por SHA distinto (não versionado; regenerável)
+│   ├── releases/             # Releases C1 e SHAs dos commits de cada release (não versionado; regenerável)
+│   ├── releases_c2/          # Releases + pré-releases (C2) e SHAs dos commits (não versionado; regenerável)
+│   ├── tags/                 # Tags Git (C3) e SHAs dos commits entre tags consecutivas (não versionado)
 │   ├── analises/             # Saídas de análises (diagnóstico de lead time)
 │   └── amostra_ouro/         # Planilhas de rotulação da amostra-ouro (60 repositórios)
 ├── cache/                    # Cache local SQLite das requisições HTTP (ignorado no git)
@@ -156,7 +157,9 @@ lab03/
 │   ├── metadata.py           # Coleta de metadados e contagem de contribuidores
 │   ├── releases.py           # Coleta de releases, tags e filtragem de janela
 │   ├── commits.py            # Coleta de commits entre releases (compare)
-│   ├── git_clone.py          # Clone blobless temporário: tags e commits via git local
+│   ├── git_clone.py          # Clone blobless temporário: tags e commits via git local (git log em fluxo)
+│   ├── commit_store.py       # Repositório de commits normalizado e leitor único dos arquivos de unidades
+│   ├── git_phase.py          # Fase git/commits de um repositório, em processo ou em filho de vida curta
 │   ├── persist_releases.py   # Regenera dados/releases/ de repositórios já aceitos
 │   ├── backfill_cfr_b.py     # Preenche as colunas cfr_b* do dataset sem mudar os repositórios
 │   ├── backfill_c2_c3.py     # Preenche as colunas de pré-releases, tags, C2 e C3 sem mudar os repositórios

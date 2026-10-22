@@ -12,7 +12,7 @@ from __future__ import annotations
 import csv
 import math
 from collections import Counter
-from collections.abc import Sequence
+from collections.abc import Collection, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -88,8 +88,14 @@ def check_invariants(
     old: Sequence[dict[str, Any]],
     new: Sequence[dict[str, Any]],
     expected_rows: int | None = None,
+    kept: Collection[str] = (),
 ) -> list[str]:
-    """Invariants of the regeneration of a frozen sample; empty list when all hold."""
+    """Invariants of the regeneration of a frozen sample; empty list when all hold.
+
+    Repositories in `kept` could not be recollected and keep their previous
+    values: they must still have the full schema and unchanged metadata, but
+    their metric columns may be null.
+    """
     problems: list[str] = []
     if expected_rows is not None:
         if len(old) != expected_rows:
@@ -132,7 +138,7 @@ def check_invariants(
                 if not same_value(before.get(col), rec.get(col)):
                     problems.append(f"{name}: coluna de metadados {col} mudou")
         for col in NEVER_NULL_COLUMNS:
-            if rec.get(col) is None:
+            if name not in kept and rec.get(col) is None:
                 problems.append(f"{name}: {col} nulo")
     return problems
 
@@ -203,6 +209,17 @@ class Comparison:
     new_columns: list[str] = field(default_factory=list)
     below_selection_criteria: list[tuple[str, int, int]] = field(default_factory=list)
     unsplittable: dict[str, int] = field(default_factory=dict)
+    # repositories that could not be recollected and kept their previous values
+    kept_previous: dict[str, str] = field(default_factory=dict)
+    # how the runs of each repository were obtained: mode -> repositories
+    runs_modes: dict[str, int] = field(default_factory=dict)
+    # intervals reconciled by the API count: kept / refetched / tail (all repositories)
+    reconciled_totals: dict[str, int] = field(default_factory=dict)
+    # sum of `total_workflow_runs` before / after
+    runs_before: int = 0
+    runs_after: int = 0
+    # (repository, start, end, previous count, API count, reason) of every re-fetched interval
+    refetched: list[tuple[str, str, str, int, int, str]] = field(default_factory=list)
 
     @property
     def changed_columns(self) -> list[ColumnComparison]:
@@ -216,11 +233,34 @@ def compare_datasets(
     min_releases: int = 5,
     min_workflow_runs: int = 50,
     unsplittable: dict[str, int] | None = None,
+    kept: dict[str, str] | None = None,
+    runs_diagnostics: dict[str, dict[str, Any]] | None = None,
 ) -> Comparison:
     """Compare the dataset before and after the regeneration, row by row (by `full_name`)."""
     old_by_name = {r["full_name"]: r for r in old}
-    comparison = Comparison(rows=len(new), unsplittable=dict(unsplittable or {}))
+    comparison = Comparison(
+        rows=len(new), unsplittable=dict(unsplittable or {}), kept_previous=dict(kept or {})
+    )
     pairs = [(old_by_name.get(r["full_name"], {}), r) for r in new]
+
+    modes: Counter = Counter()
+    totals: Counter = Counter()
+    for name, diag in sorted((runs_diagnostics or {}).items()):
+        if diag.get("kept_previous"):
+            continue
+        modes[diag.get("runs_mode", "completo")] += 1
+        totals.update(diag.get("reconciled", {}))
+        for e in diag.get("refetched_intervals", []):
+            comparison.refetched.append(
+                (name, e["start"], e["end"], e["previous_count"], e["api_count"],
+                 refetch_reason(e["previous_count"], e["api_count"]))
+            )
+    comparison.runs_before = sum(
+        (old_by_name.get(r["full_name"], {}).get("total_workflow_runs") or 0) for r in new
+    )
+    comparison.runs_after = sum((r.get("total_workflow_runs") or 0) for r in new)
+    comparison.runs_modes = dict(modes)
+    comparison.reconciled_totals = dict(totals)
 
     if baseline_columns is not None:
         comparison.new_columns = [c for c in SCHEMA_COLUMNS if c not in baseline_columns]
@@ -278,6 +318,25 @@ def compare_datasets(
     return comparison
 
 
+# The runs endpoint never reports a `total_count` above this value (observed maximum over
+# 292 re-fetched intervals); a bigger interval is simply reported as 2,500.
+API_COUNT_CAP = 2500
+
+
+def refetch_reason(previous: int, api: int) -> str:
+    """Why a reconciled interval had to be fetched again (counts differ)."""
+    if api >= API_COUNT_CAP:
+        return (
+            "a contagem da API chegou ao teto de 2.500 (intervalo muito grande, a coleta anterior "
+            "estava truncada); recoletado com divisão recursiva"
+        )
+    if api > previous and previous >= 1000:
+        return "intervalo truncado em 1.000 runs na coleta anterior"
+    if api > previous:
+        return "a API tem mais runs (novos, ou deslocados por reexecução)"
+    return "a API tem menos runs (removidos/expirados, ou deslocados por reexecução)"
+
+
 def _fmt(value: Any) -> str:
     return NULL_LABEL if value is None else str(value)
 
@@ -315,6 +374,12 @@ def render_report(
         f"{len([c for c in comparison.changed_columns if c.column not in METADATA_COLUMNS])}."
     )
     add(f"- Repositórios com a faixa geral (`overall_dora_tier`) alterada: {len(comparison.overall_changes)}.")
+    if comparison.runs_before or comparison.runs_after:
+        add(
+            f"- Runs coletados (soma de `total_workflow_runs`): {comparison.runs_before:,} antes, "
+            f"{comparison.runs_after:,} depois (a divisão recursiva sem piso recuperou os runs que a "
+            "coleta anterior truncava em 1.000 por intervalo)."
+        )
     add("")
 
     add("## Invariantes")
@@ -388,6 +453,58 @@ def render_report(
         add("Nenhum.")
     add("")
 
+    add("## Repositórios mantidos com os valores anteriores")
+    add("")
+    if comparison.kept_previous:
+        add(
+            "Não foi possível recoletar estes repositórios (por exemplo, repositório "
+            "desabilitado no GitHub). Eles continuam entre os 330 com os valores de métricas "
+            "do dataset anterior, inalterados (as colunas novas ficam nulas) e o `runs/` anterior."
+        )
+        add("")
+        add("| Repositório | Motivo |")
+        add("|---|---|")
+        for name, reason in sorted(comparison.kept_previous.items()):
+            add(f"| {name} | {reason.replace('|', '/')[:200]} |")
+    else:
+        add("Nenhum: todos os repositórios foram recoletados.")
+    add("")
+
+    add("## Coleta dos runs: reconciliação com a API")
+    add("")
+    if comparison.runs_modes:
+        add(
+            "Modo de obtenção dos runs por repositório: "
+            + ", ".join(f"{m}: {n}" for m, n in sorted(comparison.runs_modes.items()))
+            + "."
+        )
+    if comparison.reconciled_totals:
+        t = comparison.reconciled_totals
+        add("")
+        add(
+            "No modo `reconciliar`, os runs de `dados/runs/` do dataset anterior (janela até "
+            "2026-09-30T00:00Z) foram conferidos por intervalo mensal: a API informa só o "
+            "`total_count` (1 requisição) e, quando bate com os runs já coletados no intervalo, "
+            "eles são mantidos (uma recoleta completa devolveria o mesmo conjunto); quando difere, "
+            "o intervalo é recoletado com a divisão recursiva do coletor. O trecho final "
+            "(2026-09-30T00:00:01Z a 23:59:59Z) é sempre coletado. Intervalos: "
+            f"{t.get('kept', 0)} mantidos, {t.get('refetched', 0)} recoletados, {t.get('tail', 0)} do trecho final."
+        )
+    if comparison.refetched:
+        add("")
+        add(f"Intervalos recoletados ({len(comparison.refetched)}):")
+        add("")
+        add("| Repositório | Intervalo | Runs anteriores | Contagem da API | Motivo |")
+        add("|---|---|---:|---:|---|")
+        for name, start, end, previous, api, reason in comparison.refetched[:300]:
+            add(f"| {name} | {start} .. {end} | {previous} | {api} | {reason} |")
+        if len(comparison.refetched) > 300:
+            add(f"| … | mais {len(comparison.refetched) - 300} intervalos | | | |")
+    elif comparison.reconciled_totals:
+        add("")
+        add("Nenhum intervalo precisou ser recoletado.")
+    add("")
+
     add("## Diagnóstico da coleta de runs")
     add("")
     if comparison.unsplittable:
@@ -402,5 +519,27 @@ def render_report(
             add(f"| {name} | {n} |")
     else:
         add("Nenhum intervalo residual não divisível.")
+    add("")
+    add("## Execução desacoplada")
+    add("")
+    add(
+        "A coleta roda em `jao-pc` (`~/regen-lab03`) sob um supervisor que não depende de quem a "
+        "iniciou: `supervisor.sh` (instância única por `flock`, reinício com espera crescente de 60 s "
+        "a 10 min) executa `python -m pipeline.regenerar --resume --runs-modo reconciliar`, é lançado por "
+        "`systemd-run --user --unit=regen-sup` (com `systemd-inhibit` quando permitido e orçamento de memória "
+        "`MemoryHigh=6G`/`MemoryMax=8G`, `Nice=15`, E/S ociosa e `CPUWeight=20`, porque a máquina é compartilhada; "
+        "o próprio pipeline também não inicia novos repositórios com menos de 3 GiB de RAM disponível, processa "
+        "no máximo um repositório \"pesado\" por vez e usa 2 workers) e, ao concluir, "
+        "ele mesmo gera `outputs-<data UTC>.tar.gz` (dataset, `runs/`, este relatório, resultado das "
+        "invariantes, `git diff --stat` e `SHA256SUMS`) e o marcador `DONE`."
+    )
+    add("")
+    add("Como conferir e retomar (todos os comandos em `~/regen-lab03`):")
+    add("")
+    add("- Estado em uma chamada: `cat status.json` (`state`, `done/total`, requisições, cota restante e reinício da cota, memória (`memory_mb`: RSS, pico, RAM disponível) e pico por repositório, repositórios em andamento, ETA e último erro; `updated_at` parado há mais de ~5 min indica travamento).")
+    add("- Supervisor: `systemctl --user status regen-sup`; log em `supervisor.log`; log do pipeline em `regen.log`.")
+    add("- Concluído quando existirem `DONE` e `outputs-*.tar.gz` (+ `.sha256`). Baixe o pacote e confira com `sha256sum -c`.")
+    add("- Retomar manualmente: o progresso fica em `lab03/dados/.regenerar/checkpoint.jsonl`; `systemctl --user start regen-sup` (ou `bash supervisor.sh`) continua de onde parou. Nunca rode duas instâncias; o `flock` recusa a segunda.")
+    add("- Não use `--fresh` para retomar: ele descarta o checkpoint.")
     add("")
     return "\n".join(lines)

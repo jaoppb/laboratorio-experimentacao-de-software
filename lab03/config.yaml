@@ -48,3 +48,15 @@ coleta:
   # bare local (git for-each-ref) com zero consumo de cota de API do GitHub.
   max_tags: 100
 
+# Regeneração final (#56): repositórios que, se não puderem ser recoletados, mantêm os valores
+# anteriores em vez de bloquear a publicação. `MadsLorentzen/ai-job-search` foi movido para
+# `ai-job-search-dev/ai-job-search` e está desabilitado no GitHub (git clone falha).
+regeneracao:
+  manter_valores_anteriores:
+    - "MadsLorentzen/ai-job-search"
+  # Janela da coleta anterior (limite superior LITERAL, sem fim do dia): os runs de dados/runs/
+  # cobrem [inicio, fim]; `--runs-modo reconciliar` os confere com a API e coleta só o que mudou
+  # mais o trecho posterior ao `fim` até o fim da janela atual.
+  janela_anterior:
+    inicio: "2025-10-01"
+    fim: "2026-09-30T00:00:00Z"
