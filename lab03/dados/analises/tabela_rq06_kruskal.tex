@@ -1,0 +1,39 @@
+% Tabela gerada automaticamente por analises/analise_rq05_rq06.py
+\begin{table*}[ht]
+\centering
+\caption{Resultados do teste de Kruskal-Wallis e correção de Holm para fatores de repositórios (RQ 06).}
+\label{tab:rq06_kruskal}
+\small
+\begin{tabular}{llrrrrrcc}
+\toprule
+\textbf{Fator} & \textbf{Métrica DORA} & \textbf{$k$} & \textbf{$n$} & \textbf{$H$} & \textbf{$p$-bruto} & \textbf{$p$-Holm} & \textbf{$\epsilon^2$} & \textbf{Efeito} \\
+\midrule
+Popularidade (Estrelas) & Freq. Deploy (rel/sem) & 4 & 330 & 5.66 & 1.295e-01 & 1.000e+00 & 0.017 & pequeno \\
+Popularidade (Estrelas) & Lead Time (b) (horas) & 4 & 329 & 1.84 & 6.053e-01 & 1.000e+00 & 0.006 & desprezível \\
+Popularidade (Estrelas) & CFR (a) CI (\%) & 4 & 330 & 3.57 & 3.119e-01 & 1.000e+00 & 0.011 & pequeno \\
+Popularidade (Estrelas) & CFR (b) Entrega (\%) & 4 & 328 & 2.32 & 5.091e-01 & 1.000e+00 & 0.007 & desprezível \\
+Popularidade (Estrelas) & Tempo Recuperação (horas) & 4 & 312 & 0.52 & 9.136e-01 & 1.000e+00 & 0.002 & desprezível \\
+Equipe (Contribuidores) & Freq. Deploy (rel/sem) & 4 & 330 & 3.50 & 3.201e-01 & 1.000e+00 & 0.011 & pequeno \\
+Equipe (Contribuidores) & Lead Time (b) (horas) & 4 & 329 & 69.30 & 6.042e-15 & 1.450e-13$^*$ & 0.211 & grande \\
+Equipe (Contribuidores) & CFR (a) CI (\%) & 4 & 330 & 1.35 & 7.170e-01 & 1.000e+00 & 0.004 & desprezível \\
+Equipe (Contribuidores) & CFR (b) Entrega (\%) & 4 & 328 & 11.09 & 1.127e-02 & 1.917e-01 & 0.034 & pequeno \\
+Equipe (Contribuidores) & Tempo Recuperação (horas) & 4 & 312 & 1.43 & 6.987e-01 & 1.000e+00 & 0.005 & desprezível \\
+Maturidade (Idade do Projeto) & Freq. Deploy (rel/sem) & 4 & 330 & 32.81 & 3.539e-07 & 7.785e-06$^*$ & 0.100 & médio \\
+Maturidade (Idade do Projeto) & Lead Time (b) (horas) & 4 & 329 & 116.04 & 5.484e-25 & 1.371e-23$^*$ & 0.354 & grande \\
+Maturidade (Idade do Projeto) & CFR (a) CI (\%) & 4 & 330 & 7.44 & 5.905e-02 & 7.676e-01 & 0.023 & pequeno \\
+Maturidade (Idade do Projeto) & CFR (b) Entrega (\%) & 4 & 328 & 60.18 & 5.373e-13 & 1.236e-11$^*$ & 0.184 & grande \\
+Maturidade (Idade do Projeto) & Tempo Recuperação (horas) & 4 & 312 & 12.46 & 5.959e-03 & 1.073e-01 & 0.040 & pequeno \\
+Linguagem Principal & Freq. Deploy (rel/sem) & 7 & 330 & 20.90 & 1.908e-03 & 3.626e-02$^*$ & 0.064 & médio \\
+Linguagem Principal & Lead Time (b) (horas) & 7 & 329 & 32.10 & 1.565e-05 & 3.286e-04$^*$ & 0.098 & médio \\
+Linguagem Principal & CFR (a) CI (\%) & 7 & 330 & 15.36 & 1.761e-02 & 2.818e-01 & 0.047 & pequeno \\
+Linguagem Principal & CFR (b) Entrega (\%) & 7 & 328 & 14.27 & 2.681e-02 & 4.021e-01 & 0.044 & pequeno \\
+Linguagem Principal & Tempo Recuperação (horas) & 7 & 312 & 12.42 & 5.324e-02 & 7.453e-01 & 0.040 & pequeno \\
+Tipo de Projeto & Freq. Deploy (rel/sem) & 4 & 330 & 0.75 & 8.626e-01 & 1.000e+00 & 0.002 & desprezível \\
+Tipo de Projeto & Lead Time (b) (horas) & 4 & 329 & 23.26 & 3.561e-05 & 7.122e-04$^*$ & 0.071 & médio \\
+Tipo de Projeto & CFR (a) CI (\%) & 4 & 330 & 0.41 & 9.385e-01 & 1.000e+00 & 0.001 & desprezível \\
+Tipo de Projeto & CFR (b) Entrega (\%) & 4 & 328 & 3.26 & 3.527e-01 & 1.000e+00 & 0.010 & desprezível \\
+Tipo de Projeto & Tempo Recuperação (horas) & 4 & 312 & 4.88 & 1.812e-01 & 1.000e+00 & 0.016 & pequeno \\
+\bottomrule
+\multicolumn{9}{l}{\footnotesize $^*$Significativo após correção de Holm-Bonferroni ($\alpha = 0{,}05$).}\\
+\end{tabular}
+\end{table*}
