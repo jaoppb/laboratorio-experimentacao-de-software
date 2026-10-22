@@ -896,8 +896,13 @@ def test_read_memory_has_the_expected_keys():
         assert mem["rss"] > 0 and mem["peak_rss"] >= mem["rss"] and mem["available"] > 0
 
 
-def test_is_heavy_by_runs_or_releases():
+def test_is_heavy_by_runs_releases_or_tags():
     assert regenerar.is_heavy({"total_workflow_runs": 50_000})
+    # tag-heavy repositories (CI tags) are heavy too, even with few runs and releases
+    assert regenerar.is_heavy({"total_workflow_runs": 93, "releases_count_window": 70, "tags_count_window": 1000})
+    assert regenerar.is_heavy({"tags_count_window": 9_458})
+    assert not regenerar.is_heavy({"tags_count_window": 999})
+    assert not regenerar.is_heavy({"tags_count_window": None})
     assert regenerar.is_heavy({"total_workflow_runs": 10, "releases_count_window": 2576})
     assert not regenerar.is_heavy({"total_workflow_runs": 4_000, "releases_count_window": 28})
     assert not regenerar.is_heavy({})
@@ -972,3 +977,162 @@ def test_only_restricts_the_scope_and_publishes_nothing(env, fakes, client):
     assert env.dataset_csv.read_bytes() == csv_before
     with pytest.raises(RegenerationError, match="fora do dataset"):
         _run(env, client, only=["nope/nope"], resume=True)
+
+
+# ------------------------------------------------- git phase in a child process
+
+
+def _records_by_name(settings):
+    return {r["full_name"]: r for r in load_repositories_dataset(settings.dataset_parquet)}
+
+
+def test_child_process_record_equals_the_in_process_record(env, fakes, client, tmp_path):
+    import dataclasses
+    import shutil
+
+    in_process = _run(env, client)
+    assert in_process.ok and in_process.finalized
+    expected = _records_by_name(env)
+    expected_csv = env.dataset_csv.read_bytes()
+    expected_files = {
+        p.relative_to(env.dados_dir).as_posix(): p.read_bytes()
+        for folder in ("commits", "releases", "releases_c2", "tags")
+        for p in (env.dados_dir / folder).glob("*.parquet")
+    }
+    assert set(expected_files) == {
+        f"{folder}/acme__{repo}.parquet"
+        for folder in ("commits", "releases", "releases_c2", "tags")
+        for repo in ("alpha", "beta")
+    }
+
+    # again from scratch, now with the git phase in a child per repository
+    shutil.rmtree(env.state_dir)
+    for folder in ("commits", "releases", "releases_c2", "tags"):
+        shutil.rmtree(env.dados_dir / folder)
+    old = [r for r in load_repositories_dataset(env.dataset_parquet)]
+    # start again from the dataset that existed before the first run
+    baseline = [_old_record("acme/alpha", 111), _old_record("acme/beta", 222)]
+    save_repositories_dataset(baseline, env.dataset_parquet, env.dataset_csv)
+    child_settings = dataclasses.replace(env, git_subprocess=True)
+    summary = _run(child_settings, client)
+
+    assert summary.ok and summary.finalized and old
+    assert _records_by_name(env) == expected  # same columns, same floats
+    assert env.dataset_csv.read_bytes() == expected_csv  # byte for byte
+    for name, content in expected_files.items():
+        assert (env.dados_dir / name).read_bytes() == content, name
+    done = load_checkpoint(env.checkpoint_path, env.fingerprint())
+    peaks = [e["diagnostics"]["peak_rss_mb"] for e in done.values()]
+    assert all(isinstance(p, int) and p > 0 for p in peaks)  # the child's own peak
+
+
+def test_child_peak_goes_to_status_json(env, fakes, client, tmp_path):
+    import dataclasses
+
+    settings = dataclasses.replace(env, git_subprocess=True, status_path=tmp_path / "status.json")
+    _run(settings, client)
+    status = json.loads(settings.status_path.read_text(encoding="utf-8"))
+    done = load_checkpoint(env.checkpoint_path, env.fingerprint())
+    assert status["peak_rss_mb_per_repo"] == {
+        name: e["diagnostics"]["peak_rss_mb"] for name, e in done.items()
+    }
+
+
+def test_a_failing_child_is_a_repository_failure_and_is_retried_on_resume(
+    env, fakes, client, monkeypatch
+):
+    import dataclasses
+
+    child_settings = dataclasses.replace(env, git_subprocess=True)
+    real = regenerar.run_git_phase_in_child
+    attempts = []
+
+    async def flaky(spec, timeout):
+        attempts.append(spec.repo)
+        if spec.repo == "beta" and attempts.count("beta") == 1:  # only its first attempt fails
+            raise regenerar.GitPhaseError(
+                f"git phase of acme/beta failed (exit -9): killed ghp_{'z' * 30}"
+            )
+        return await real(spec, timeout=timeout)
+
+    monkeypatch.setattr(regenerar, "run_git_phase_in_child", flaky)
+    csv_before = env.dataset_csv.read_bytes()
+    summary = _run(child_settings, client)
+
+    assert list(summary.failed) == ["acme/beta"]
+    assert "exit -9" in summary.failed["acme/beta"] and "ghp_" not in summary.failed["acme/beta"]
+    assert not summary.finalized and env.dataset_csv.read_bytes() == csv_before
+    done = load_checkpoint(env.checkpoint_path, env.fingerprint())
+    assert list(done) == ["acme/alpha"]
+
+    summary = _run(child_settings, client, resume=True)  # beta is retried; alpha is not
+    assert summary.ok and summary.finalized and summary.collected == ["acme/beta"]
+    assert attempts.count("alpha") == 1 and attempts.count("beta") == 2
+    assert not list(env.dados_dir.rglob("*.tmp"))
+
+
+def test_a_timing_out_child_keeps_previous_values_when_listed(env, fakes, client, monkeypatch):
+    import dataclasses
+
+    (env.dados_dir / "runs").joinpath("acme__beta.parquet").write_bytes(b"old beta")
+    child_settings = dataclasses.replace(
+        env, git_subprocess=True, keep_previous=frozenset({"acme/beta"})
+    )
+
+    real = regenerar.run_git_phase_in_child
+
+    async def dispatch(spec, timeout):
+        if spec.repo == "beta":
+            raise regenerar.GitPhaseError("git phase of acme/beta timed out after 3600s")
+        return await real(spec, timeout=timeout)
+
+    monkeypatch.setattr(regenerar, "run_git_phase_in_child", dispatch)
+    summary = _run(child_settings, client)
+
+    assert summary.ok and summary.finalized
+    assert "timed out" in summary.kept["acme/beta"]
+
+
+def test_child_timeout_comes_from_the_settings(env, fakes, client, monkeypatch):
+    import dataclasses
+
+    seen = []
+
+    async def spy(spec, timeout):
+        seen.append(timeout)
+        raise regenerar.GitPhaseError("stop")
+
+    monkeypatch.setattr(regenerar, "run_git_phase_in_child", spy)
+    _run(dataclasses.replace(env, git_subprocess=True, child_timeout=123.0), client, limit=1)
+    assert seen == [123.0]
+
+
+def test_cli_runs_the_git_phase_in_a_child_unless_told_otherwise(env, fakes, tmp_path, monkeypatch):
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text(
+        yaml.safe_dump(
+            {
+                "janela": {"inicio": "2025-10-01", "fim": "2026-09-30"},
+                "amostra": {"tamanho_final": 2},
+                "diretorios": {
+                    "dados": str(env.dados_dir),
+                    "cache": str(env.cache_dir),
+                    "git_cache": str(env.git_cache_dir),
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    captured = []
+
+    async def fake_run(settings, **kwargs):
+        captured.append(settings.git_subprocess)
+        return regenerar.RegenSummary()
+
+    monkeypatch.setattr(regenerar, "run_regeneration", fake_run)
+    monkeypatch.setenv("GITHUB_TOKEN", "ghp_" + "s" * 36)
+    base = ["--config", str(config_path), "--relatorio", str(tmp_path / "r.md")]
+    regenerar.main(base)
+    regenerar.main([*base, "--sem-subprocesso"])
+    assert captured == [True, False]
+    assert RegenSettings.from_config({"janela": {"inicio": "2025-10-01", "fim": "2026-09-30"}}).git_subprocess is False

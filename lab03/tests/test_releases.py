@@ -6,6 +6,12 @@ import pyarrow.parquet as pq
 import pytest
 from metricas.cfr_b import is_corrective_release
 from metricas.schemas import Commit, Release
+from pipeline.commit_store import (
+    distinct_commits,
+    load_release_commits,
+    load_tag_commits,
+    save_commits_to_parquet,
+)
 from pipeline.commits import ComparisonStatus, ReleaseCommits
 from pipeline.http_client import GitHubClient
 from pipeline.releases import (
@@ -332,8 +338,9 @@ def test_save_releases_to_parquet_roundtrip(tmp_path):
     assert pydict["status"] == ["first_release", "ok"]
     # Unknown commits (first release / tag not found) are null, not zero
     assert pydict["commits_count"] == [None, 1]
-    assert pydict["commits"][1][0]["sha"] == "sha1"
-    assert pydict["commits"][1][0]["message"] == "feat: add thing"
+    # the file keeps the SHAs of the range; the commits are in the commit store
+    assert pydict["commit_shas"] == [[], ["sha1"]]
+    assert "commits" not in pydict
 
 
 def test_save_releases_to_parquet_marks_not_found(tmp_path):
@@ -346,7 +353,7 @@ def test_save_releases_to_parquet_marks_not_found(tmp_path):
     pydict = pq.read_table(out_file).to_pydict()
     assert pydict["status"] == ["not_found"]
     assert pydict["commits_count"] == [None]
-    assert pydict["commits"] == [[]]
+    assert pydict["commit_shas"] == [[]]
 
 
 def test_save_tags_to_parquet_roundtrip(tmp_path):
@@ -371,8 +378,7 @@ def test_save_tags_to_parquet_roundtrip(tmp_path):
     assert pydict["commit_sha"] == ["commit_sha_1", "commit_sha_2"]
     assert pydict["previous_tag"] == [None, "v1.0"]
     assert pydict["commits_count"] == [0, 1]
-    assert pydict["commits"][1][0]["sha"] == "commit_sha_2"
-    assert pydict["commits"][1][0]["message"] == "major rewrite"
+    assert pydict["commit_shas"] == [[], ["commit_sha_2"]]
 
 
 
@@ -389,9 +395,10 @@ def test_parquet_roundtrip_keeps_full_message_and_null_for_old_commits(tmp_path)
     old = Commit(sha="s2", committed_at="2024-01-16T10:00:00Z", message="fix: x")
     data = [ReleaseCommits(rel2, rel1, ComparisonStatus.OK, [new, old])]
 
+    store = save_commits_to_parquet(distinct_commits(data).values(), tmp_path / "commits.parquet")
     out = save_releases_to_parquet(data, "o", "r", tmp_path / "r.parquet")
-    rows = pq.read_table(out).to_pylist()[0]["commits"]
-    loaded = [Commit.from_record(c) for c in rows]
+    (loaded_unit,) = load_release_commits(out, store)
+    loaded = loaded_unit.commits
 
     assert loaded[0].message == "chore: tidy"
     assert loaded[0].full_message == "chore: tidy\n\ncafé ✓\nFixes #123"
@@ -399,8 +406,8 @@ def test_parquet_roundtrip_keeps_full_message_and_null_for_old_commits(tmp_path)
     assert loaded[1].text == "fix: x"
 
     tags = save_tags_to_parquet(data, "o", "r", tmp_path / "t.parquet")
-    tag_rows = pq.read_table(tags).to_pylist()[0]["commits"]
-    assert tag_rows[0]["full_message"] == new.full_message
+    (tag_unit,) = load_tag_commits(tags, store)
+    assert tag_unit.commits[0].full_message == new.full_message
 
 
 def test_old_parquet_without_full_message_field_still_loads(tmp_path):

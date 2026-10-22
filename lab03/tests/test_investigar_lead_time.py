@@ -6,13 +6,17 @@ import pytest
 
 from analises.investigar_lead_time import MOTIVO_SEM_ARQUIVO, diagnose, motivo_nulo
 from metricas.schemas import Commit, Release
+from pipeline.commit_store import distinct_commits, save_commits_to_parquet
 from pipeline.commits import ComparisonStatus, ReleaseCommits
 from pipeline.releases import save_releases_to_parquet
 
 
 def _save(tmp_path, name, items):
+    """Releases in `tmp_path/releases/`, their commits in `tmp_path/commits/`."""
     owner, repo = name.split("/")
-    save_releases_to_parquet(items, owner, repo, tmp_path / f"{owner}__{repo}.parquet")
+    file_name = f"{owner}__{repo}.parquet"
+    save_commits_to_parquet(distinct_commits(items).values(), tmp_path / "commits" / file_name)
+    save_releases_to_parquet(items, owner, repo, tmp_path / "releases" / file_name)
 
 
 def _rel(tag, date):
@@ -28,7 +32,7 @@ def test_motivo_nulo_combines_reasons():
 
 
 def test_missing_file_is_collection_failure(tmp_path):
-    d = diagnose("org/missing", tmp_path)
+    d = diagnose("org/missing", tmp_path / "releases")
     assert d.lead_time_a_hours is None
     assert d.motivo_nulo == MOTIVO_SEM_ARQUIVO
 
@@ -36,7 +40,7 @@ def test_missing_file_is_collection_failure(tmp_path):
 def test_all_not_found_gives_null_lead_time(tmp_path):
     r1, r2 = _rel("v1", "2024-01-01T00:00:00Z"), _rel("v2", "2024-02-01T00:00:00Z")
     _save(tmp_path, "org/nf", [ReleaseCommits(r2, r1, ComparisonStatus.NOT_FOUND)])
-    d = diagnose("org/nf", tmp_path)
+    d = diagnose("org/nf", tmp_path / "releases")
     assert d.not_found == 1
     assert d.motivo_nulo == "tag não encontrada (equivalente a 404)"
 
@@ -58,7 +62,7 @@ def test_one_big_release_inverts_medians_without_invariant_violation(tmp_path):
             ReleaseCommits(r3, r2, ComparisonStatus.OK, big),
         ],
     )
-    d = diagnose("org/inv", tmp_path)
+    d = diagnose("org/inv", tmp_path / "releases")
     assert d.lead_time_a_hours == pytest.approx(24.0)
     assert d.lead_time_b_hours == pytest.approx(40 * 24.0)
     assert d.b_maior_que_a

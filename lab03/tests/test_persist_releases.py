@@ -11,6 +11,7 @@ import pytest
 
 from metricas.schemas import Commit, Release
 from pipeline import persist_releases
+from pipeline.commit_store import load_commit_store, load_release_commits, save_commits_to_parquet
 from pipeline.commits import ComparisonStatus, ReleaseCommits
 
 
@@ -54,7 +55,7 @@ def fake_collection(monkeypatch: pytest.MonkeyPatch):
     async def fake_clone(owner, repo, cache_dir, auto_cleanup, token_pool):
         yield Path("unused")
 
-    async def fake_collect(client, owner, repo, window, git_dir):
+    async def fake_collect(client, owner, repo, window, git_dir, commit_cache=None):
         ordered = window.with_anchor()
         return [
             ReleaseCommits(
@@ -90,7 +91,26 @@ async def test_persist_all_saves_window_releases(config, fake_collection, tmp_pa
     assert table["tag_name"] == ["v1.0.0", "v1.0.1"]
     assert table["previous_release"] == ["v0.9.0", "v1.0.0"]
     assert table["status"] == ["ok", "ok"]
-    assert table["commits"][1][0]["message"] == "fix: x"
+    assert table["commit_shas"] == [["s1"], ["s2"]]
+    # the commits are in the repository's commit store, next to releases/
+    units = load_release_commits(
+        tmp_path / "dados" / "releases" / "org__a.parquet",
+        tmp_path / "dados" / "commits" / "org__a.parquet",
+    )
+    assert units[1].commits[0].message == "fix: x"
+    assert units[1].previous_name == "v1.0.0"
+
+
+async def test_persist_extends_an_existing_commit_store(config, fake_collection, tmp_path):
+    """The store is shared with C2/C3: persisting C1 keeps the commits already there."""
+    _write_dataset(tmp_path / "dados", ["org/a"])
+    store = tmp_path / "dados" / "commits" / "org__a.parquet"
+    keep = Commit(sha="from-c3", committed_at="2024-02-02T00:00:00Z", message="chore: y")
+    save_commits_to_parquet([keep], store)
+
+    await persist_releases.persist_all(config, client=_Client())
+
+    assert set(load_commit_store(store)) == {"from-c3", "s1", "s2"}
 
 
 async def test_persist_all_skips_existing_and_reports_failures(
@@ -100,6 +120,8 @@ async def test_persist_all_skips_existing_and_reports_failures(
     releases_dir = tmp_path / "dados" / "releases"
     releases_dir.mkdir(parents=True)
     (releases_dir / "org__a.parquet").write_bytes(b"already there")
+    (tmp_path / "dados" / "commits").mkdir()
+    (tmp_path / "dados" / "commits" / "org__a.parquet").write_bytes(b"already there")
 
     result = await persist_releases.persist_all(config, client=_Client(), limit=2)
 
