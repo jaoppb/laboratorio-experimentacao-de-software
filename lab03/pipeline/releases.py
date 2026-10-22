@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from collections.abc import Sequence
+from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
@@ -12,7 +12,13 @@ from typing import TYPE_CHECKING, Any
 import pyarrow as pa
 import pyarrow.parquet as pq
 
-from metricas.schemas import Release, _parse_datetime, parse_window_end
+from metricas.schemas import Commit, Release, _parse_datetime, parse_window_end
+from pipeline.commit_store import (
+    COMMITS_DIR,
+    distinct_commits,
+    save_commits_to_parquet,
+    write_parquet_batches,
+)
 from pipeline.commits import ComparisonStatus, ReleaseCommits
 
 if TYPE_CHECKING:
@@ -21,17 +27,6 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 PER_PAGE = 100
-
-# Struct of one persisted commit. `full_message` (subject + body, truncated to
-# `metricas.schemas.MAX_FULL_MESSAGE_CHARS`) is nullable: files written before
-# it existed lack the field and are still readable (`Commit.from_record`).
-_COMMIT_FIELDS = [
-    ("sha", pa.string()),
-    ("committed_at", pa.string()),
-    ("message", pa.string()),
-    ("full_message", pa.string()),
-]
-
 
 def parse_release(payload: dict[str, Any]) -> Release | None:
     """Convert a release JSON object from the API into a `Release`."""
@@ -242,87 +237,98 @@ def count_valid_releases(
     return filter_window(releases, window_start, window_end).count
 
 
+# Rows per Parquet batch of the unit files; a batch is also closed once it
+# holds this many commit SHAs, so a few huge ranges cannot make it large.
+UNIT_BATCH_ROWS = 200
+UNIT_BATCH_SHAS = 100_000
+
+_RELEASES_SCHEMA = pa.schema(
+    [
+        ("tag_name", pa.string()),
+        ("published_at", pa.timestamp("us", tz="UTC")),
+        ("prerelease", pa.bool_()),
+        ("previous_release", pa.string()),
+        ("status", pa.string()),
+        ("commits_count", pa.int64()),
+        ("commit_shas", pa.list_(pa.string())),
+    ]
+)
+
+_TAGS_SCHEMA = pa.schema(
+    [
+        ("tag_name", pa.string()),
+        ("published_at", pa.timestamp("us", tz="UTC")),
+        ("commit_sha", pa.string()),
+        ("previous_tag", pa.string()),
+        ("commits_count", pa.int64()),
+        ("commit_shas", pa.list_(pa.string())),
+    ]
+)
+
+
+def _unit_batches(
+    units: Iterable[ReleaseCommits],
+    columns: Sequence[str],
+    row: Callable[[ReleaseCommits], tuple[Any, ...]],
+    schema: pa.Schema,
+    max_rows: int | None = None,
+    max_shas: int | None = None,
+) -> Iterator[list[pa.Array]]:
+    """Group the rows of the units into batches of arrays (by row and SHA budget)."""
+    max_rows = UNIT_BATCH_ROWS if max_rows is None else max_rows
+    max_shas = UNIT_BATCH_SHAS if max_shas is None else max_shas
+    buffers: list[list[Any]] = [[] for _ in columns]
+    shas_in_batch = 0
+
+    def flush() -> list[pa.Array]:
+        return [pa.array(values, type=schema.field(name).type) for name, values in zip(columns, buffers)]
+
+    for unit in units:
+        values = row(unit)
+        for buf, value in zip(buffers, values):
+            buf.append(value)
+        shas_in_batch += len(values[-1])
+        if len(buffers[0]) >= max_rows or shas_in_batch >= max_shas:
+            yield flush()
+            buffers = [[] for _ in columns]
+            shas_in_batch = 0
+    if buffers[0]:
+        yield flush()
+
+
 def save_releases_to_parquet(
     release_commits: Sequence[ReleaseCommits],
     owner: str,
     repo: str,
     output_path: str | Path,
+    batch_rows: int | None = None,
 ) -> Path:
-    """Serialize evaluated window releases and commits to a columnar Parquet file."""
-    path = Path(output_path)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    tmp_path = path.with_suffix(".parquet.tmp")
+    """Serialize evaluated window releases to a columnar Parquet file.
 
-    tag_names: list[str] = []
-    published_ats: list[datetime] = []
-    prereleases: list[bool] = []
-    previous_releases: list[str | None] = []
-    statuses: list[str] = []
-    commits_counts: list[int | None] = []
-    commits_lists: list[list[dict[str, str]]] = []
+    One row per release; `commit_shas` lists the SHAs of the range (the commits
+    themselves are in the repository's commit store, see `pipeline.commit_store`).
+    Written in batches of `batch_rows` rows.
+    """
+    columns = [f.name for f in _RELEASES_SCHEMA]
 
-    for rc in release_commits:
+    def row(rc: ReleaseCommits) -> tuple[Any, ...]:
         rel = rc.release
-        tag_names.append(rel.tag_name)
-        published_ats.append(rel.published_at)
-        prereleases.append(rel.prerelease)
-        previous_releases.append(rc.previous.tag_name if rc.previous else None)
-        statuses.append(rc.status.value)
-        commits_counts.append(len(rc.commits) if rc.status == ComparisonStatus.OK else None)
-        commits_lists.append(
-            [
-                {
-                    "sha": c.sha,
-                    "committed_at": (
-                        c.committed_at.isoformat()
-                        if hasattr(c.committed_at, "isoformat")
-                        else str(c.committed_at)
-                    ),
-                    "message": c.message or "",
-                    "full_message": c.full_message,
-                }
-                for c in rc.commits
-            ]
+        shas = [c.sha for c in rc.commits]
+        return (
+            rel.tag_name,
+            rel.published_at,
+            rel.prerelease,
+            rc.previous.tag_name if rc.previous else None,
+            rc.status.value,
+            len(rc.commits) if rc.status == ComparisonStatus.OK else None,
+            shas,
         )
 
-    schema = pa.schema(
-        [
-            ("tag_name", pa.string()),
-            ("published_at", pa.timestamp("us", tz="UTC")),
-            ("prerelease", pa.bool_()),
-            ("previous_release", pa.string()),
-            ("status", pa.string()),
-            ("commits_count", pa.int64()),
-            (
-                "commits",
-                pa.list_(
-                    pa.struct(_COMMIT_FIELDS)
-                ),
-            ),
-        ]
+    return write_parquet_batches(
+        Path(output_path),
+        _RELEASES_SCHEMA,
+        _unit_batches(release_commits, columns, row, _RELEASES_SCHEMA, max_rows=batch_rows),
     )
-
-    table = pa.Table.from_arrays(
-        [
-            pa.array(tag_names, type=pa.string()),
-            pa.array(published_ats, type=pa.timestamp("us", tz="UTC")),
-            pa.array(prereleases, type=pa.bool_()),
-            pa.array(previous_releases, type=pa.string()),
-            pa.array(statuses, type=pa.string()),
-            pa.array(commits_counts, type=pa.int64()),
-            pa.array(
-                commits_lists,
-                type=pa.list_(
-                    pa.struct(_COMMIT_FIELDS)
-                ),
-            ),
-        ],
-        schema=schema,
-    )
-
-    pq.write_table(table, tmp_path, compression="snappy")
-    tmp_path.replace(path)
-    return path
 
 
 def save_tags_to_parquet(
@@ -330,76 +336,49 @@ def save_tags_to_parquet(
     owner: str,
     repo: str,
     output_path: str | Path,
+    batch_rows: int | None = None,
 ) -> Path:
-    """Serialize evaluated window tags and commits to a columnar Parquet file."""
-    path = Path(output_path)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    tmp_path = path.with_suffix(".parquet.tmp")
+    """Serialize evaluated window tags to a columnar Parquet file (same layout idea as releases)."""
+    columns = [f.name for f in _TAGS_SCHEMA]
 
-    tag_names: list[str] = []
-    published_ats: list[datetime] = []
-    commit_shas: list[str | None] = []
-    previous_tags: list[str | None] = []
-    commits_counts: list[int] = []
-    commits_lists: list[list[dict[str, str]]] = []
-
-    for tc in tag_commits:
+    def row(tc: ReleaseCommits) -> tuple[Any, ...]:
         tag = tc.release
-        tag_names.append(tag.tag_name)
-        published_ats.append(tag.published_at)
-        commit_shas.append(getattr(tag, "commit_sha", None))
-        previous_tags.append(tc.previous.tag_name if tc.previous else None)
-        commits_counts.append(len(tc.commits))
-        commits_lists.append(
-            [
-                {
-                    "sha": c.sha,
-                    "committed_at": (
-                        c.committed_at.isoformat()
-                        if hasattr(c.committed_at, "isoformat")
-                        else str(c.committed_at)
-                    ),
-                    "message": c.message or "",
-                    "full_message": c.full_message,
-                }
-                for c in tc.commits
-            ]
+        return (
+            tag.tag_name,
+            tag.published_at,
+            getattr(tag, "commit_sha", None),
+            tc.previous.tag_name if tc.previous else None,
+            len(tc.commits),
+            [c.sha for c in tc.commits],
         )
 
-    schema = pa.schema(
-        [
-            ("tag_name", pa.string()),
-            ("published_at", pa.timestamp("us", tz="UTC")),
-            ("commit_sha", pa.string()),
-            ("previous_tag", pa.string()),
-            ("commits_count", pa.int64()),
-            (
-                "commits",
-                pa.list_(
-                    pa.struct(_COMMIT_FIELDS)
-                ),
-            ),
-        ]
+    return write_parquet_batches(
+        Path(output_path),
+        _TAGS_SCHEMA,
+        _unit_batches(tag_commits, columns, row, _TAGS_SCHEMA, max_rows=batch_rows),
     )
 
-    table = pa.Table.from_arrays(
-        [
-            pa.array(tag_names, type=pa.string()),
-            pa.array(published_ats, type=pa.timestamp("us", tz="UTC")),
-            pa.array(commit_shas, type=pa.string()),
-            pa.array(previous_tags, type=pa.string()),
-            pa.array(commits_counts, type=pa.int64()),
-            pa.array(
-                commits_lists,
-                type=pa.list_(
-                    pa.struct(_COMMIT_FIELDS)
-                ),
-            ),
-        ],
-        schema=schema,
+
+def save_repository_units(
+    dados_dir: str | Path,
+    owner: str,
+    repo: str,
+    release_commits_c1: Sequence[ReleaseCommits],
+    release_commits_c2: Sequence[ReleaseCommits],
+    tag_commits_c3: Sequence[ReleaseCommits],
+    commit_cache: Mapping[str, Commit],
+) -> None:
+    """Persist the three deploy-unit files and the commit store of one repository.
+
+    The commit store goes first (it holds every commit the unit files point
+    to), then `releases/`, `releases_c2/` and `tags/`. Every file is atomic.
+    """
+    dados = Path(dados_dir)
+    name = f"{owner}__{repo}.parquet"
+    store = distinct_commits(
+        release_commits_c1, release_commits_c2, tag_commits_c3, known=commit_cache
     )
-
-    pq.write_table(table, tmp_path, compression="snappy")
-    tmp_path.replace(path)
-    return path
-
+    save_commits_to_parquet(store.values(), dados / COMMITS_DIR / name)
+    save_releases_to_parquet(release_commits_c1, owner, repo, dados / "releases" / name)
+    save_releases_to_parquet(release_commits_c2, owner, repo, dados / "releases_c2" / name)
+    save_tags_to_parquet(tag_commits_c3, owner, repo, dados / "tags" / name)

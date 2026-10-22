@@ -7,6 +7,7 @@ import logging
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 from enum import Enum
+from pathlib import Path
 from typing import TYPE_CHECKING, Any
 from urllib.parse import quote
 
@@ -39,6 +40,14 @@ class ReleaseCommits:
     previous: Release | None
     status: ComparisonStatus
     commits: list[Commit] = field(default_factory=list)
+    # Name of the previous release/tag when only the name is known (units read
+    # back from Parquet, where `previous` is None); see `previous_name`.
+    previous_tag_name: str | None = None
+
+    @property
+    def previous_name(self) -> str | None:
+        """Tag name of the previous release, from `previous` or from the stored name."""
+        return self.previous.tag_name if self.previous is not None else self.previous_tag_name
 
     @property
     def commits_or_none(self) -> list[Commit] | None:
@@ -124,17 +133,24 @@ async def _compare_one(
 
 
 async def collect_release_commits(
-    client: GitHubClient,
+    client: GitHubClient | None,
     owner: str,
     repo: str,
     window: WindowReleases,
     git_dir: Path | str | None = None,
+    commit_cache: dict[str, Commit] | None = None,
 ) -> list[ReleaseCommits]:
-    """Collect commits of in-window releases against their predecessor in parallel or via git."""
+    """Collect commits of in-window releases against their predecessor in parallel or via git.
+
+    `commit_cache` (git only) is the per-repository SHA table that makes
+    overlapping ranges share one `Commit` per SHA; `None` keeps one copy per range.
+    """
     if git_dir is not None:
         from pipeline.git_clone import collect_release_commits_from_git
 
-        return await collect_release_commits_from_git(git_dir=git_dir, window=window)
+        return await collect_release_commits_from_git(
+            git_dir=git_dir, window=window, commit_cache=commit_cache
+        )
 
     ordered = window.with_anchor()
     offset = 1 if window.anchor is not None else 0

@@ -17,7 +17,7 @@ from pathlib import Path
 from analises.amostra_ouro import DEFAULT_NUM_REPOS, DEFAULT_SEED, sortear_repositorios
 from metricas.schemas import _parse_datetime, parse_window_end
 from pipeline.http_client import GitHubClient
-from pipeline.persist_releases import persist_repository_releases
+from pipeline.persist_releases import is_persisted, persist_repository_releases
 
 logger = logging.getLogger(__name__)
 
@@ -29,11 +29,7 @@ async def persistir(
     workers: int = 4,
 ) -> dict[str, list[str]]:
     sample = sortear_repositorios(dataset, n=DEFAULT_NUM_REPOS, seed=DEFAULT_SEED)
-    pending = [
-        n
-        for n in sample["full_name"].tolist()
-        if not (releases_dir / f"{n.replace('/', '__')}.parquet").is_file()
-    ]
+    pending = [n for n in sample["full_name"].tolist() if not is_persisted(releases_dir, n)]
     logger.info("%d repositórios sorteados, %d pendentes", len(sample), len(pending))
 
     start = _parse_datetime("2025-10-01")

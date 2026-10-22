@@ -7,7 +7,8 @@ search (the stars rank drifts), so this command keeps the repository set and
 fills only the `cfr_b*` columns:
 
 1. for every repository of the dataset, in file order, it reads
-   `dados/releases/{owner}__{repo}.parquet`, collecting it first (releases via
+   `dados/releases/{owner}__{repo}.parquet` (and the repository's commit store,
+   `dados/commits/{owner}__{repo}.parquet`), collecting it first (releases via
    GraphQL, commits via blobless clone, same path as `pipeline.persist_releases`)
    when the file does not exist yet;
 2. it computes the CFR (b) columns with the heuristic of `cfr_b.heuristica`
@@ -35,19 +36,19 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-import pyarrow.parquet as pq
 import yaml
 
 from metricas.cfr_b import DEFAULT_HEURISTIC, HEURISTICS
-from metricas.schemas import Commit, Release, _parse_datetime, parse_window_end
-from pipeline.commits import ComparisonStatus, ReleaseCommits
+from metricas.schemas import _parse_datetime, parse_window_end
+from pipeline.commit_store import commits_dir_for, load_release_commits
+from pipeline.commits import ReleaseCommits
 from pipeline.http_client import GitHubClient
 from pipeline.orchestrator import (
     compute_cfr_b_columns,
     load_repositories_dataset,
     save_repositories_dataset,
 )
-from pipeline.persist_releases import persist_repository_releases
+from pipeline.persist_releases import is_persisted, persist_repository_releases
 
 logger = logging.getLogger(__name__)
 
@@ -64,32 +65,6 @@ CFR_B_COLUMNS = (
 def releases_path(releases_dir: Path, full_name: str) -> Path:
     """Path of the persisted C1 releases of `full_name`."""
     return releases_dir / f"{full_name.replace('/', '__')}.parquet"
-
-
-def load_release_commits(path: str | Path) -> list[ReleaseCommits]:
-    """Rebuild the `ReleaseCommits` of a repository from its `releases/` Parquet.
-
-    Only what CFR (b) needs is faithful: the release (tag and publication date)
-    and the status/commits. `previous` stays None because the file keeps only
-    the previous tag name, not its date, and the metric does not use it.
-    """
-    rows = pq.read_table(path).to_pylist()
-    result: list[ReleaseCommits] = []
-    for row in rows:
-        release = Release(
-            tag_name=row["tag_name"],
-            published_at=row["published_at"],
-            prerelease=bool(row["prerelease"]),
-        )
-        status = ComparisonStatus(row["status"])
-        commits = []
-        if status == ComparisonStatus.OK:
-            commits = [
-                Commit.from_record(c)
-                for c in row["commits"] or []
-            ]
-        result.append(ReleaseCommits(release, None, status, commits))
-    return result
 
 
 @dataclass
@@ -166,11 +141,7 @@ async def backfill_cfr_b(
     scope = records if limit is None else records[:limit]
 
     report = BackfillReport(total=len(scope))
-    pending = [
-        r["full_name"]
-        for r in scope
-        if not releases_path(releases_dir, r["full_name"]).is_file()
-    ]
+    pending = [r["full_name"] for r in scope if not is_persisted(releases_dir, r["full_name"])]
     logger.info(
         "%d repositories, %d without releases file, heuristic %s",
         len(scope),
@@ -228,7 +199,10 @@ async def backfill_cfr_b(
             continue
         consistent = apply_cfr_b(
             record,
-            load_release_commits(releases_path(releases_dir, name)),
+            load_release_commits(
+                releases_path(releases_dir, name),
+                releases_path(commits_dir_for(releases_dir), name),
+            ),
             window_end,
             heuristic,
         )

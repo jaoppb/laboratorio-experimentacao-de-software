@@ -10,8 +10,6 @@ from __future__ import annotations
 from pathlib import Path
 
 import pandas as pd
-import pyarrow as pa
-import pyarrow.parquet as pq
 import pytest
 
 from analises import avaliar_heuristica as ah
@@ -29,45 +27,36 @@ from analises.avaliar_heuristica import (
     montar_amostra,
 )
 from metricas.cfr_b import HEURISTICS
+from metricas.schemas import Commit, Release
+from pipeline.commit_store import distinct_commits, save_commits_to_parquet
+from pipeline.commits import ComparisonStatus, ReleaseCommits
+from pipeline.releases import save_releases_to_parquet
 
 REPO = "org/repo"
-
-_COMMITS_TYPE = pa.list_(
-    pa.struct([("sha", pa.string()), ("committed_at", pa.string()), ("message", pa.string())])
-)
-
 
 def escrever_releases(
     releases_dir: Path, repo: str, linhas: list[tuple[str, str | None, str, list[str]]]
 ) -> None:
-    """Grava o Parquet de releases no formato de `save_releases_to_parquet`.
+    """Grava os Parquet de releases e de commits no layout de `save_repository_units`.
 
-    Cada linha é `(tag, previous_release, status, mensagens_de_commit)`.
+    Cada linha é `(tag, previous_release, status, mensagens_de_commit)`; os commits
+    ficam em `commits/`, ao lado de `releases/`.
     """
-    releases_dir.mkdir(parents=True, exist_ok=True)
-    tabela = pa.table(
-        {
-            "tag_name": pa.array([r[0] for r in linhas], pa.string()),
-            "published_at": pa.array(
-                [pd.Timestamp("2026-01-01", tz="UTC")] * len(linhas), pa.timestamp("us", tz="UTC")
-            ),
-            "prerelease": pa.array([False] * len(linhas), pa.bool_()),
-            "previous_release": pa.array([r[1] for r in linhas], pa.string()),
-            "status": pa.array([r[2] for r in linhas], pa.string()),
-            "commits_count": pa.array([len(r[3]) for r in linhas], pa.int64()),
-            "commits": pa.array(
-                [
-                    [
-                        {"sha": f"{r[0]}-{j}", "committed_at": "2026-01-01T00:00:00+00:00", "message": m}
-                        for j, m in enumerate(r[3])
-                    ]
-                    for r in linhas
-                ],
-                _COMMITS_TYPE,
-            ),
-        }
-    )
-    pq.write_table(tabela, releases_dir / f"{repo.replace('/', '__')}.parquet")
+    nome = f"{repo.replace('/', '__')}.parquet"
+    unidades = [
+        ReleaseCommits(
+            Release(tag_name=tag, published_at="2026-01-01T00:00:00Z"),
+            Release(tag_name=anterior, published_at="2025-12-01T00:00:00Z") if anterior else None,
+            ComparisonStatus(status),
+            [
+                Commit(f"{tag}-{j}", "2026-01-01T00:00:00+00:00", message=m)
+                for j, m in enumerate(mensagens)
+            ],
+        )
+        for tag, anterior, status, mensagens in linhas
+    ]
+    save_commits_to_parquet(distinct_commits(unidades).values(), releases_dir.parent / "commits" / nome)
+    save_releases_to_parquet(unidades, *repo.split("/"), releases_dir / nome)
 
 
 # (tag, previous, mensagens, consenso) — v1 prevê "sim" só com bump de patch + commit de fix.

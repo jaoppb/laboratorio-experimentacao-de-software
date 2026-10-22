@@ -39,12 +39,12 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
-import pyarrow.parquet as pq
 from sklearn.metrics import precision_recall_fscore_support
 
 from analises.concordancia import ORIGEM_PENDENTE, carregar_csv
 from metricas.cfr_b import HEURISTICS, is_corrective_release, is_fix_message, is_patch_bump
 from metricas.schemas import Commit
+from pipeline.commit_store import commits_dir_for, load_commit_store, load_release_commits
 
 DEFAULT_CONSENSO = "validacao/consenso.csv"
 DEFAULT_RELEASES_DIR = "dados/releases"
@@ -167,28 +167,31 @@ def caminho_releases(releases_dir: Path, repo_name: str) -> Path:
     return releases_dir / f"{repo_name.replace('/', '__')}.parquet"
 
 
-def _carregar_releases_repo(path: Path) -> dict[str, dict[str, object]]:
-    """Mapa tag → {previous_release, status, commits} de um arquivo de releases."""
-    dados = pq.read_table(path).to_pydict()
+def _carregar_releases_repo(path: Path, commits: dict[str, Commit]) -> dict[str, dict[str, object]]:
+    """Mapa tag → {previous_release, status, lista_commits} de um arquivo de releases."""
     mapa: dict[str, dict[str, object]] = {}
-    for i, tag in enumerate(dados["tag_name"]):
+    for unidade in load_release_commits(path, commits):
         mapa.setdefault(
-            tag,
+            unidade.release.tag_name,
             {
-                "previous_release": dados["previous_release"][i],
-                "status": dados["status"][i],
-                "commits": [
-                    Commit.from_record(c)
-                    for c in dados["commits"][i] or []
-                ],
+                "previous_release": unidade.previous_name,
+                "status": unidade.status.value,
+                "lista_commits": unidade.commits,
             },
         )
     return mapa
 
 
-def montar_amostra(consenso: pd.DataFrame, releases_dir: Path | str) -> Amostra:
-    """Cruza o consenso com os dados de releases e separa avaliáveis de excluídas."""
+def montar_amostra(
+    consenso: pd.DataFrame, releases_dir: Path | str, commits_dir: Path | str | None = None
+) -> Amostra:
+    """Cruza o consenso com os dados de releases e separa avaliáveis de excluídas.
+
+    Os commits vêm do repositório de commits de cada projeto (`commits_dir`; por padrão
+    `dados/commits/`, ao lado de `releases_dir`), lido por `pipeline.commit_store`.
+    """
     releases_dir = Path(releases_dir)
+    commits_dir = Path(commits_dir) if commits_dir is not None else commits_dir_for(releases_dir)
     if not releases_dir.is_dir():
         raise EntradaAusenteError(
             f"Diretório de releases não encontrado: {releases_dir}. Gere-o com "
@@ -203,7 +206,12 @@ def montar_amostra(consenso: pd.DataFrame, releases_dir: Path | str) -> Amostra:
         repo, tag = linha["repo_name"], linha["tag_name"]
         if repo not in cache:
             arquivo = caminho_releases(releases_dir, repo)
-            cache[repo] = _carregar_releases_repo(arquivo) if arquivo.is_file() else None
+            commits = caminho_releases(commits_dir, repo)
+            cache[repo] = (
+                _carregar_releases_repo(arquivo, load_commit_store(commits))
+                if arquivo.is_file() and commits.is_file()
+                else None
+            )
         mapa = cache[repo]
         if mapa is None:
             exclusoes.append(Exclusao(repo, tag, MOTIVO_SEM_ARQUIVO))
@@ -221,7 +229,7 @@ def montar_amostra(consenso: pd.DataFrame, releases_dir: Path | str) -> Amostra:
                     tag_name=tag,
                     consenso=linha["release_corretiva"] == ROTULO_SIM,
                     previous_release=str(registro["previous_release"]),
-                    commits=tuple(registro["commits"]),  # type: ignore[arg-type]
+                    commits=tuple(registro["lista_commits"]),  # type: ignore[arg-type]
                     release_url=str(url[i]) if url is not None else "",
                 )
             )
@@ -461,6 +469,10 @@ def _construir_parser() -> argparse.ArgumentParser:
     parser.add_argument("--consenso", default=DEFAULT_CONSENSO, help="Caminho do consenso.csv")
     parser.add_argument("--releases-dir", default=DEFAULT_RELEASES_DIR, help="Diretório com os Parquet de releases")
     parser.add_argument(
+        "--commits-dir", default=None,
+        help="Diretório com os Parquet de commits (padrão: dados/commits/, ao lado de --releases-dir)",
+    )  # fmt: skip
+    parser.add_argument(
         "--versoes", nargs="+", default=None, metavar="V",
         help=f"Versões a avaliar (default: todas — {', '.join(HEURISTICS)})",
     )  # fmt: skip
@@ -487,7 +499,7 @@ def _imprimir_erros(erros: pd.DataFrame, versoes: Sequence[str], maximo: int) ->
 def _executar(args: argparse.Namespace) -> int:
     consenso_path = Path(args.consenso)
     consenso = carregar_consenso(consenso_path)
-    amostra = montar_amostra(consenso, args.releases_dir)
+    amostra = montar_amostra(consenso, args.releases_dir, args.commits_dir)
     resultados = avaliar_todas(amostra, args.versoes, args.meta_f1)
     versoes = [r.versao for r in resultados]
     erros = listar_erros(amostra, versoes)
