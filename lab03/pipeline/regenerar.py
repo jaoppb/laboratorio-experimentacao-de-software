@@ -54,14 +54,20 @@ import yaml
 from metricas.cfr_b import DEFAULT_HEURISTIC, HEURISTICS
 from metricas.schemas import _parse_datetime, parse_window_end, window_length
 from pipeline.git_clone import CLONE_FILTER, temporary_git_clone
+from pipeline.git_phase import (
+    CHILD_TIMEOUT_SECONDS,
+    GitPhaseError,
+    GitPhaseSpec,
+    run_git_phase,
+    run_git_phase_in_child,
+)
 from pipeline.http_client import GitHubClient
 from pipeline.orchestrator import (
-    collect_c2_c3_units,
-    compute_metric_columns,
+    compose_metric_columns,
+    compute_run_columns,
     load_repositories_dataset,
     save_repositories_dataset,
 )
-from pipeline.commits import collect_release_commits
 from pipeline.regeneracao_relatorio import (
     METADATA_COLUMNS,
     SCHEMA_COLUMNS,
@@ -70,12 +76,7 @@ from pipeline.regeneracao_relatorio import (
     compare_datasets,
     render_report,
 )
-from pipeline.releases import (
-    fetch_releases,
-    filter_window,
-    save_releases_to_parquet,
-    save_tags_to_parquet,
-)
+from pipeline.releases import fetch_releases, filter_window
 from pipeline.workflow_runs import (
     collect_workflow_runs,
     _is_valid_run,
@@ -95,6 +96,8 @@ RUNS_MODES = (RUNS_MODE_FULL, RUNS_MODE_RECONCILE)
 # heavy repository is processed at a time, so the peak memory stays bounded.
 HEAVY_RUNS = 20_000
 HEAVY_RELEASES = 500
+# Tags are deploy units too (C3): tag-heavy repositories (CI tags) have huge commit ranges.
+HEAVY_TAGS = 1_000
 # New repositories are not started while the system has less available RAM than this (MiB).
 MIN_AVAILABLE_MB = 3072
 MEMORY_POLL_SECONDS = 10
@@ -138,6 +141,11 @@ class RegenSettings:
     previous_window_end: datetime | None = None
     status_path: Path | None = None
     bundle_dir: Path | None = None
+    # Run the git/commit phase of each repository in a short-lived child process
+    # (its memory goes back to the OS when it exits). The CLI turns it on by
+    # default; `--sem-subprocesso` and the tests use the in-process phase.
+    git_subprocess: bool = False
+    child_timeout: float = CHILD_TIMEOUT_SECONDS
 
     @classmethod
     def from_config(
@@ -149,6 +157,7 @@ class RegenSettings:
         runs_mode: str = RUNS_MODE_FULL,
         status_path: Path | str | None = None,
         bundle_dir: Path | str | None = None,
+        git_subprocess: bool = False,
     ) -> RegenSettings:
         janela = config.get("janela", {})
         dirs = config.get("diretorios", {})
@@ -189,6 +198,7 @@ class RegenSettings:
             previous_window_end=previous_end,
             status_path=Path(status_path) if status_path else None,
             bundle_dir=Path(bundle_dir) if bundle_dir else None,
+            git_subprocess=git_subprocess,
         )
 
     @property
@@ -354,6 +364,19 @@ async def regenerate_repository(
 
     runs_result = await acquire_runs(client, old, settings)
 
+    # The clone stays in the parent (its 403/429 fallback uses the token pool); the
+    # commit phase reads it from a child process (or in-process) and returns only
+    # small figures. The child writes `releases/`, `releases_c2/`, `tags/`, `commits/`.
+    spec_args = dict(
+        owner=owner,
+        repo=repo,
+        dados_dir=settings.dados_dir,
+        releases=releases,
+        window_start=settings.window_start,
+        window_end=settings.window_end,
+        window_weeks=settings.window_weeks,
+        heuristic=settings.heuristic,
+    )
     async with temporary_git_clone(
         owner=owner,
         repo=repo,
@@ -361,51 +384,34 @@ async def regenerate_repository(
         auto_cleanup=settings.cleanup_clones,
         token_pool=client.token_pool,
     ) as git_dir:
-        release_commits_c1 = await collect_release_commits(
-            client=client,
-            owner=owner,
-            repo=repo,
-            window=window_releases,
-            git_dir=git_dir,
-        )
-        units = await collect_c2_c3_units(
-            git_dir=git_dir,
-            releases=releases,
-            window_start=settings.window_start,
-            window_end=settings.window_end,
-        )
+        spec = GitPhaseSpec.build(git_dir=git_dir, **spec_args)  # type: ignore[arg-type]
+        if settings.git_subprocess:
+            git_result = await run_git_phase_in_child(spec, timeout=settings.child_timeout)
+        else:
+            git_result = await run_git_phase(spec)
 
-    metrics = compute_metric_columns(
+    commit_columns = git_result["columns"]
+    run_columns = compute_run_columns(
         releases=releases,
         window_releases=window_releases,
         runs=runs_result.runs,
         valid_runs_count=runs_result.valid_runs_count,
-        release_commits_c1=release_commits_c1,
-        units=units,
+        lead_time_a_hours=commit_columns["lead_time_a_hours"],
+        lead_time_b_hours=commit_columns["lead_time_b_hours"],
         window_start=settings.window_start,
         window_end=settings.window_end,
         window_weeks=settings.window_weeks,
-        cfr_b_heuristic=settings.heuristic,
     )
+    metrics = compose_metric_columns(run_columns, commit_columns)
     record = {col: old.get(col) for col in METADATA_COLUMNS}
     record.update(metrics)
 
-    # Persist artifacts only after everything was computed
+    # Stage the runs only after everything was computed
     save_runs_to_parquet(
         runs_result.runs,
         owner=owner,
         repo=repo,
         output_path=settings.staged_runs_dir / run_file_name(full_name),
-    )
-    dados = settings.dados_dir
-    save_releases_to_parquet(
-        release_commits_c1, owner, repo, dados / "releases" / run_file_name(full_name)
-    )
-    save_releases_to_parquet(
-        units.release_commits_c2, owner, repo, dados / "releases_c2" / run_file_name(full_name)
-    )
-    save_tags_to_parquet(
-        units.tag_commits_c3, owner, repo, dados / "tags" / run_file_name(full_name)
     )
 
     diagnostics: dict[str, Any] = {
@@ -413,6 +419,9 @@ async def regenerate_repository(
         "unsplittable_intervals": len(runs_result.unsplittable_intervals),
         "runs_mode": settings.runs_mode,
     }
+    if settings.git_subprocess:
+        # peak of the child that held the commits (the parent's own peak stays small)
+        diagnostics["peak_rss_mb"] = git_result.get("peak_rss_mb")
     if settings.runs_mode == RUNS_MODE_RECONCILE:
         actions = Counter(e["action"] for e in runs_result.reconciliation)
         diagnostics["reconciled"] = dict(actions)
@@ -542,10 +551,12 @@ async def wait_for_memory(
 
 
 def is_heavy(old: dict[str, Any]) -> bool:
-    """Repositories with very many runs or releases (they get a worker of their own)."""
-    return (old.get("total_workflow_runs") or 0) >= HEAVY_RUNS or (
-        old.get("releases_count_window") or 0
-    ) >= HEAVY_RELEASES
+    """Repositories with very many runs, releases or tags (they get a worker of their own)."""
+    return (
+        (old.get("total_workflow_runs") or 0) >= HEAVY_RUNS
+        or (old.get("releases_count_window") or 0) >= HEAVY_RELEASES
+        or (old.get("tags_count_window") or 0) >= HEAVY_TAGS
+    )
 
 
 @dataclass
@@ -681,21 +692,21 @@ async def collect_all(
                 summary.failed[name] = redact(f"{reason}; {type(keep_exc).__name__}: {keep_exc}")
                 return
         memory = read_memory()
-        diagnostics["peak_rss_mb"] = memory["peak_rss"]
+        diagnostics.setdefault("peak_rss_mb", memory["peak_rss"])
         append_checkpoint(settings.checkpoint_path, fingerprint, record, diagnostics)
         done[name] = {"record": record, "diagnostics": diagnostics}
         summary.collected.append(name)
         progress["n"] += 1
         logger.info(
             "[%d/%d] %s regenerated (rss %s MiB, peak %s MiB)",
-            progress["n"], len(pending), name, memory["rss"], memory["peak_rss"],
+            progress["n"], len(pending), name, memory["rss"], diagnostics.get("peak_rss_mb"),
         )
         if status:
             status.in_flight.discard(name)
             status.done += 1
             status.requests += diagnostics.get("api_requests", 0)
-            if memory["peak_rss"] is not None:
-                status.peak_rss_by_repo[name] = memory["peak_rss"]
+            if diagnostics.get("peak_rss_mb") is not None:
+                status.peak_rss_by_repo[name] = diagnostics["peak_rss_mb"]
                 # keep the file small: only the five highest
                 top = sorted(status.peak_rss_by_repo.items(), key=lambda kv: -kv[1])[:5]
                 status.peak_rss_by_repo = dict(top)
@@ -1231,6 +1242,14 @@ def main(argv: Sequence[str] | None = None) -> int:
             "da janela (precisa de regeneracao.janela_anterior no config)"
         ),
     )
+    parser.add_argument(
+        "--sem-subprocesso",
+        action="store_true",
+        help=(
+            "Executa a fase de git/commits dentro do próprio processo (comportamento anterior). "
+            "Padrão: um processo filho por repositório, que devolve a memória ao sistema ao terminar"
+        ),
+    )
     parser.add_argument("--status", default=None, help="Arquivo status.json (estado legível por máquina)")
     parser.add_argument(
         "--bundle-dir",
@@ -1264,6 +1283,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         runs_mode=args.runs_modo,
         status_path=args.status,
         bundle_dir=args.bundle_dir,
+        git_subprocess=not args.sem_subprocesso,
     )
 
     if args.somente_relatorio:
