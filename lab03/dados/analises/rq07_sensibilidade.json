@@ -1,0 +1,157 @@
+{
+  "n_repositorios": 330,
+  "distribuicao_tiers": {
+    "C1": {
+      "High": 147,
+      "Medium": 146,
+      "Elite": 23,
+      "Low": 14
+    },
+    "C2": {
+      "Medium": 164,
+      "High": 139,
+      "Low": 18,
+      "Elite": 9
+    },
+    "C3": {
+      "High": 177,
+      "Medium": 116,
+      "Elite": 26,
+      "Low": 11
+    }
+  },
+  "comparacoes_pares": [
+    {
+      "combinacao_1": "C1 (Referência)",
+      "combinacao_2": "C2 (Pré-rel. + LT b + CFR b)",
+      "n_repositorios": 330,
+      "n_mudaram": 84,
+      "percentual_mudanca": 25.454545454545453,
+      "n_subiram": 25,
+      "percentual_subiram": 7.575757575757576,
+      "n_desceram": 59,
+      "percentual_desceram": 17.87878787878788,
+      "n_iguais": 246,
+      "percentual_iguais": 74.54545454545455,
+      "kappa_linear": 0.6030579241399588,
+      "interpretacao_kappa_linear": "substancial",
+      "kappa_simples": 0.5673076923076923,
+      "matriz_transicao": {
+        "Elite": {
+          "Elite": 4,
+          "High": 15,
+          "Medium": 3,
+          "Low": 1
+        },
+        "High": {
+          "Elite": 5,
+          "High": 106,
+          "Medium": 35,
+          "Low": 1
+        },
+        "Medium": {
+          "Elite": 0,
+          "High": 18,
+          "Medium": 124,
+          "Low": 4
+        },
+        "Low": {
+          "Elite": 0,
+          "High": 0,
+          "Medium": 2,
+          "Low": 12
+        }
+      }
+    },
+    {
+      "combinacao_1": "C1 (Referência)",
+      "combinacao_2": "C3 (Tags + LT b + CFR a)",
+      "n_repositorios": 330,
+      "n_mudaram": 71,
+      "percentual_mudanca": 21.515151515151516,
+      "n_subiram": 54,
+      "percentual_subiram": 16.363636363636363,
+      "n_desceram": 17,
+      "percentual_desceram": 5.151515151515151,
+      "n_iguais": 259,
+      "percentual_iguais": 78.48484848484848,
+      "kappa_linear": 0.6870859636817084,
+      "interpretacao_kappa_linear": "substancial",
+      "kappa_simples": 0.640605586489347,
+      "matriz_transicao": {
+        "Elite": {
+          "Elite": 16,
+          "High": 7,
+          "Medium": 0,
+          "Low": 0
+        },
+        "High": {
+          "Elite": 8,
+          "High": 130,
+          "Medium": 9,
+          "Low": 0
+        },
+        "Medium": {
+          "Elite": 2,
+          "High": 40,
+          "Medium": 103,
+          "Low": 1
+        },
+        "Low": {
+          "Elite": 0,
+          "High": 0,
+          "Medium": 4,
+          "Low": 10
+        }
+      }
+    },
+    {
+      "combinacao_1": "C2 (Pré-rel.)",
+      "combinacao_2": "C3 (Tags)",
+      "n_repositorios": 330,
+      "n_mudaram": 85,
+      "percentual_mudanca": 25.757575757575758,
+      "n_subiram": 81,
+      "percentual_subiram": 24.545454545454547,
+      "n_desceram": 4,
+      "percentual_desceram": 1.2121212121212122,
+      "n_iguais": 245,
+      "percentual_iguais": 74.24242424242425,
+      "kappa_linear": 0.6222269007079133,
+      "interpretacao_kappa_linear": "substancial",
+      "kappa_simples": 0.567403340479018,
+      "matriz_transicao": {
+        "Elite": {
+          "Elite": 8,
+          "High": 1,
+          "Medium": 0,
+          "Low": 0
+        },
+        "High": {
+          "Elite": 17,
+          "High": 119,
+          "Medium": 3,
+          "Low": 0
+        },
+        "Medium": {
+          "Elite": 1,
+          "High": 56,
+          "Medium": 107,
+          "Low": 0
+        },
+        "Low": {
+          "Elite": 0,
+          "High": 1,
+          "Medium": 6,
+          "Low": 11
+        }
+      }
+    }
+  ],
+  "figuras": [
+    "dados\\analises\\figuras\\rq07_distribuicao_c1_c2_c3.png",
+    "dados\\analises\\figuras\\rq07_distribuicao_c1_c2_c3.pdf",
+    "dados\\analises\\figuras\\rq07_painel_transicoes.png",
+    "dados\\analises\\figuras\\rq07_painel_transicoes.pdf"
+  ]
+}
