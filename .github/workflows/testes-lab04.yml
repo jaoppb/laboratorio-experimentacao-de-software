@@ -1,0 +1,41 @@
+name: Testes Lab04
+
+on:
+  push:
+    paths:
+      - 'lab04/**'
+      - '.github/workflows/testes-lab04.yml'
+  pull_request:
+    branches:
+      - main
+    paths:
+      - 'lab04/**'
+      - '.github/workflows/testes-lab04.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  testes:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: lab04
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v10.2.0
+        with:
+          enable-cache: true
+          cache-dependency-glob: "lab04/uv.lock"
+
+      - name: Install dependencies
+        run: uv sync --locked
+
+      - name: Run tests
+        run: uv run pytest
