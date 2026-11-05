@@ -1,0 +1,34 @@
+{
+  "semente": 42,
+  "parametros": {
+    "n_a": 30,
+    "n_b": 30,
+    "mediana_a": 10.0,
+    "mediana_b": 14.0,
+    "sigma_a": 0.8,
+    "sigma_b": 0.5,
+    "alpha": 0.05
+  },
+  "welch": {
+    "estatistica": -2.343709099912313,
+    "p_valor": 0.022573328856692932,
+    "tamanho_efeito": -0.6051430874876776,
+    "alternativa": "two-sided",
+    "gl": 57.48292009492647
+  },
+  "mannwhitney": {
+    "estatistica": -2.3285470035069045,
+    "p_valor": 0.01988307641391072,
+    "tamanho_efeito": -0.35111111111111115,
+    "alternativa": "two-sided",
+    "u": 292.0
+  },
+  "medianas_amostrais": {
+    "A": 10.809648742089966,
+    "B": 15.22937362907865
+  },
+  "medias_amostrais": {
+    "A": 11.95482746882145,
+    "B": 16.07892797383814
+  }
+}
