@@ -7,6 +7,7 @@ on:
     paths:
       - 'lab01/**'
       - 'lab02/**'
+      - 'lab04/**'
       - 'pages/**'
       - '.github/workflows/deploy-pages.yml'
   pull_request:
@@ -15,6 +16,7 @@ on:
     paths:
       - 'lab01/**'
       - 'lab02/**'
+      - 'lab04/**'
       - 'pages/**'
       - '.github/workflows/deploy-pages.yml'
   workflow_dispatch:
@@ -60,15 +62,26 @@ jobs:
         working-directory: lab02/dashboard
         run: npm run build
 
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Build Lab 04 dashboard
+        working-directory: lab04
+        run: uv run python scripts/gerar_dashboard.py
+
       - name: Assemble Pages site
         run: |
           mkdir -p _site/lab01/dados
           mkdir -p _site/lab02/dados
+          mkdir -p _site/lab04
           cp pages/index.html _site/index.html
           cp -r lab01/dashboard/dist/* _site/lab01/
           cp lab01/dados/unified_sample.parquet _site/lab01/dados/
           cp -r lab02/dashboard/dist/* _site/lab02/
           cp lab02/dados/*.csv _site/lab02/dados/
+          cp lab04/dashboard/index.html _site/lab04/index.html
 
       - name: Upload Pages artifact
         if: github.event_name != 'pull_request'
