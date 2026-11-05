@@ -45,10 +45,22 @@ def test_mediana_e_sigma_amostrais():
 
 
 def test_usa_apenas_o_rng_recebido():
-    outro = np.random.default_rng(99)
-    esperado = np.random.default_rng(99).random(5)
-    gerar(1)
-    np.testing.assert_array_equal(outro.random(5), esperado)
+    """Consome só o rng recebido, na ordem a depois b."""
+    rng = np.random.default_rng(99)
+    a, b = gerar_dados(rng, **PARAMS)
+    ref = np.random.default_rng(99)
+    esperado_a = ref.lognormal(np.log(10.0), 0.5, 30)
+    esperado_b = ref.lognormal(np.log(20.0), 1.0, 40)
+    np.testing.assert_array_equal(a, esperado_a)
+    np.testing.assert_array_equal(b, esperado_b)
+    assert rng.bit_generator.state == ref.bit_generator.state
+
+
+def test_nao_usa_estado_global():
+    np.random.seed(0)
+    antes = np.random.get_state()[1].copy()
+    gerar()
+    np.testing.assert_array_equal(np.random.get_state()[1], antes)
 
 
 @pytest.mark.parametrize("campo", ["n_a", "n_b"])
