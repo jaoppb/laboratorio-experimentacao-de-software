@@ -27,17 +27,23 @@ def test_duas_execucoes_geram_arquivos_identicos(tmp_path):
 
 def test_formato_do_csv_e_chaves_do_json(tmp_path):
     modulo = _carregar()
-    modulo.executar(tmp_path)
+    res_direto = modulo.executar(tmp_path)
     with open(tmp_path / "exemplo.csv", encoding="utf-8") as f:
         linhas = list(csv.DictReader(f))
     assert list(linhas[0]) == ["grupo", "valor"]
-    assert [linha["grupo"] for linha in linhas] == ["A"] * modulo.N_A + ["B"] * modulo.N_B
+    n_com = res_direto["parametros"]["com_bot"]["n"]
+    n_sem = res_direto["parametros"]["sem_bot"]["n"]
+    assert [linha["grupo"] for linha in linhas] == ["com_bot"] * n_com + ["sem_bot"] * n_sem
     res = json.loads((tmp_path / "exemplo_resultado.json").read_text(encoding="utf-8"))
     assert list(res)[:4] == ["semente", "parametros", "welch", "mannwhitney"]
     assert res["semente"] == 42
     assert res["parametros"]["alpha"] == 0.05
+    assert "com_bot" in res["parametros"]
+    assert "sem_bot" in res["parametros"]
     assert {"estatistica", "p_valor", "tamanho_efeito", "alternativa", "gl"} <= set(res["welch"])
     assert {"estatistica", "p_valor", "tamanho_efeito", "alternativa", "u"} <= set(res["mannwhitney"])
+    assert "com_bot" in res["medianas_amostrais"] and "sem_bot" in res["medianas_amostrais"]
+    assert "com_bot" in res["medias_amostrais"] and "sem_bot" in res["medias_amostrais"]
 
 
 def test_arquivos_commitados_batem_com_o_script(tmp_path):

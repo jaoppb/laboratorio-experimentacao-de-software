@@ -1,34 +1,38 @@
 {
   "semente": 42,
   "parametros": {
-    "n_a": 30,
-    "n_b": 30,
-    "mediana_a": 10.0,
-    "mediana_b": 14.0,
-    "sigma_a": 0.8,
-    "sigma_b": 0.5,
+    "com_bot": {
+      "n": 30,
+      "mediana": 7.6029,
+      "sigma_log": 3.2203
+    },
+    "sem_bot": {
+      "n": 30,
+      "mediana": 2.7308,
+      "sigma_log": 2.5018
+    },
     "alpha": 0.05
   },
   "welch": {
-    "estatistica": -2.343709099912313,
-    "p_valor": 0.022573328856692932,
-    "tamanho_efeito": -0.6051430874876776,
+    "estatistica": 0.803089393256721,
+    "p_valor": 0.4252844568889152,
+    "tamanho_efeito": 0.20735678970660665,
     "alternativa": "two-sided",
-    "gl": 57.48292009492647
+    "gl": 56.571151223290485
   },
   "mannwhitney": {
-    "estatistica": -2.3285470035069045,
-    "p_valor": 0.01988307641391072,
-    "tamanho_efeito": -0.35111111111111115,
+    "estatistica": 1.5154036054568742,
+    "p_valor": 0.12967022490828164,
+    "tamanho_efeito": 0.22888888888888892,
     "alternativa": "two-sided",
-    "u": 292.0
+    "u": 553.0
   },
   "medianas_amostrais": {
-    "A": 10.809648742089966,
-    "B": 15.22937362907865
+    "com_bot": 10.43990576373628,
+    "sem_bot": 4.18803955109638
   },
   "medias_amostrais": {
-    "A": 11.95482746882145,
-    "B": 16.07892797383814
+    "com_bot": 50.94235761435958,
+    "sem_bot": 30.509545447083788
   }
 }
