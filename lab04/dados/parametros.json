@@ -1,0 +1,12 @@
+{
+  "com_bot": {
+    "n": 30,
+    "mediana": 7.6029,
+    "sigma_log": 3.2203
+  },
+  "sem_bot": {
+    "n": 30,
+    "mediana": 2.7308,
+    "sigma_log": 2.5018
+  }
+}
