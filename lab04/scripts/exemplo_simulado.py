@@ -23,46 +23,69 @@ from src.simulacao import gerar_dados  # noqa: E402
 from src.testes import aplicar_mannwhitney, aplicar_welch  # noqa: E402
 
 SEMENTE = 42
-N_A = 30
-N_B = 30
-MEDIANA_A = 10.0
-MEDIANA_B = 14.0
-# Sigmas distintos de propósito: com formas diferentes, médias e medianas
-# divergem; o Mann-Whitney responde à dominância estocástica, não a nenhuma das duas.
-SIGMA_A = 0.8
-SIGMA_B = 0.5
 ALPHA = 0.05
-
+ARQUIVO_PARAMETROS = RAIZ / "dados" / "parametros.json"
 DIRETORIO_SAIDA = RAIZ / "dados" / "simulado"
 
 
-def executar(diretorio: Path = DIRETORIO_SAIDA) -> dict:
+def carregar_parametros(caminho: Path = ARQUIVO_PARAMETROS) -> dict:
+    """Carrega os parâmetros estimados dos dados reais."""
+    with open(caminho, encoding="utf-8") as f:
+        return json.load(f)
+
+
+def executar(
+    diretorio: Path = DIRETORIO_SAIDA,
+    arquivo_parametros: Path = ARQUIVO_PARAMETROS,
+) -> dict:
     """Gera o conjunto, aplica os dois testes e grava CSV e JSON."""
+    parametros_fonte = carregar_parametros(arquivo_parametros)
+    p_com = parametros_fonte["com_bot"]
+    p_sem = parametros_fonte["sem_bot"]
+
     rng = np.random.default_rng(SEMENTE)
-    a, b = gerar_dados(rng, N_A, N_B, MEDIANA_A, MEDIANA_B, SIGMA_A, SIGMA_B)
+    com_bot, sem_bot = gerar_dados(
+        rng,
+        n_a=int(p_com["n"]),
+        n_b=int(p_sem["n"]),
+        mediana_a=float(p_com["mediana"]),
+        mediana_b=float(p_sem["mediana"]),
+        sigma_a=float(p_com["sigma_log"]),
+        sigma_b=float(p_sem["sigma_log"]),
+    )
 
     resultado = {
         "semente": SEMENTE,
         "parametros": {
-            "n_a": N_A,
-            "n_b": N_B,
-            "mediana_a": MEDIANA_A,
-            "mediana_b": MEDIANA_B,
-            "sigma_a": SIGMA_A,
-            "sigma_b": SIGMA_B,
+            "com_bot": {
+                "n": int(p_com["n"]),
+                "mediana": float(p_com["mediana"]),
+                "sigma_log": float(p_com["sigma_log"]),
+            },
+            "sem_bot": {
+                "n": int(p_sem["n"]),
+                "mediana": float(p_sem["mediana"]),
+                "sigma_log": float(p_sem["sigma_log"]),
+            },
             "alpha": ALPHA,
         },
-        "welch": aplicar_welch(a, b),
-        "mannwhitney": aplicar_mannwhitney(a, b),
-        "medianas_amostrais": {"A": float(np.median(a)), "B": float(np.median(b))},
-        "medias_amostrais": {"A": float(a.mean()), "B": float(b.mean())},
+        "welch": aplicar_welch(com_bot, sem_bot, alternativa="two-sided"),
+        "mannwhitney": aplicar_mannwhitney(com_bot, sem_bot, alternativa="two-sided"),
+        "medianas_amostrais": {
+            "com_bot": float(np.median(com_bot)),
+            "sem_bot": float(np.median(sem_bot)),
+        },
+        "medias_amostrais": {
+            "com_bot": float(com_bot.mean()),
+            "sem_bot": float(sem_bot.mean()),
+        },
     }
 
     diretorio.mkdir(parents=True, exist_ok=True)
     with open(diretorio / "exemplo.csv", "w", newline="", encoding="utf-8") as f:
         escritor = csv.writer(f, lineterminator="\n")
         escritor.writerow(["grupo", "valor"])
-        for grupo, valores in (("A", a), ("B", b)):
+        for grupo, valores in (("com_bot", com_bot), ("sem_bot", sem_bot)):
             for v in valores:
                 escritor.writerow([grupo, repr(float(v))])
     with open(diretorio / "exemplo_resultado.json", "w", encoding="utf-8") as f:
