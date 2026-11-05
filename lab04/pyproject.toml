@@ -1,0 +1,21 @@
+[project]
+name = "lab04"
+version = "0.1.0"
+description = "Lab04 - Simulação: Welch vs Mann-Whitney em dados lognormais"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "matplotlib>=3.11.2",
+    "numpy>=2.5.4",
+    "scipy>=1.18.1",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.0.0",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+pythonpath = ["."]
