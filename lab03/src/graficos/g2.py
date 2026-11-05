@@ -32,12 +32,26 @@ def _validar(resultado_welch: dict, resultado_mw: dict, alpha: float) -> None:
         faltando = [c for c in chaves if c not in res]
         if faltando:
             raise KeyError(f"{nome} sem as chaves obrigatórias: {faltando}")
+    for nome, res in (("welch", resultado_welch), ("mannwhitney", resultado_mw)):
+        if res.get("alternativa", "two-sided") != "two-sided":
+            raise ValueError(
+                f"a figura G2 é bilateral; {nome} usa alternativa {res['alternativa']!r}"
+            )
+        p = res["p_valor"]
+        if not (np.isfinite(p) and 0.0 <= p <= 1.0):
+            raise ValueError(f"p_valor de {nome} deve estar em [0, 1]; recebido {p!r}")
     gl = resultado_welch["gl"]
     if not np.isfinite(gl) or gl <= 0:
         raise ValueError(f"gl deve ser positivo e finito; recebido {gl!r}")
     for nome, res in (("welch", resultado_welch), ("mannwhitney", resultado_mw)):
         if not np.isfinite(res["estatistica"]):
             raise ValueError(f"estatística de {nome} não é finita")
+
+
+def _preencher_caudas(ax: Axes, x, y, corte: float, rotulo: str, gid: str, **estilo) -> None:
+    """Sombreia as duas caudas |x| >= corte; só a cauda direita entra na legenda."""
+    for lado, rot in ((x >= corte, rotulo), (x <= -corte, None)):
+        ax.fill_between(x, y, where=lado, label=rot, gid=gid, **estilo)
 
 
 def _painel(
@@ -52,22 +66,17 @@ def _painel(
     ax.plot(x, y, color=COR_CURVA, lw=1.8, label="Densidade sob H0")
 
     # Região de rejeição (|x| >= crítico): preenchimento sólido.
-    for lado, rotulo in ((x >= critico, f"Rejeição (α = {alpha:g})"), (x <= -critico, None)):
-        ax.fill_between(
-            x, y, where=lado, color=COR_REJEICAO, alpha=0.45, lw=0,
-            label=rotulo, gid="area_rejeicao",
-        )
+    _preencher_caudas(
+        ax, x, y, critico, f"Rejeição (α = {alpha:g})", "area_rejeicao",
+        color=COR_REJEICAO, alpha=0.45, lw=0,
+    )
     # p-valor bilateral (|x| >= |observada|): apenas hachura, para se
     # distinguir da região de rejeição mesmo quando se sobrepõem.
-    corte = abs(observada)
-    for lado, rotulo in (
-        (x >= corte, f"p-valor = {p_valor:.4g} (área das duas caudas)"),
-        (x <= -corte, None),
-    ):
-        ax.fill_between(
-            x, y, where=lado, facecolor="none", edgecolor=COR_P_VALOR,
-            hatch="///", lw=0, label=rotulo, gid="area_p_valor",
-        )
+    _preencher_caudas(
+        ax, x, y, abs(observada),
+        f"p-valor = {p_valor:.4g} (área das duas caudas)", "area_p_valor",
+        facecolor="none", edgecolor=COR_P_VALOR, hatch="///", lw=0,
+    )
 
     ax.axvline(observada, color=COR_OBSERVADA, lw=2, label=f"Observada = {observada:.3f}")
     for v in (-critico, critico):
@@ -95,7 +104,9 @@ def figura_g2(
 
     ``resultado_welch`` precisa de ``estatistica`` (t), ``gl`` e ``p_valor``;
     ``resultado_mw`` precisa de ``estatistica`` (z) e ``p_valor``. Os dicts
-    não são alterados. A região de rejeição e a área do p-valor são bilaterais.
+    não são alterados. A região de rejeição e a área do p-valor são bilaterais;
+    resultados com ``alternativa`` unilateral são recusados (``ValueError``).
+    Com ``gl`` muito baixo a faixa do eixo x fica larga (caudas pesadas).
     """
     _validar(resultado_welch, resultado_mw, alpha)
     gl = float(resultado_welch["gl"])

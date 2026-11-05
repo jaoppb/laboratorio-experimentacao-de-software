@@ -37,7 +37,7 @@ def _area_gid(ax, gid) -> float:
 def test_devolve_figura_com_dois_eixos():
     fig = figura_g2(WELCH, MW)
     assert len(fig.axes) == 2
-    assert "G2" in fig._suptitle.get_text()
+    assert "G2" in fig.get_suptitle()
 
 
 def test_nao_altera_entradas():
@@ -116,3 +116,17 @@ def test_chave_faltando_mw(chave):
 
 def test_renderiza_sem_erro():
     figura_g2(WELCH, MW).canvas.draw()
+
+
+@pytest.mark.parametrize("p", [float("nan"), -0.1, 1.2])
+def test_p_valor_invalido(p):
+    with pytest.raises(ValueError, match="p_valor"):
+        figura_g2({**WELCH, "p_valor": p}, MW)
+
+
+@pytest.mark.parametrize("alt", ["less", "greater"])
+def test_recusa_alternativa_unilateral(alt):
+    with pytest.raises(ValueError, match="bilateral"):
+        figura_g2({**WELCH, "alternativa": alt}, MW)
+    with pytest.raises(ValueError, match="bilateral"):
+        figura_g2(WELCH, {**MW, "alternativa": alt})
