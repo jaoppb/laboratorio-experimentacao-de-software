@@ -31,7 +31,7 @@ def test_formato_do_csv_e_chaves_do_json(tmp_path):
     with open(tmp_path / "exemplo.csv", encoding="utf-8") as f:
         linhas = list(csv.DictReader(f))
     assert list(linhas[0]) == ["grupo", "valor"]
-    assert [l["grupo"] for l in linhas] == ["A"] * modulo.N_A + ["B"] * modulo.N_B
+    assert [linha["grupo"] for linha in linhas] == ["A"] * modulo.N_A + ["B"] * modulo.N_B
     res = json.loads((tmp_path / "exemplo_resultado.json").read_text(encoding="utf-8"))
     assert list(res)[:4] == ["semente", "parametros", "welch", "mannwhitney"]
     assert res["semente"] == 42

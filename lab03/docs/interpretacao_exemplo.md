@@ -6,8 +6,8 @@ Script: `scripts/exemplo_simulado.py` · Saídas: `dados/simulado/exemplo.csv` e
 
 Semente `42` (`np.random.default_rng(42)`); dois grupos lognormais independentes com
 n_A = n_B = 30, medianas teóricas 10 (A) e 14 (B), α = 0,05. Os sigmas (desvio do log)
-são distintos de propósito: σ_A = 0,8 e σ_B = 0,5, para mostrar que o Mann-Whitney não
-é um teste de medianas.
+são distintos de propósito: σ_A = 0,8 e σ_B = 0,5. Com formas diferentes, médias e medianas
+divergem, e o Mann-Whitney responde à dominância, não a nenhuma das duas.
 
 Amostralmente: medianas A = 10,81 e B = 15,23; médias A = 11,95 e B = 16,08.
 

@@ -27,8 +27,8 @@ N_A = 30
 N_B = 30
 MEDIANA_A = 10.0
 MEDIANA_B = 14.0
-# Sigmas distintos de propósito: com formas diferentes, o Mann-Whitney deixa de
-# equivaler a um teste de medianas e fica clara a diferença para o Welch.
+# Sigmas distintos de propósito: com formas diferentes, médias e medianas
+# divergem; o Mann-Whitney responde à dominância estocástica, não a nenhuma das duas.
 SIGMA_A = 0.8
 SIGMA_B = 0.5
 ALPHA = 0.05
