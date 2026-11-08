@@ -1,0 +1,5 @@
+cenario,teste,n_rep,alfa,taxa_rejeicao
+com_bot,welch,10000,0.05,0.0068
+com_bot,mannwhitney,10000,0.05,0.0456
+sem_bot,welch,10000,0.05,0.0122
+sem_bot,mannwhitney,10000,0.05,0.0456
