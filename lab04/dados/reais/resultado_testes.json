@@ -1,0 +1,35 @@
+{
+  "alfa": 0.05,
+  "alternativa": "two-sided",
+  "n": {
+    "com_bot": 30,
+    "sem_bot": 30
+  },
+  "medianas_horas": {
+    "com_bot": 7.6029,
+    "sem_bot": 2.7308
+  },
+  "medias_horas": {
+    "com_bot": 300.8374500000001,
+    "sem_bot": 69.75877333333332
+  },
+  "welch": {
+    "estatistica": 1.375450653662449,
+    "p_valor": 0.17838727865148152,
+    "tamanho_efeito": 0.35513983167765134,
+    "alternativa": "two-sided",
+    "gl": 32.540142661044925,
+    "magnitude_efeito": "pequeno",
+    "conclusao": "não rejeita H0: sem evidência de diferença entre os grupos"
+  },
+  "mannwhitney": {
+    "estatistica": 0.569200378635021,
+    "p_valor": 0.5692201637415295,
+    "tamanho_efeito": 0.08666666666666667,
+    "alternativa": "two-sided",
+    "u": 489.0,
+    "magnitude_efeito": "desprezível",
+    "conclusao": "não rejeita H0: sem evidência de diferença entre os grupos"
+  },
+  "concordam": true
+}
