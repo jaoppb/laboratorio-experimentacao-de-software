@@ -1,0 +1,9 @@
+cenario,teste,n_rep,alfa,taxa_rejeicao
+referencia,welch,10000,0.05,0.0372
+referencia,mannwhitney,10000,0.05,0.0456
+n_pequeno,welch,10000,0.05,0.027
+n_pequeno,mannwhitney,10000,0.05,0.0432
+assimetria_extrema,welch,10000,0.05,0.0085
+assimetria_extrema,mannwhitney,10000,0.05,0.0456
+outliers,welch,10000,0.05,0.0172
+outliers,mannwhitney,10000,0.05,0.0477
