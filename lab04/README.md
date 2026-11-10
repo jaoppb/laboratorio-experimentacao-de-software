@@ -20,13 +20,29 @@ O objetivo deste laboratório é compreender o funcionamento interno e os limite
 
 ## Comando Único de Execução
 
-Para rodar todo o pipeline da Sprint 1 do início ao fim (atualização da simulação, geração dos gráficos G1 e G2 e escrita da página estática do dashboard), execute a partir da pasta `lab04/`:
+Para rodar todo o pipeline do início ao fim (simulações Q1, Q2 e Q3, exemplo simulado, gráficos e escrita da página estática do dashboard), execute a partir da pasta `lab04/`:
 
 ```bash
 uv run python scripts/gerar_dashboard.py
 ```
 
 O comando gera o arquivo `dashboard/index.html`, que pode ser aberto diretamente em qualquer navegador sem a necessidade de servidor web ou conexão com a internet.
+
+**Tempo esperado:** cerca de **3,5 a 4 minutos** em uma máquina comum com uma CPU (medido: Q1 ≈ 10 s, Q2 ≈ 68 s, Q3 ≈ 137 s, com 10.000 repetições por ponto; o restante leva poucos segundos). Quase todo o tempo vem das simulações.
+
+As simulações ficam em `scripts/rodar_simulacoes.py`, que também pode ser rodado sozinho e grava em `dados/simulado/`:
+
+```bash
+uv run python scripts/rodar_simulacoes.py
+```
+
+| Pergunta | Arquivo(s) gerado(s) |
+|---|---|
+| Q1 — erro tipo I | `q1_erro_tipo1.csv` |
+| Q2 — poder | `q2_poder.csv` |
+| Q3 — pressupostos violados | `q3_erro_tipo1.csv`, `q3_poder.csv` |
+
+Todas usam `numpy.random.default_rng(42)`, então duas execuções produzem CSVs idênticos. Para só regenerar o dashboard reaproveitando os CSVs já gravados (poucos segundos), use `uv run python scripts/gerar_dashboard.py --sem-simulacoes`.
 
 ## Como Rodar a Suíte de Testes
 
@@ -43,7 +59,7 @@ lab04/
 ├── dados/
 │   ├── parametros.json         # Parâmetros estimados dos dados reais
 │   ├── reais/                  # pr_merge_time.csv e FONTE.md
-│   └── simulado/               # exemplo.csv e exemplo_resultado.json
+│   └── simulado/               # exemplo, q1_*, q2_* e q3_* (CSVs das simulações)
 ├── dashboard/
 │   └── index.html              # Página web do dashboard (gerada por código)
 ├── docs/                       # Enunciado, decisões, cenário e interpretações
@@ -51,6 +67,8 @@ lab04/
 │   ├── coletar_prs.py          # Coleta via GitHub CLI (executada na fase de dados)
 │   ├── estimar_parametros.py   # Estimação dos parâmetros lognormais
 │   ├── exemplo_simulado.py     # Execução do exemplo simulado (semente 42)
+│   ├── simular_q1.py / q2 / q3 # Simulações de Monte Carlo (10.000 repetições)
+│   ├── rodar_simulacoes.py     # Roda Q1, Q2 e Q3 em sequência
 │   └── gerar_dashboard.py      # Comando único do laboratório
 ├── src/
 │   ├── dashboard/              # Gerador de HTML do dashboard estático
