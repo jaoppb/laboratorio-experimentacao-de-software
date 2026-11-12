@@ -49,10 +49,9 @@ def test_dashboard_contem_secoes_obrigatorias(tmp_path):
         assert pos > pos_anterior, f"Seção {s!r} fora de ordem no HTML"
         pos_anterior = pos
 
-    # Só a seção 7 mantém o aviso (seções 4 a 6 já preenchidas)
-    assert conteudo.count("A ser preenchido na Sprint 2/entrega final.") == 1
-    corpo7 = conteudo[conteudo.find("7. Conclusão") :]
-    assert "A ser preenchido na Sprint 2/entrega final." in corpo7
+    # Todas as seções preenchidas: nenhum aviso de pendência resta
+    assert "A ser preenchido" not in conteudo
+    assert "aviso-sprint2" not in conteudo
 
 
 def _secao(conteudo: str, inicio: str, fim: str) -> str:
@@ -101,16 +100,17 @@ def test_dashboard_duas_execucoes_sao_identicas(tmp_path):
     assert c1.read_text(encoding="utf-8") == c2.read_text(encoding="utf-8")
 
 
-def test_secoes_1_a_3_e_6_tem_texto_de_2_a_4_frases(tmp_path):
+def test_secoes_1_a_3_6_e_7_tem_texto_de_2_a_4_frases(tmp_path):
     conteudo = gerar_dashboard(diretorio_saida=tmp_path).read_text(encoding="utf-8")
     for inicio, fim in (
         ("<h2>1. Cenário</h2>", "<h2>2. Os dados (G1)</h2>"),
         ("<h2>2. Os dados (G1)</h2>", "<h2>3. Como os testes funcionam (G2)</h2>"),
         ("<h2>3. Como os testes funcionam (G2)</h2>", "<h2>4. Erro tipo I</h2>"),
         ("<h2>6. Dados reais</h2>", "<h2>7. Conclusão</h2>"),
+        ("<h2>7. Conclusão</h2>", "</main>"),
     ):
         secao = _secao(conteudo, inicio, fim)
-        texto = re.search(r'<p class="secao-texto">(.*?)</p>', secao, re.S).group(1)
+        texto = re.search(r'<p class="secao-texto"[^>]*>(.*?)</p>', secao, re.S).group(1)
         frases = [f for f in re.split(r"(?<=[.!?])\s+", " ".join(texto.split())) if f]
         assert 2 <= len(frases) <= 4, (inicio, frases)
 
@@ -129,3 +129,14 @@ def test_dashboard_tem_seletor_de_alfa_e_resumo_da_sensibilidade(tmp_path):
     assert resumo and "α = 0,01 em vez de 0,05" in resumo.group(1)
     assert conteudo.count("updatemenus") >= 2  # G3 e G4
     assert "α = 0,01" in conteudo
+
+
+def test_secao_7_tem_expectativa_recomendacao_e_limitacao(tmp_path):
+    conteudo = gerar_dashboard(diretorio_saida=tmp_path).read_text(encoding="utf-8")
+    secao = _secao(conteudo, "<h2>7. Conclusão</h2>", "</main>")
+    assert 'id="conclusao-texto"' in secao
+    assert "Antes de simular esperávamos" in secao
+    assert "simulação confirmou" in secao
+    assert "Recomendamos o Mann-Whitney" in secao
+    assert "diferença de médias" in secao
+    assert "confundida com o tempo" in secao

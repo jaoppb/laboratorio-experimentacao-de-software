@@ -93,15 +93,6 @@
       border-radius: 8px;
       overflow: hidden;
     }
-    .aviso-sprint2 {
-      padding: 16px 20px;
-      background: #fffbeb;
-      border: 1px dashed #f59e0b;
-      border-radius: 8px;
-      color: #b45309;
-      font-weight: 500;
-      font-size: 0.95rem;
-    }
     table.tabela-testes {
       width: 100%;
       border-collapse: collapse;
@@ -3828,9 +3819,9 @@ return Plotly;
     <!-- 7. Conclusão -->
     <section class="card" id="conclusao">
       <h2>7. Conclusão</h2>
-      <div class="aviso-sprint2">
-        A ser preenchido na Sprint 2/entrega final.
-      </div>
+      <p class="secao-texto" id="conclusao-texto">
+        Antes de simular esperávamos o Mann-Whitney perto de 5% de erro tipo I e com mais poder, e o Welch conservador e com pouco poder, e a simulação confirmou (Mann-Whitney entre 4,3% e 4,8%, Welch entre 0,7% e 3,7%), sem que o Welch superasse o Mann-Whitney em nenhuma situação, nem com n pequeno, que era a nossa ressalva. Recomendamos o Mann-Whitney para o tempo até o merge: com a cauda pesada dos parâmetros reais (com_bot, razão 4,0) ele detectou o efeito em 35,2% das repetições contra 3,4% do Welch, mantendo o erro tipo I perto de 5%. A escolha mudaria se a pergunta passasse a ser sobre a diferença de médias (por exemplo, o custo total em horas), que o Mann-Whitney não testa, ou se os dados fossem aproximadamente simétricos e sem outliers, situação que não simulamos. A principal limitação é que os dados reais vêm de períodos diferentes (antes e depois do CodeRabbit), então qualquer diferença entre os grupos fica confundida com o tempo e não pode ser atribuída ao bot.
+      </p>
     </section>
   </main>
 </body>
