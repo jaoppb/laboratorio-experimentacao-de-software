@@ -137,6 +137,16 @@ def texto_dados_reais(resultado: dict) -> str:
         veredito = "os dois testes rejeitam H₀"
     else:
         veredito = "os testes discordam"
+    if rejeitam:
+        ressalva = (
+            "Como a coleta é observacional (grupos de períodos diferentes), a diferença não prova "
+            "que o bot a causou."
+        )
+    else:
+        ressalva = (
+            f"Com n = {min(n_com, n_sem)} por grupo e a cauda pesada vista no G4, falta de significância "
+            "não prova ausência de efeito: a amostra é pequena para detectá-lo."
+        )
     return (
         f"A tabela aplica os dois testes (bicaudais, α = {_num(alpha, 2)}) aos {n_com} PRs com bot e {n_sem} "
         f"sem bot; as medianas são {_num(med['com_bot'], 2)} h e {_num(med['sem_bot'], 2)} h. "
@@ -144,8 +154,7 @@ def texto_dados_reais(resultado: dict) -> str:
         f"{veredito}. "
         f"Os tamanhos de efeito são {w['magnitude_efeito']} (d = {_num(float(w['tamanho_efeito']), 2)}) e "
         f"{m['magnitude_efeito']} (rank-biserial = {_num(float(m['tamanho_efeito']), 2)}). "
-        f"Com n = 30 por grupo e a cauda pesada vista no G4, falta de significância não prova ausência "
-        f"de efeito: a amostra é pequena para detectá-lo."
+        f"{ressalva}"
     )
 
 LINK_REPO = "https://github.com/jaoppb/laboratorio-experimentacao-de-software"
@@ -188,6 +197,12 @@ def construir_html(
     mw_stat = float(resultado_exemplo["mannwhitney"]["estatistica"])
     mw_p = float(resultado_exemplo["mannwhitney"]["p_valor"])
     alpha = float(resultado_exemplo["parametros"]["alpha"])
+    if w_p >= alpha and mw_p >= alpha:
+        veredito_exemplo = f"ambos superiores a {alpha:g}, e nenhum teste rejeita H₀"
+    elif w_p < alpha and mw_p < alpha:
+        veredito_exemplo = f"ambos inferiores a {alpha:g}, e os dois testes rejeitam H₀"
+    else:
+        veredito_exemplo = f"em lados opostos de {alpha:g}, e os testes discordam"
 
     plotly_js = get_plotlyjs()
 
@@ -196,7 +211,7 @@ def construir_html(
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Lab04: Welch × Mann-Whitney em Dados Lognormais (Sprint 1)</title>
+  <title>Lab04: Welch × Mann-Whitney em Dados Lognormais</title>
   <style>
     :root {{
       --cor-fundo: #f8fafc;
@@ -341,7 +356,7 @@ def construir_html(
       <p class="secao-texto">
         O gráfico G1 apresenta a comparação dos histogramas dos dados reais com os dados simulados sob escala logarítmica (log10), evidenciando a forte assimetria à direita e a presença de outliers severos na amostra real (máximo de {max_real_com:.1f} h contra medianas empíricas de {mediana_real_com:.2f} h com bot e {mediana_real_sem:.2f} h sem bot).
         Como a média amostral é fortemente distorcida pela cauda longa, a simulação utiliza a distribuição lognormal parametrizada rigorosamente pelas medianas estimadas ({p_com_med:.2f} h e {p_sem_med:.2f} h) e desvios logarítmicos σ_log ({p_com_sig:.2f} e {p_sem_sig:.2f}).
-        O grupo conclui que os dados sintéticos reproduzem com precisão a dispersão e a assimetria observadas na prática, fornecendo calibração realista para os experimentos de simulação.
+        O grupo conclui que os dados sintéticos reproduzem a assimetria e a cauda pesada observadas, o que torna a simulação uma calibração realista; como são apenas {n_com} e {n_sem} PRs reais por grupo, os parâmetros têm incerteza considerável.
       </p>
       <div class="grafico-container">
         {div_g1}
@@ -354,7 +369,7 @@ def construir_html(
       <p class="secao-texto">
         O gráfico G2 ilustra a distribuição amostral teórica da estatística de teste sob H₀ (t de Student com gl = {w_gl:.1f} para Welch e normal padrão assintótica para Mann-Whitney), destacando as regiões críticas de rejeição bilateral para α = {alpha:g}.
         O teste t de Welch compara a diferença de médias ponderada pelo erro-padrão, enquanto o Mann-Whitney avalia postos e dominância estocástica, não medindo diretamente medianas sob variâncias heterogêneas.
-        No exemplo simulado, as estatísticas observadas (t = {w_stat:.3f} e z = {mw_stat:.3f}) geraram p-valores de {w_p:.4f} e {mw_p:.4f}, ambos superiores a 0,05; essa amostra única não permite estimar erro tipo I nem poder, demandando a simulação de Monte Carlo com 10.000 repetições.
+        No exemplo simulado, as estatísticas observadas (t = {w_stat:.3f} e z = {mw_stat:.3f}) geraram p-valores de {w_p:.4f} e {mw_p:.4f}, {veredito_exemplo}; essa amostra única não permite estimar erro tipo I nem poder, demandando a simulação de Monte Carlo com 10.000 repetições.
       </p>
       <div class="grafico-container">
         {div_g2}
