@@ -12,6 +12,7 @@ import pandas as pd
 import plotly.graph_objects as go
 
 from src.estilo import COR_CRITICO, COR_MANNWHITNEY, COR_WELCH, LAYOUT_BASE_PLOTLY
+from src.graficos.seletor_alfa import adicionar_seletor, validar_alfas
 from src.graficos.dados_simulacao import (
     NOME_TESTE,
     ROTULO_SITUACAO,
@@ -37,33 +38,15 @@ def _validar(df: pd.DataFrame) -> None:
         raise ValueError(f"testes desconhecidos: {sorted(desconhecidos)}")
 
 
-def figura_g3(erro_tipo1: pd.DataFrame | None = None, alfa: float = 0.05) -> go.Figure:
-    """Monta o G3.
-
-    Args:
-        erro_tipo1: DataFrame com ``cenario, teste, n_rep, taxa_rejeicao`` (H0
-            verdadeira). Se ``None``, lê os CSVs de Q1 e Q3.
-        alfa: nível de significância desenhado como linha de referência.
-
-    Returns:
-        ``plotly.graph_objects.Figure`` com barras agrupadas por situação.
-    """
-    if not 0.0 < alfa < 1.0:
-        raise ValueError(f"alfa deve estar em (0, 1); recebido {alfa!r}")
-    df = carregar_erro_tipo1() if erro_tipo1 is None else erro_tipo1.copy()
-    _validar(df)
-
-    situacoes = situacoes_presentes(df)
-    rotulos = [ROTULO_SITUACAO.get(s, s) for s in situacoes]
-    fig = go.Figure()
-
+def _barras(df, situacoes, rotulos, visivel):
+    """Uma barra por teste (com margem de 95%) para as taxas de ``df``."""
+    tracos = []
     for teste in TESTES:
-        sub = df[df["teste"] == teste].set_index("cenario")
-        sub = sub.reindex(situacoes)
+        sub = df[df["teste"] == teste].set_index("cenario").reindex(situacoes)
         p = sub["taxa_rejeicao"].to_numpy(dtype=float)
         n = sub["n_rep"].to_numpy(dtype=float)
         margem = 1.96 * np.sqrt(p * (1.0 - p) / n) * 100.0
-        fig.add_trace(
+        tracos.append(
             go.Bar(
                 x=rotulos,
                 y=p * 100.0,
@@ -73,13 +56,53 @@ def figura_g3(erro_tipo1: pd.DataFrame | None = None, alfa: float = 0.05) -> go.
                 text=[f"{v:.1f}%" for v in p * 100.0],
                 textposition="outside",
                 hovertemplate="%{x}<br>%{y:.2f}%<extra>" + NOME_TESTE[teste] + "</extra>",
+                visible=visivel,
             )
         )
+    return tracos
+
+
+def _texto_linha(alfa: float) -> str:
+    return f"α = {alfa * 100:g}% (esperado)"
+
+
+def _limite_y(df: pd.DataFrame) -> float:
+    return max(8.0, float(df["taxa_rejeicao"].max()) * 100.0 * 1.25)
+
+
+def figura_g3(
+    erro_tipo1: pd.DataFrame | None = None,
+    alfa: float = 0.05,
+    erro_tipo1_alt: pd.DataFrame | None = None,
+    alfa_alt: float | None = None,
+) -> go.Figure:
+    """Monta o G3.
+
+    Args:
+        erro_tipo1: DataFrame com ``cenario, teste, n_rep, taxa_rejeicao`` (H0
+            verdadeira). Se ``None``, lê os CSVs de Q1 e Q3.
+        alfa: nível de significância desenhado como linha de referência.
+        erro_tipo1_alt, alfa_alt: as mesmas taxas recalculadas em outro α. Se
+            dados, a figura ganha botões para alternar entre os dois níveis.
+
+    Returns:
+        ``plotly.graph_objects.Figure`` com barras agrupadas por situação.
+    """
+    validar_alfas(alfa, erro_tipo1_alt, alfa_alt)
+    df = carregar_erro_tipo1() if erro_tipo1 is None else erro_tipo1.copy()
+    _validar(df)
+
+    situacoes = situacoes_presentes(df)
+    rotulos = [ROTULO_SITUACAO.get(s, s) for s in situacoes]
+    fig = go.Figure(_barras(df, situacoes, rotulos, True))
+    if erro_tipo1_alt is not None:
+        _validar(erro_tipo1_alt)
+        fig.add_traces(_barras(erro_tipo1_alt, situacoes, rotulos, False))
 
     fig.add_hline(
         y=alfa * 100.0,
         line=dict(color=COR_CRITICO, width=2, dash="dash"),
-        annotation_text=f"α = {alfa * 100:g}% (esperado)",
+        annotation_text=_texto_linha(alfa),
         annotation_position="top right",
     )
     fig.update_layout(
@@ -94,8 +117,11 @@ def figura_g3(erro_tipo1: pd.DataFrame | None = None, alfa: float = 0.05) -> go.
     )
     fig.update_xaxes(title_text="Situação simulada (H₀ verdadeira)")
     fig.update_yaxes(
-        title_text="Proporção de rejeições de H₀ (%)",
-        range=[0, max(8.0, float(df["taxa_rejeicao"].max()) * 100.0 * 1.25)],
+        title_text="Proporção de rejeições de H₀ (%)", range=[0, _limite_y(df)]
     )
+    if erro_tipo1_alt is not None:
+        adicionar_seletor(
+            fig, len(TESTES), (alfa, alfa_alt), _texto_linha,
+            (_limite_y(df), _limite_y(erro_tipo1_alt)),
+        )
     return fig
-

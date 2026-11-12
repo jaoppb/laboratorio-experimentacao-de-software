@@ -10,6 +10,9 @@ from pathlib import Path
 
 import pandas as pd
 
+from src.pvalores import carregar as carregar_p_valores
+from src.pvalores import recalcular_taxas
+
 RAIZ = Path(__file__).resolve().parents[2]
 DIR_SIMULADO = RAIZ / "dados" / "simulado"
 
@@ -67,3 +70,18 @@ def situacoes_presentes(df: pd.DataFrame) -> list[str]:
     conhecidas = [s for s in ORDEM_SITUACOES if s in presentes]
     return conhecidas + [s for s in presentes if s not in ORDEM_SITUACOES]
 
+
+def carregar_erro_tipo1_em(alfa: float, diretorio: Path | str = DIR_SIMULADO) -> pd.DataFrame:
+    """Erro tipo I de Q1 e Q3 recalculado em ``alfa`` a partir dos p-valores guardados."""
+    d = Path(diretorio)
+    p = {**carregar_p_valores(d / "q1_p_valores.npz"), **carregar_p_valores(d / "q3_p_valores.npz")}
+    return recalcular_taxas(
+        carregar_erro_tipo1(d / CSV_Q1.name, d / CSV_Q3_TIPO1.name), p, alfa
+    )
+
+
+def carregar_poder_em(alfa: float, diretorio: Path | str = DIR_SIMULADO) -> pd.DataFrame:
+    """Poder de Q2 e Q3 recalculado em ``alfa`` a partir dos p-valores guardados."""
+    d = Path(diretorio)
+    p = {**carregar_p_valores(d / "q2_p_valores.npz"), **carregar_p_valores(d / "q3_p_valores.npz")}
+    return recalcular_taxas(carregar_poder(d / CSV_Q2.name, d / CSV_Q3_PODER.name), p, alfa)

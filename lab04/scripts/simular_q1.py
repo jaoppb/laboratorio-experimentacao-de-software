@@ -6,7 +6,8 @@ Em cada cenário os dois grupos seguem a MESMA lognormal (mesma mediana e mesmo
 Mann-Whitney. Os dois cenários usam os parâmetros de ``com_bot`` e de
 ``sem_bot`` de ``dados/parametros.json``. Cada um roda 10.000 repetições com um
 ``default_rng(42)`` novo, e a saída ``dados/simulado/q1_erro_tipo1.csv`` guarda a
-proporção de p-valores < 0,05 por (cenário, teste). O script só mede e grava:
+proporção de p-valores < 0,05 por (cenário, teste), e ``q1_p_valores.npz`` guarda os
+p-valores (para recalcular em outro α sem simular de novo). O script só mede e grava:
 um desvio de 5% é resultado a reportar, não erro.
 """
 
@@ -23,7 +24,8 @@ RAIZ = Path(__file__).resolve().parents[1]
 if str(RAIZ) not in sys.path:
     sys.path.insert(0, str(RAIZ))
 
-from src.montecarlo import N_REP_PADRAO, executar_montecarlo  # noqa: E402
+from src.montecarlo import N_REP_PADRAO, ResultadoMonteCarlo, executar_montecarlo  # noqa: E402
+from src.pvalores import chave as chave_p, salvar  # noqa: E402
 
 SEMENTE = 42
 ALFA = 0.05
@@ -32,6 +34,7 @@ TESTES = (("welch", "welch"), ("mannwhitney", "mannwhitney"))
 ARQUIVO_PARAMETROS = RAIZ / "dados" / "parametros.json"
 DIRETORIO_SAIDA = RAIZ / "dados" / "simulado"
 NOME_CSV = "q1_erro_tipo1.csv"
+NOME_P_VALORES = "q1_p_valores.npz"
 COLUNAS = ["cenario", "teste", "n_rep", "alfa", "taxa_rejeicao"]
 
 
@@ -41,12 +44,12 @@ def carregar_parametros(caminho: Path = ARQUIVO_PARAMETROS) -> dict:
         return json.load(f)
 
 
-def simular_cenario(params: dict, n_rep: int) -> dict[str, float]:
-    """Taxa de rejeição de cada teste com os dois grupos iguais a ``params``."""
+def p_valores_cenario(params: dict, n_rep: int) -> ResultadoMonteCarlo:
+    """p-valores dos dois testes com os dois grupos iguais a ``params``."""
     n = int(params["n"])
     mediana = float(params["mediana"])
     sigma = float(params["sigma_log"])
-    resultado = executar_montecarlo(
+    return executar_montecarlo(
         np.random.default_rng(SEMENTE),
         n_a=n,
         n_b=n,
@@ -56,7 +59,11 @@ def simular_cenario(params: dict, n_rep: int) -> dict[str, float]:
         sigma_b=sigma,
         n_rep=n_rep,
     )
-    return resultado.taxa_rejeicao(ALFA)
+
+
+def simular_cenario(params: dict, n_rep: int) -> dict[str, float]:
+    """Taxa de rejeição de cada teste com os dois grupos iguais a ``params``."""
+    return p_valores_cenario(params, n_rep).taxa_rejeicao(ALFA)
 
 
 def executar(
@@ -67,8 +74,12 @@ def executar(
     """Roda os dois cenários H0 e grava ``q1_erro_tipo1.csv``."""
     parametros = carregar_parametros(arquivo_parametros)
     linhas = []
+    p_valores = {}
     for cenario in CENARIOS:
-        taxas = simular_cenario(parametros[cenario], n_rep)
+        resultado = p_valores_cenario(parametros[cenario], n_rep)
+        taxas = resultado.taxa_rejeicao(ALFA)
+        p_valores[chave_p(cenario, 1.0, "welch")] = resultado.p_welch
+        p_valores[chave_p(cenario, 1.0, "mannwhitney")] = resultado.p_mannwhitney
         for teste, chave in TESTES:
             linhas.append(
                 {
@@ -86,6 +97,7 @@ def executar(
         escritor.writeheader()
         for linha in linhas:
             escritor.writerow({**linha, "taxa_rejeicao": repr(linha["taxa_rejeicao"])})
+    salvar(diretorio / NOME_P_VALORES, p_valores)
     return linhas
 
 

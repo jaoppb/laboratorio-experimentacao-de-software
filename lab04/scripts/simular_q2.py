@@ -22,7 +22,8 @@ RAIZ = Path(__file__).resolve().parents[1]
 if str(RAIZ) not in sys.path:
     sys.path.insert(0, str(RAIZ))
 
-from src.montecarlo import N_REP_PADRAO, executar_montecarlo  # noqa: E402
+from src.montecarlo import N_REP_PADRAO, ResultadoMonteCarlo, executar_montecarlo  # noqa: E402
+from src.pvalores import chave, salvar  # noqa: E402
 
 SEMENTE = 42
 ALFA = 0.05
@@ -32,6 +33,7 @@ TESTES = ("welch", "mannwhitney")
 ARQUIVO_PARAMETROS = RAIZ / "dados" / "parametros.json"
 DIRETORIO_SAIDA = RAIZ / "dados" / "simulado"
 NOME_CSV = "q2_poder.csv"
+NOME_P_VALORES = "q2_p_valores.npz"
 COLUNAS = ["cenario", "teste", "razao_medianas", "n_rep", "alfa", "taxa_rejeicao"]
 
 
@@ -43,12 +45,12 @@ def carregar_parametros(caminho: Path = ARQUIVO_PARAMETROS) -> dict:
         return json.load(f)
 
 
-def simular_ponto(params: dict, razao: float, n_rep: int) -> dict[str, float]:
-    """Taxa de rejeição de cada teste com mediana do grupo B = ``razao`` × A."""
+def p_valores_ponto(params: dict, razao: float, n_rep: int) -> ResultadoMonteCarlo:
+    """p-valores dos dois testes com mediana do grupo B = ``razao`` × A."""
     n = int(params["n"])
     mediana = float(params["mediana"])
     sigma = float(params["sigma_log"])
-    resultado = executar_montecarlo(
+    return executar_montecarlo(
         np.random.default_rng(SEMENTE),
         n_a=n,
         n_b=n,
@@ -58,7 +60,11 @@ def simular_ponto(params: dict, razao: float, n_rep: int) -> dict[str, float]:
         sigma_b=sigma,
         n_rep=n_rep,
     )
-    return resultado.taxa_rejeicao(ALFA)
+
+
+def simular_ponto(params: dict, razao: float, n_rep: int) -> dict[str, float]:
+    """Taxa de rejeição de cada teste com mediana do grupo B = ``razao`` × A."""
+    return p_valores_ponto(params, razao, n_rep).taxa_rejeicao(ALFA)
 
 
 def executar(
@@ -70,9 +76,13 @@ def executar(
     """Roda todos os (cenário, razão) e grava ``q2_poder.csv``."""
     parametros = carregar_parametros(arquivo_parametros)
     linhas = []
+    p_valores = {}
     for cenario in CENARIOS:
         for razao in razoes:
-            taxas = simular_ponto(parametros[cenario], razao, n_rep)
+            resultado = p_valores_ponto(parametros[cenario], razao, n_rep)
+            taxas = resultado.taxa_rejeicao(ALFA)
+            p_valores[chave(cenario, razao, "welch")] = resultado.p_welch
+            p_valores[chave(cenario, razao, "mannwhitney")] = resultado.p_mannwhitney
             for teste in TESTES:
                 linhas.append(
                     {
@@ -91,6 +101,7 @@ def executar(
         escritor.writeheader()
         for linha in linhas:
             escritor.writerow({**linha, "taxa_rejeicao": repr(linha["taxa_rejeicao"])})
+    salvar(diretorio / NOME_P_VALORES, p_valores)
     return linhas
 
 
