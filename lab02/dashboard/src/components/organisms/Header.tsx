@@ -75,6 +75,15 @@ export const Header: React.FC<HeaderProps> = ({
           </a>
 
           <a
+            href="../lab04/"
+            className="flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium text-gray-600 dark:text-github-muted hover:text-gray-900 dark:hover:text-white border border-gray-200 dark:border-github-border rounded-lg hover:bg-gray-100 dark:hover:bg-github-card transition"
+            title="Acessar Dashboard do Lab 04"
+          >
+            <ExternalLink className="w-3.5 h-3.5" />
+            <span className="hidden md:inline">Lab 04</span>
+          </a>
+
+          <a
             href="https://github.com/jaoppb/laboratorio-experimentacao-de-software"
             target="_blank"
             rel="noopener noreferrer"

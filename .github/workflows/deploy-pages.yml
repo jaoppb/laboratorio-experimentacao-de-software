@@ -45,6 +45,7 @@ jobs:
           cache-dependency-path: |
             lab01/dashboard/package-lock.json
             lab02/dashboard/package-lock.json
+            lab04/dashboard/package-lock.json
 
       - name: Install dependencies (Lab 01)
         working-directory: lab01/dashboard
@@ -62,26 +63,45 @@ jobs:
         working-directory: lab02/dashboard
         run: npm run build
 
+      - name: Install dependencies (Lab 04)
+        working-directory: lab04/dashboard
+        run: npm ci
+
       - name: Install uv
         uses: astral-sh/setup-uv@v5
         with:
           enable-cache: true
 
-      - name: Build Lab 04 dashboard
+      - name: Export Lab 04 dashboard bundle and static data
         working-directory: lab04
         run: uv run python scripts/gerar_dashboard.py
+
+      - name: Build Lab 04 dashboard (Vite SPA)
+        working-directory: lab04/dashboard
+        run: npm run build
 
       - name: Assemble Pages site
         run: |
           mkdir -p _site/lab01/dados
           mkdir -p _site/lab02/dados
-          mkdir -p _site/lab04
+          mkdir -p _site/lab04/dados/reais
+          mkdir -p _site/lab04/dados/simulado
           cp pages/index.html _site/index.html
           cp -r lab01/dashboard/dist/* _site/lab01/
           cp lab01/dados/unified_sample.parquet _site/lab01/dados/
           cp -r lab02/dashboard/dist/* _site/lab02/
           cp lab02/dados/*.csv _site/lab02/dados/
-          cp lab04/dashboard/index.html _site/lab04/index.html
+          cp -r lab04/dashboard/dist/* _site/lab04/
+          cp lab04/dados/parametros.json _site/lab04/dados/
+          cp lab04/dados/dashboard_bundle.json _site/lab04/dados/
+          cp lab04/dados/reais/*.csv _site/lab04/dados/reais/
+          cp lab04/dados/reais/*.json _site/lab04/dados/reais/
+          cp lab04/dados/simulado/*.csv _site/lab04/dados/simulado/
+          cp lab04/dados/simulado/*.json _site/lab04/dados/simulado/
+          cp lab04/dados/reais/*.csv _site/lab04/dados/
+          cp lab04/dados/reais/*.json _site/lab04/dados/
+          cp lab04/dados/simulado/*.csv _site/lab04/dados/
+          cp lab04/dados/simulado/*.json _site/lab04/dados/
 
       - name: Upload Pages artifact
         if: github.event_name != 'pull_request'
