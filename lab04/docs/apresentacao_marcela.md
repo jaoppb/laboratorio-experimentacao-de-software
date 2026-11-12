@@ -43,9 +43,5 @@ Respostas curtas (~30 s cada), apoiadas no dashboard. Os números vêm de
 *Mostrar: seção 7.*
 
 - **Recomendação:** Mann-Whitney para o tempo até o merge: dados lognormais de cauda pesada (σ_log de 2,5 a 3,2), onde ele mantém o erro tipo I em ~5% e detecta muito mais.
-- **Quando mudaria:** se a pergunta fosse mesmo sobre **diferença de médias** (custo total em horas, por exemplo), ou se a distribuição fosse aproximadamente simétrica com n grande (a diferença para o Welch já é pequena na referência). Lembrar que o Mann-Whitney testa dominância estocástica, não medianas.
+- **Quando mudaria:** se a pergunta fosse mesmo sobre **diferença de médias** (custo total em horas, por exemplo), ou se os dados fossem aproximadamente simétricos e sem outliers (situação que não simulamos, então não sabemos o quanto o Welch se aproximaria; mesmo na referência o Mann-Whitney tem mais poder, 72% contra 55% na razão 2,0). Lembrar que o Mann-Whitney testa dominância estocástica, não medianas.
 - **Principal limitação:** os dados reais são de períodos diferentes (antes × depois do bot), então o efeito está confundido com o tempo, e a simulação usa só uma família (lognormal) com contaminação simétrica nos dois grupos. Nos dados reais, nenhum teste rejeitou H₀ (p = 0,178 e p = 0,569) com n = 30 por grupo, o que não prova ausência de efeito.
-
-> **Pendente de revisão:** as respostas 13 e 15 dependem do texto da seção 7 do
-> dashboard (Issue de revisão final). Se o grupo mudar a conclusão ali, ajustar aqui.
-
