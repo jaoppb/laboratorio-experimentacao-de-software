@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+import json
 import re
 from pathlib import Path
 
 from src.dashboard.gerador import (
+    ARQUIVO_BUNDLE,
+    DIR_DASHBOARD,
     LINK_PAGES,
     LINK_PROJECTS,
     LINK_REPO,
@@ -140,3 +143,64 @@ def test_secao_7_tem_expectativa_recomendacao_e_limitacao(tmp_path):
     assert "Recomendamos o Mann-Whitney" in secao
     assert "diferença de médias" in secao
     assert "confundida com o tempo" in secao
+
+
+def test_gerar_dashboard_exporta_bundle_json(tmp_path):
+    caminho = gerar_dashboard(diretorio_saida=tmp_path)
+    bundle_path = tmp_path / "dashboard_bundle.json"
+    assert bundle_path.exists()
+    dados = json.loads(bundle_path.read_text(encoding="utf-8"))
+
+    # Chaves de nível superior
+    for chave in ("links", "parametros", "resultado_exemplo", "resultado_testes", "textos", "g2", "simulacoes"):
+        assert chave in dados
+
+    # Textos canônicos
+    textos = dados["textos"]
+    for t_key in (
+        "secao_1",
+        "secao_2",
+        "secao_3",
+        "secao_4_alfa_005",
+        "secao_4_alfa_001",
+        "secao_5_alfa_005",
+        "secao_5_alfa_001",
+        "sensibilidade_alfa",
+        "secao_6",
+        "secao_7",
+    ):
+        assert t_key in textos
+        assert len(textos[t_key]) > 50
+
+    # Curvas de G2
+    g2 = dados["g2"]
+    assert "welch" in g2 and "mannwhitney" in g2
+    assert len(g2["welch"]["x"]) == len(g2["welch"]["y"]) > 100
+    assert len(g2["mannwhitney"]["x"]) == len(g2["mannwhitney"]["y"]) > 100
+    assert g2["welch"]["critico_005"] > 0
+    assert g2["mannwhitney"]["critico_005"] > 0
+
+    # Simulações de Monte Carlo
+    sims = dados["simulacoes"]
+    assert len(sims["erro_tipo1_005"]) == 12
+    assert len(sims["erro_tipo1_001"]) == 12
+    assert len(sims["poder_005"]) == 84
+    assert len(sims["poder_001"]) == 84
+
+
+def test_dashboard_spa_vite_estrutura_e_dist_validos():
+    template_index = DIR_DASHBOARD / "index.html"
+    assert template_index.exists()
+    assert (DIR_DASHBOARD / "package.json").exists()
+    assert (DIR_DASHBOARD / "src" / "App.tsx").exists()
+    conteudo_template = template_index.read_text(encoding="utf-8")
+    assert '<div id="root">' in conteudo_template
+    assert "src/main.tsx" in conteudo_template
+
+    dist_index = DIR_DASHBOARD / "dist" / "index.html"
+    if dist_index.exists():
+        conteudo_dist = dist_index.read_text(encoding="utf-8")
+        assert '<div id="root">' in conteudo_dist
+        assert "assets/" in conteudo_dist
+
+
