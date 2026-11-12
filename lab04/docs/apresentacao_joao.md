@@ -8,7 +8,7 @@ Respostas curtas (~30 s cada), apoiadas no dashboard. Os números vêm de
 
 *Mostrar: seção 2 (G1, dados reais sobre a curva simulada) e `dados/parametros.json`.*
 
-- **O que os dados mostraram:** são muito assimétricos à direita. No grupo com bot, a média é 301 h e a mediana é 7,6 h; a assimetria é 3,39 (com bot) e 3,90 (sem bot), com 5 outliers de Tukey em cada grupo. No logaritmo, a assimetria cai para 0,37 e 0,69.
+- **O que os dados mostraram:** são muito assimétricos à direita. No grupo com bot, a média é 301 h e a mediana é 7,6 h; a assimetria (G1 de Fisher-Pearson ajustado, de `estimar_parametros.py`) é 3,39 (com bot) e 3,90 (sem bot), com 5 outliers de Tukey em cada grupo. No logaritmo, a assimetria cai para 0,37 e 0,69.
 - **Escolha:** por isso cada grupo é simulado como **lognormal**, parametrizada pela **mediana** e pelo **σ_log** (desvio-padrão do log do tempo), estimados dos 30 PRs de cada grupo: 7,60 h e 3,22 com bot; 2,73 h e 2,50 sem bot.
 - **Por que a mediana e não a média:** a média real é puxada por poucos PRs enormes (o maior chega a 3.742 h).
 - **Na simulação:** sob H₀ os dois grupos usam os mesmos parâmetros; sob H₁ só a mediana de um grupo é multiplicada por um fator.
@@ -35,7 +35,7 @@ Respostas curtas (~30 s cada), apoiadas no dashboard. Os números vêm de
 
 - **No exemplo (semente 42, n = 30 por grupo):** Welch t = 0,803, p = 0,425; Mann-Whitney z = 1,515, p = 0,130. Ambos ficam acima de 0,05, então nenhum rejeita H₀.
 - **Significa:** se H₀ fosse verdadeira, a chance de obter uma estatística tão extrema ou mais (as duas caudas hachuradas) seria de 42,5% no Welch e de 13,0% no Mann-Whitney. Isso não é raro.
-- **Não significa:** que H₀ tem 42,5% de chance de ser verdadeira; que não existe efeito (na simulação existe: medianas de 7,6 h e 2,7 h, e o teste só não o detectou); nem o tamanho ou a importância do efeito.
+- **Não significa:** que H₀ tem 42,5% de chance de ser verdadeira; que não existe efeito (na simulação existe: medianas teóricas de 7,6 h e 2,7 h, e o teste só não o detectou); nem o tamanho ou a importância do efeito.
 - **Ressalva:** é uma única amostra. Erro tipo I e poder só aparecem nas 10.000 repetições (G3 e G4).
 
 ## 12. O que mudaria no G3 e no G4 com α = 0,01
@@ -48,6 +48,6 @@ Respostas curtas (~30 s cada), apoiadas no dashboard. Os números vêm de
 - **G4 (poder):** cai nos dois testes, porque o valor crítico fica mais exigente. Em média, a proporção de rejeições com efeito cai 14,5 pontos percentuais no Mann-Whitney e 13,1 no Welch.
   - Referência, razão 2,0: Mann-Whitney de 72,0% para 47,9%; Welch de 55,2% para 25,0%.
   - Parâmetros reais, com_bot, razão 4,0: Mann-Whitney de 35,2% para 14,9%; Welch de 3,4% para 0,15%.
-  - Onde ambos já saturavam (referência, razão ≥ 6), quase nada muda.
-- **O que não muda:** o Mann-Whitney continua à frente do Welch em todas as situações e razões, e o Welch segue sem poder nas situações de cauda pesada.
+  - Onde já saturavam (referência, razão ≥ 6), o Mann-Whitney continua em ~100% e o Welch perde só 4 a 6 pontos (99,0% para 93,2% na razão 6).
+- **O que não muda:** o Mann-Whitney continua à frente do Welch em todas as situações e razões, e o Welch segue com poder muito baixo nas situações com bot, sem bot e de assimetria extrema (na razão 8: 0,4%, 3,2% e 0,7%).
 - **Compromisso:** menos falsos alarmes (tipo I) em troca de mais erros tipo II. Com n = 30 por grupo e o Welch quase sem poder, α = 0,01 só agravaria o risco de não perceber um efeito real.
