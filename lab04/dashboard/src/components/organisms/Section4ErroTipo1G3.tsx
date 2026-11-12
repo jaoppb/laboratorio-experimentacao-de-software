@@ -84,7 +84,10 @@ export const Section4ErroTipo1G3: React.FC<Section4ErroTipo1G3Props> = ({
         font: { size: 14, color: isDark ? '#ffffff' : '#0f172a' },
         x: 0.5,
         xanchor: 'center',
+        y: 0.96,
+        yanchor: 'top',
       },
+      margin: { l: 64, r: 110, t: 90, b: 160 },
       barmode: 'group',
       xaxis: {
         title: { text: 'Situação simulada (cenários de H0 verdadeira)' },
@@ -99,6 +102,7 @@ export const Section4ErroTipo1G3: React.FC<Section4ErroTipo1G3Props> = ({
       shapes: [
         {
           type: 'line',
+          layer: 'below',
           xref: 'paper',
           yref: 'y',
           x0: 0,
@@ -116,17 +120,19 @@ export const Section4ErroTipo1G3: React.FC<Section4ErroTipo1G3Props> = ({
         {
           xref: 'paper',
           yref: 'y',
-          x: 0.99,
+          x: 1.005,
           y: expectedAlpha + yMax * 0.03,
-          text: `α = ${expectedAlpha}% (esperado)`,
+          text: `α = ${expectedAlpha}%<br>esperado`,
           showarrow: false,
-          xanchor: 'right',
+          xanchor: 'left',
           font: { color: '#E69F00', size: 11, family: 'monospace' },
         },
       ],
       legend: {
         orientation: 'h',
-        y: -0.3,
+        yref: 'container',
+        y: 0.01,
+        yanchor: 'bottom',
         x: 0.5,
         xanchor: 'center',
       },

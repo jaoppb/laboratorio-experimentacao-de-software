@@ -14,6 +14,9 @@ interface Section2DadosG1Props {
 
 type G1ViewMode = 'both' | 'com_bot' | 'sem_bot';
 
+const LOG_TICKS = [-1, 0, 1, 2, 3, 4];
+const formatTick = (v: number) => (v >= 1 ? String(Math.round(v)) : v.toString().replace('.', ','));
+
 export const Section2DadosG1: React.FC<Section2DadosG1Props> = ({
   bundle,
   realPRs,
@@ -24,19 +27,19 @@ export const Section2DadosG1: React.FC<Section2DadosG1Props> = ({
   const texto = bundle.textos.secao_2;
 
   const realCom = useMemo(
-    () => realPRs.filter((p) => p.grupo === 'com_bot').map((p) => p.tempo_merge_horas),
+    () => realPRs.filter((p) => p.grupo === 'com_bot').map((p) => Math.log10(p.tempo_merge_horas)),
     [realPRs]
   );
   const realSem = useMemo(
-    () => realPRs.filter((p) => p.grupo === 'sem_bot').map((p) => p.tempo_merge_horas),
+    () => realPRs.filter((p) => p.grupo === 'sem_bot').map((p) => Math.log10(p.tempo_merge_horas)),
     [realPRs]
   );
   const simCom = useMemo(
-    () => exemploRows.filter((p) => p.grupo === 'com_bot').map((p) => p.valor),
+    () => exemploRows.filter((p) => p.grupo === 'com_bot').map((p) => Math.log10(p.valor)),
     [exemploRows]
   );
   const simSem = useMemo(
-    () => exemploRows.filter((p) => p.grupo === 'sem_bot').map((p) => p.valor),
+    () => exemploRows.filter((p) => p.grupo === 'sem_bot').map((p) => Math.log10(p.valor)),
     [exemploRows]
   );
 
@@ -96,31 +99,37 @@ export const Section2DadosG1: React.FC<Section2DadosG1Props> = ({
           font: { size: 14, color: isDark ? '#ffffff' : '#0f172a' },
           x: 0.5,
           xanchor: 'center',
+          y: 0.96,
+          yanchor: 'top',
         },
+        margin: { l: 64, r: 24, t: 90, b: 120 },
         barmode: 'overlay',
         grid: { rows: 1, columns: 2, pattern: 'independent' },
         annotations: [
           {
-            text: `<b>com_bot (CodeRabbit)</b> — Real (n=${realCom.length}) vs Simulado (n=${simCom.length})`,
+            text: `<b>com_bot (CodeRabbit)</b>`,
             showarrow: false,
             xref: 'paper',
             yref: 'paper',
             x: 0.22,
-            y: 1.12,
+            y: 1.03,
+            yanchor: 'bottom',
             font: { size: 12, color: isDark ? '#c9d1d9' : '#334155' },
           },
           {
-            text: `<b>sem_bot (Controle)</b> — Real (n=${realSem.length}) vs Simulado (n=${simSem.length})`,
+            text: `<b>sem_bot (Controle)</b>`,
             showarrow: false,
             xref: 'paper',
             yref: 'paper',
             x: 0.78,
-            y: 1.12,
+            y: 1.03,
+            yanchor: 'bottom',
             font: { size: 12, color: isDark ? '#c9d1d9' : '#334155' },
           },
         ],
         xaxis: {
-          type: 'log',
+          tickvals: LOG_TICKS,
+          ticktext: LOG_TICKS.map((v) => formatTick(10 ** v)),
           title: { text: 'Tempo até o merge (horas, escala log10)' },
           domain: [0, 0.46],
           gridcolor: isDark ? '#30363d' : '#e2e8f0',
@@ -130,7 +139,8 @@ export const Section2DadosG1: React.FC<Section2DadosG1Props> = ({
           gridcolor: isDark ? '#30363d' : '#e2e8f0',
         },
         xaxis2: {
-          type: 'log',
+          tickvals: LOG_TICKS,
+          ticktext: LOG_TICKS.map((v) => formatTick(10 ** v)),
           title: { text: 'Tempo até o merge (horas, escala log10)' },
           domain: [0.54, 1.0],
           gridcolor: isDark ? '#30363d' : '#e2e8f0',
@@ -141,7 +151,9 @@ export const Section2DadosG1: React.FC<Section2DadosG1Props> = ({
         },
         legend: {
           orientation: 'h',
-          y: -0.22,
+          yref: 'container',
+          y: 0.01,
+          yanchor: 'bottom',
           x: 0.5,
           xanchor: 'center',
         },
@@ -178,10 +190,14 @@ export const Section2DadosG1: React.FC<Section2DadosG1Props> = ({
           font: { size: 14, color: isDark ? '#ffffff' : '#0f172a' },
           x: 0.5,
           xanchor: 'center',
+          y: 0.96,
+          yanchor: 'top',
         },
+        margin: { l: 64, r: 24, t: 90, b: 120 },
         barmode: 'overlay',
         xaxis: {
-          type: 'log',
+          tickvals: LOG_TICKS,
+          ticktext: LOG_TICKS.map((v) => formatTick(10 ** v)),
           title: { text: 'Tempo até o merge (horas, escala log10)' },
           gridcolor: isDark ? '#30363d' : '#e2e8f0',
         },
@@ -191,7 +207,9 @@ export const Section2DadosG1: React.FC<Section2DadosG1Props> = ({
         },
         legend: {
           orientation: 'h',
-          y: -0.2,
+          yref: 'container',
+          y: 0.01,
+          yanchor: 'bottom',
           x: 0.5,
           xanchor: 'center',
         },

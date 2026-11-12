@@ -203,7 +203,10 @@ export const Section3TestesG2: React.FC<Section3TestesG2Props> = ({
         font: { size: 14, color: isDark ? '#ffffff' : '#0f172a' },
         x: 0.5,
         xanchor: 'center',
+        y: 0.96,
+        yanchor: 'top',
       },
+      margin: { l: 64, r: 24, t: 90, b: 120 },
       grid: { rows: 1, columns: 2, pattern: 'independent' },
       annotations: [
         {
@@ -212,7 +215,8 @@ export const Section3TestesG2: React.FC<Section3TestesG2Props> = ({
           xref: 'paper',
           yref: 'paper',
           x: 0.22,
-          y: 1.12,
+          y: 1.03,
+            yanchor: 'bottom',
           font: { size: 12, color: isDark ? '#c9d1d9' : '#334155' },
         },
         {
@@ -221,7 +225,8 @@ export const Section3TestesG2: React.FC<Section3TestesG2Props> = ({
           xref: 'paper',
           yref: 'paper',
           x: 0.78,
-          y: 1.12,
+          y: 1.03,
+            yanchor: 'bottom',
           font: { size: 12, color: isDark ? '#c9d1d9' : '#334155' },
         },
         {
@@ -265,7 +270,9 @@ export const Section3TestesG2: React.FC<Section3TestesG2Props> = ({
       },
       legend: {
         orientation: 'h',
-        y: -0.22,
+        yref: 'container',
+        y: 0.01,
+        yanchor: 'bottom',
         x: 0.5,
         xanchor: 'center',
       },
