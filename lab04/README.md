@@ -1,16 +1,30 @@
 # Lab04 — Testes de Hipótese por Dentro: Cenário, Simulação e Visualização
 
-**Sprint 1:** Cenário, dados reais, simulação e visualização (G1 e G2 no dashboard).
+**Estado final:** dados reais, cenário, simulações Q1, Q2 e Q3 e dashboard completo com os gráficos G1 a G4 (Sprints 1 e 2 e entrega final).
+
+- **Dashboard publicado:** <https://jaoppb.github.io/laboratorio-experimentacao-de-software/lab04/>
+- **Repositório:** <https://github.com/jaoppb/laboratorio-experimentacao-de-software>
+- **GitHub Projects:** <https://github.com/users/jaoppb/projects/3/views/1>
 
 ## Descrição do Laboratório e Par de Testes
 
 O objetivo deste laboratório é compreender o funcionamento interno e os limites práticos de testes de hipótese comparando dois métodos aplicados a uma mesma pergunta de Engenharia de Software.
 
 - **Par escolhido:** **P1** — Teste $t$ de Welch (paramétrico para médias com variâncias heterogêneas) × Teste de Mann-Whitney $U$ (não paramétrico para postos e dominância estocástica).
-- **Cenário:** Tempo até o merge de Pull Requests (em horas), comparando PRs revisados pelo bot **CodeRabbit** (`com_bot`) com PRs não revisados por bot (`sem_bot`).
+- **Cenário:** Tempo até o merge de Pull Requests (em horas), comparando PRs revisados pelo bot **CodeRabbit** (`com_bot`) com PRs não revisados por bot (`sem_bot`). Detalhes em [docs/cenario.md](docs/cenario.md).
 - **Hipóteses:** Teste bicaudal ($\alpha = 0,05$), avaliando se há diferença no tempo de merge entre os grupos.
 - **Distribuição na simulação:** Lognormal com parâmetros de localização (mediana) e escala ($\sigma_{\log}$) calibrados a partir dos dados reais coletados.
 - **Semente fixa:** `numpy.random.default_rng(42)`, garantindo reprodução determinística byte a byte.
+
+## Perguntas respondidas pela simulação
+
+| Pergunta | O que mede | Script | Saída |
+|---|---|---|---|
+| Q1 | Erro tipo I (H₀ verdadeira, 10.000 repetições) | `scripts/simular_q1.py` | `dados/simulado/q1_erro_tipo1.csv` |
+| Q2 | Poder com efeitos crescentes (razão de medianas de 1,0 a 8,0) | `scripts/simular_q2.py` | `dados/simulado/q2_poder.csv` |
+| Q3 | Erro tipo I e poder com violação dos pressupostos (n pequeno, assimetria extrema, outliers); ver [docs/violacoes_q3.md](docs/violacoes_q3.md) | `scripts/simular_q3.py` | `dados/simulado/q3_erro_tipo1.csv` e `q3_poder.csv` |
+
+Gráficos: **G1** (dados reais × simulados), **G2** (estatística sob H₀ e p-valor), **G3** (erro tipo I em cada situação, Q1 e Q3) e **G4** (curvas de poder, Q2 e Q3).
 
 ## Dados Reais
 
@@ -20,29 +34,33 @@ O objetivo deste laboratório é compreender o funcionamento interno e os limite
 
 ## Comando Único de Execução
 
-Para rodar todo o pipeline do início ao fim (simulações Q1, Q2 e Q3, exemplo simulado, gráficos e escrita da página estática do dashboard), execute a partir da pasta `lab04/`:
+A partir da pasta `lab04/` (requer [uv](https://docs.astral.sh/uv/)), o comando abaixo refaz **tudo** do início ao fim com semente fixa: testes nos dados reais, simulações Q1, Q2 e Q3 e geração do dashboard (leva alguns minutos por causa das 10.000 repetições).
 
 ```bash
-uv run python scripts/gerar_dashboard.py
+uv run python scripts/reproduzir_tudo.py
 ```
 
-O comando gera o arquivo `dashboard/index.html`, que pode ser aberto diretamente em qualquer navegador sem a necessidade de servidor web ou conexão com a internet.
+O resultado final é `dashboard/index.html`, que abre diretamente em qualquer navegador, sem servidor web nem internet (o Plotly.js vai embutido na página).
+
+Como a semente é fixa, rodar o comando duas vezes (ou em um clone limpo) gera os mesmos arquivos: `git status` não deve mostrar mudanças em `dados/` nem em `dashboard/`.
 
 **Tempo esperado:** cerca de **3,5 a 4 minutos** em uma máquina comum com uma CPU (medido: Q1 ≈ 10 s, Q2 ≈ 68 s, Q3 ≈ 137 s, com 10.000 repetições por ponto; o restante leva poucos segundos). Quase todo o tempo vem das simulações.
 
-As simulações ficam em `scripts/rodar_simulacoes.py`, que também pode ser rodado sozinho e grava em `dados/simulado/`:
+As simulações Q1, Q2 e Q3 rodam em sequência por `scripts/rodar_simulacoes.py`, que o comando único chama e que também pode ser executado sozinho (grava em `dados/simulado/`):
 
 ```bash
 uv run python scripts/rodar_simulacoes.py
 ```
 
-| Pergunta | Arquivo(s) gerado(s) |
-|---|---|
-| Q1 — erro tipo I | `q1_erro_tipo1.csv` |
-| Q2 — poder | `q2_poder.csv` |
-| Q3 — pressupostos violados | `q3_erro_tipo1.csv`, `q3_poder.csv` |
+### Só o dashboard (rápido)
 
-Todas usam `numpy.random.default_rng(42)`, então duas execuções produzem CSVs idênticos. Para só regenerar o dashboard reaproveitando os CSVs já gravados (poucos segundos), use `uv run python scripts/gerar_dashboard.py --sem-simulacoes`.
+Os CSVs das simulações já estão versionados. Para apenas regenerar a página a partir deles:
+
+```bash
+uv run python scripts/gerar_dashboard.py
+```
+
+Este é o comando usado pelo workflow de GitHub Pages.
 
 ## Como Rodar a Suíte de Testes
 
@@ -58,22 +76,27 @@ uv run pytest
 lab04/
 ├── dados/
 │   ├── parametros.json         # Parâmetros estimados dos dados reais
-│   ├── reais/                  # pr_merge_time.csv e FONTE.md
-│   └── simulado/               # exemplo, q1_*, q2_* e q3_* (CSVs das simulações)
+│   ├── reais/                  # pr_merge_time.csv, FONTE.md e resultado_testes.json
+│   └── simulado/               # exemplo, q1_erro_tipo1, q2_poder, q3_erro_tipo1 e q3_poder
 ├── dashboard/
 │   └── index.html              # Página web do dashboard (gerada por código)
-├── docs/                       # Enunciado, decisões, cenário e interpretações
+├── docs/                       # Enunciado, decisões, cenário, interpretações e roteiro oral
 ├── scripts/
 │   ├── coletar_prs.py          # Coleta via GitHub CLI (executada na fase de dados)
 │   ├── estimar_parametros.py   # Estimação dos parâmetros lognormais
 │   ├── exemplo_simulado.py     # Execução do exemplo simulado (semente 42)
-│   ├── simular_q1.py / q2 / q3 # Simulações de Monte Carlo (10.000 repetições)
+│   ├── testar_dados_reais.py   # Welch e Mann-Whitney nos dados reais
 │   ├── rodar_simulacoes.py     # Roda Q1, Q2 e Q3 em sequência
-│   └── gerar_dashboard.py      # Comando único do laboratório
+│   ├── simular_q1.py           # Q1: erro tipo I
+│   ├── simular_q2.py           # Q2: poder
+│   ├── simular_q3.py           # Q3: violações dos pressupostos
+│   ├── gerar_dashboard.py      # Gera apenas o dashboard a partir dos arquivos versionados
+│   └── reproduzir_tudo.py      # Comando único: reproduz tudo e gera o dashboard
 ├── src/
 │   ├── dashboard/              # Gerador de HTML do dashboard estático
-│   ├── graficos/               # Módulos dos gráficos G1 e G2 (Plotly e Matplotlib)
+│   ├── graficos/               # G1, G2, G3 e G4 (Plotly e Matplotlib)
 │   ├── estilo.py               # Paleta de cores e padronização visual (Okabe-Ito)
+│   ├── montecarlo.py           # Repetições de Monte Carlo e taxa de rejeição
 │   ├── simulacao.py            # Geração de dados sintéticos lognormais
 │   └── testes.py               # Implementação do teste t de Welch e Mann-Whitney
 ├── tests/                      # Suíte de testes automatizados com pytest

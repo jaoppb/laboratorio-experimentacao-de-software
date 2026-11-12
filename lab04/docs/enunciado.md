@@ -103,7 +103,7 @@ O dashboard deve ter as seções abaixo, nesta ordem:
 - Pode ser feito em Streamlit, Dash, Plotly (página HTML), Quarto ou ferramenta equivalente, desde que gerado por código do repositório.
 - Deve abrir com um único comando descrito no README, ou estar publicado (ex.: GitHub Pages, Streamlit Community Cloud).
 - O link do dashboard e do repositório/GitHub Projects do grupo devem aparecer no topo do dashboard.
-- Link do repositório/GitHub Projects: _\<preencher\>_
+- Link do repositório/GitHub Projects: [repositório](https://github.com/jaoppb/laboratorio-experimentacao-de-software) · [GitHub Projects](https://github.com/users/jaoppb/projects/3/views/1) · [dashboard publicado](https://jaoppb.github.io/laboratorio-experimentacao-de-software/lab04/)
 
 ## 5. Apresentação oral: 15 perguntas
 
