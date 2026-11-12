@@ -14,10 +14,13 @@ Gera ``dashboard/index.html`` contendo:
 from __future__ import annotations
 
 import json
+import subprocess
 from pathlib import Path
 
+import numpy as np
 import pandas as pd
 from plotly.offline import get_plotlyjs
+from scipy import stats
 
 from scripts.exemplo_simulado import carregar_parametros, executar as executar_exemplo
 from src.graficos.g1 import carregar_dados_reais, figura_g1
@@ -39,6 +42,7 @@ RAIZ = Path(__file__).resolve().parents[2]
 DIR_DASHBOARD = RAIZ / "dashboard"
 ARQUIVO_HTML = DIR_DASHBOARD / "index.html"
 ARQUIVO_RESULTADO_REAIS = RAIZ / "dados" / "reais" / "resultado_testes.json"
+ARQUIVO_BUNDLE = RAIZ / "dados" / "dashboard_bundle.json"
 ALFA_SENSIBILIDADE = 0.01
 
 
@@ -414,13 +418,186 @@ def construir_html(
 """
 
 
+def gerar_bundle(
+    df_reais: pd.DataFrame,
+    params: dict,
+    resultado_exemplo: dict,
+    tipo1_005: pd.DataFrame,
+    tipo1_001: pd.DataFrame,
+    poder_005: pd.DataFrame,
+    poder_001: pd.DataFrame,
+    resultado_reais: dict,
+) -> dict:
+    """Exporta todas as métricas, curvas de densidade teórica e textos canônicos em dict estruturado."""
+    n_total = len(df_reais)
+    n_com = len(df_reais[df_reais["grupo"] == "com_bot"])
+    n_sem = len(df_reais[df_reais["grupo"] == "sem_bot"])
+    mediana_real_com = float(df_reais[df_reais["grupo"] == "com_bot"]["tempo_merge_horas"].median())
+    mediana_real_sem = float(df_reais[df_reais["grupo"] == "sem_bot"]["tempo_merge_horas"].median())
+    max_real_com = float(df_reais[df_reais["grupo"] == "com_bot"]["tempo_merge_horas"].max())
+
+    p_com_med = float(params["com_bot"]["mediana"])
+    p_com_sig = float(params["com_bot"]["sigma_log"])
+    p_sem_med = float(params["sem_bot"]["mediana"])
+    p_sem_sig = float(params["sem_bot"]["sigma_log"])
+
+    w_stat = float(resultado_exemplo["welch"]["estatistica"])
+    w_gl = float(resultado_exemplo["welch"]["gl"])
+    w_p = float(resultado_exemplo["welch"]["p_valor"])
+    mw_stat = float(resultado_exemplo["mannwhitney"]["estatistica"])
+    mw_p = float(resultado_exemplo["mannwhitney"]["p_valor"])
+    alpha = float(resultado_exemplo["parametros"]["alpha"])
+
+    if w_p >= alpha and mw_p >= alpha:
+        veredito_exemplo = f"ambos superiores a {alpha:g}, e nenhum teste rejeita H₀"
+    elif w_p < alpha and mw_p < alpha:
+        veredito_exemplo = f"ambos inferiores a {alpha:g}, e os dois testes rejeitam H₀"
+    else:
+        veredito_exemplo = f"em lados opostos de {alpha:g}, e os testes discordam"
+
+    secao_1 = (
+        f"O estudo investiga se o tempo até o merge de Pull Requests difere quando revisados "
+        f"pelo bot de revisão CodeRabbit em comparação a PRs sem bot de revisão no repositório "
+        f"público tailwindlabs/tailwindcss. A hipótese nula (H₀) postula que a distribuição do "
+        f"tempo até o merge é idêntica entre os grupos (médias iguais para Welch e probabilidade "
+        f"de dominância P(X_com > X_sem) = 0,5 para Mann-Whitney), enquanto a hipótese alternativa "
+        f"(H₁) bicaudal afirma que os tempos diferem. Os dados reais foram coletados via API do "
+        f"GitHub antes e depois da adoção da ferramenta, totalizando {n_total} observações "
+        f"({n_com} PRs com bot e {n_sem} PRs sem bot)."
+    )
+
+    secao_2 = (
+        f"O gráfico G1 apresenta a comparação dos histogramas dos dados reais com os dados "
+        f"simulados sob escala logarítmica (log10), evidenciando a forte assimetria à direita e a "
+        f"presença de outliers severos na amostra real (máximo de {max_real_com:.1f} h contra medianas "
+        f"empíricas de {mediana_real_com:.2f} h com bot e {mediana_real_sem:.2f} h sem bot). "
+        f"Como a média amostral é fortemente distorcida pela cauda longa, a simulação utiliza a "
+        f"distribuição lognormal parametrizada rigorosamente pelas medianas estimadas ({p_com_med:.2f} h "
+        f"e {p_sem_med:.2f} h) e desvios logarítmicos σ_log ({p_com_sig:.2f} e {p_sem_sig:.2f}). "
+        f"O grupo conclui que os dados sintéticos reproduzem a assimetria e a cauda pesada observadas, "
+        f"o que torna a simulação uma calibração realista; como são apenas {n_com} e {n_sem} PRs reais por grupo, "
+        f"os parâmetros têm incerteza considerável."
+    )
+
+    secao_3 = (
+        f"O gráfico G2 ilustra a distribuição amostral teórica da estatística de teste sob H₀ (t de Student "
+        f"com gl = {w_gl:.1f} para Welch e normal padrão assintótica para Mann-Whitney), destacando as "
+        f"regiões críticas de rejeição bilateral para α = {alpha:g}. O teste t de Welch compara a diferença de "
+        f"médias ponderada pelo erro-padrão, enquanto o Mann-Whitney avalia postos e dominância estocástica, não "
+        f"medindo diretamente medianas sob variâncias heterogêneas. No exemplo simulado, as estatísticas "
+        f"observadas (t = {w_stat:.3f} e z = {mw_stat:.3f}) geraram p-valores de {w_p:.4f} e {mw_p:.4f}, "
+        f"{veredito_exemplo}; essa amostra única não permite estimar erro tipo I nem poder, demandando a simulação "
+        f"de Monte Carlo com 10.000 repetições."
+    )
+
+    w_dist = stats.t(w_gl)
+    w_crit_05 = float(w_dist.ppf(1.0 - 0.05 / 2.0))
+    w_crit_01 = float(w_dist.ppf(1.0 - 0.01 / 2.0))
+    w_lim = float(1.15 * max(abs(w_stat), w_crit_01, float(w_dist.ppf(0.9995))))
+    w_x = np.linspace(-w_lim, w_lim, 600)
+    w_y = w_dist.pdf(w_x)
+
+    mw_dist = stats.norm()
+    mw_crit_05 = float(mw_dist.ppf(1.0 - 0.05 / 2.0))
+    mw_crit_01 = float(mw_dist.ppf(1.0 - 0.01 / 2.0))
+    mw_lim = float(1.15 * max(abs(mw_stat), mw_crit_01, float(mw_dist.ppf(0.9995))))
+    mw_x = np.linspace(-mw_lim, mw_lim, 600)
+    mw_y = mw_dist.pdf(mw_x)
+
+    def _tipo1_records(df: pd.DataFrame) -> list[dict]:
+        recs = []
+        for _, row in df.iterrows():
+            n = int(row["n_rep"])
+            p = float(row["taxa_rejeicao"])
+            m = float(1.96 * np.sqrt(p * (1.0 - p) / n) * 100.0)
+            recs.append({
+                "cenario": str(row["cenario"]),
+                "teste": str(row["teste"]),
+                "n_rep": n,
+                "alfa": float(row["alfa"]),
+                "taxa_rejeicao": p,
+                "margem_erro_pct": round(m, 3),
+            })
+        return recs
+
+    def _poder_records(df: pd.DataFrame) -> list[dict]:
+        recs = []
+        for _, row in df.iterrows():
+            recs.append({
+                "cenario": str(row["cenario"]),
+                "teste": str(row["teste"]),
+                "razao_medianas": float(row["razao_medianas"]),
+                "n_rep": int(row["n_rep"]),
+                "alfa": float(row["alfa"]),
+                "taxa_rejeicao": float(row["taxa_rejeicao"]),
+            })
+        return recs
+
+    texto_s4_005 = texto_erro_tipo1(tipo1_005, 0.05)
+    texto_s4_001 = texto_erro_tipo1(tipo1_001, 0.01)
+    texto_s5_005 = texto_poder(poder_005)
+    texto_s5_001 = texto_poder(poder_001)
+    texto_sens = texto_sensibilidade(tipo1_005, tipo1_001, poder_005, poder_001)
+    texto_s6 = texto_dados_reais(resultado_reais)
+    texto_s7 = texto_conclusao(tipo1_005, poder_005)
+
+    return {
+        "links": {
+            "repo": LINK_REPO,
+            "projects": LINK_PROJECTS,
+            "pages": LINK_PAGES,
+        },
+        "parametros": params,
+        "resultado_exemplo": resultado_exemplo,
+        "resultado_testes": resultado_reais,
+        "textos": {
+            "secao_1": secao_1,
+            "secao_2": secao_2,
+            "secao_3": secao_3,
+            "secao_4_alfa_005": texto_s4_005,
+            "secao_4_alfa_001": texto_s4_001,
+            "secao_5_alfa_005": texto_s5_005,
+            "secao_5_alfa_001": texto_s5_001,
+            "sensibilidade_alfa": texto_sens,
+            "secao_6": texto_s6,
+            "secao_7": texto_s7,
+        },
+        "g2": {
+            "welch": {
+                "gl": w_gl,
+                "estatistica": w_stat,
+                "p_valor": w_p,
+                "critico_005": round(w_crit_05, 4),
+                "critico_001": round(w_crit_01, 4),
+                "x": [round(float(v), 4) for v in w_x],
+                "y": [round(float(v), 5) for v in w_y],
+            },
+            "mannwhitney": {
+                "estatistica": mw_stat,
+                "p_valor": mw_p,
+                "u": float(resultado_exemplo["mannwhitney"].get("u", 0)),
+                "critico_005": round(mw_crit_05, 4),
+                "critico_001": round(mw_crit_01, 4),
+                "x": [round(float(v), 4) for v in mw_x],
+                "y": [round(float(v), 5) for v in mw_y],
+            },
+        },
+        "simulacoes": {
+            "erro_tipo1_005": _tipo1_records(tipo1_005),
+            "erro_tipo1_001": _tipo1_records(tipo1_001),
+            "poder_005": _poder_records(poder_005),
+            "poder_001": _poder_records(poder_001),
+        },
+    }
+
+
 def gerar_dashboard(diretorio_saida: Path = DIR_DASHBOARD) -> Path:
-    """Executa o pipeline completo da Sprint 1 e grava o HTML do dashboard.
+    """Executa o pipeline completo do Lab04, exporta o bundle JSON e gera o dashboard.
 
     1. Executa o exemplo simulado determinístico (semente 42);
     2. Lê os arquivos versionados (dados reais, parâmetros e resultado do exemplo);
-    3. Constrói as figuras G1 e G2 (Plotly) com div_ids fixos para determinismo;
-    4. Escreve dashboard/index.html.
+    3. Constrói figuras Plotly e exporta lab04/dados/dashboard_bundle.json;
+    4. Grava HTML em diretorio_saida (ou constrói SPA em DIR_DASHBOARD).
     """
     diretorio_saida.mkdir(parents=True, exist_ok=True)
 
@@ -430,8 +607,33 @@ def gerar_dashboard(diretorio_saida: Path = DIR_DASHBOARD) -> Path:
     # 2. Carregar dados reais e parâmetros
     df_reais = carregar_dados_reais()
     params = carregar_parametros()
+    resultado_reais = json.loads(ARQUIVO_RESULTADO_REAIS.read_text(encoding="utf-8"))
 
-    # 3. Gerar figuras com IDs fixos para garantir reprodutibilidade exata
+    # 3. Simulações Q1 a Q3
+    tipo1 = carregar_erro_tipo1()
+    poder = carregar_poder()
+    tipo1_01 = carregar_erro_tipo1_em(ALFA_SENSIBILIDADE)
+    poder_01 = carregar_poder_em(ALFA_SENSIBILIDADE)
+
+    # 4. Gerar e exportar dashboard_bundle.json
+    bundle = gerar_bundle(
+        df_reais=df_reais,
+        params=params,
+        resultado_exemplo=resultado_exemplo,
+        tipo1_005=tipo1,
+        tipo1_001=tipo1_01,
+        poder_005=poder,
+        poder_001=poder_01,
+        resultado_reais=resultado_reais,
+    )
+    ARQUIVO_BUNDLE.parent.mkdir(parents=True, exist_ok=True)
+    ARQUIVO_BUNDLE.write_text(json.dumps(bundle, indent=2, ensure_ascii=False), encoding="utf-8")
+    if diretorio_saida != DIR_DASHBOARD:
+        (diretorio_saida / "dashboard_bundle.json").write_text(
+            json.dumps(bundle, indent=2, ensure_ascii=False), encoding="utf-8"
+        )
+
+    # 5. Gerar figuras com IDs fixos para garantir reprodutibilidade exata
     fig_g1 = figura_g1(dados_reais=df_reais, parametros=params, semente=42)
     div_g1 = fig_g1.to_html(include_plotlyjs=False, full_html=False, div_id="grafico_g1")
 
@@ -442,20 +644,14 @@ def gerar_dashboard(diretorio_saida: Path = DIR_DASHBOARD) -> Path:
     )
     div_g2 = fig_g2.to_html(include_plotlyjs=False, full_html=False, div_id="grafico_g2")
 
-    # 3b. Sprint 2: G3 e G4 a partir dos CSVs de Q1, Q2 e Q3 (já versionados)
-    tipo1 = carregar_erro_tipo1()
-    poder = carregar_poder()
-    tipo1_01 = carregar_erro_tipo1_em(ALFA_SENSIBILIDADE)
-    poder_01 = carregar_poder_em(ALFA_SENSIBILIDADE)
     div_g3 = figura_g3(tipo1, 0.05, tipo1_01, ALFA_SENSIBILIDADE).to_html(
         include_plotlyjs=False, full_html=False, div_id="grafico_g3"
     )
     div_g4 = figura_g4(poder, 0.05, poder_01, ALFA_SENSIBILIDADE).to_html(
         include_plotlyjs=False, full_html=False, div_id="grafico_g4"
     )
-    resultado_reais = json.loads(ARQUIVO_RESULTADO_REAIS.read_text(encoding="utf-8"))
 
-    # 4. Renderizar HTML
+    # 6. Renderizar HTML estático (para tmp_path e compatibilidade)
     html = construir_html(
         df_reais=df_reais,
         params=params,
@@ -470,7 +666,20 @@ def gerar_dashboard(diretorio_saida: Path = DIR_DASHBOARD) -> Path:
         texto_alfa=texto_sensibilidade(tipo1, tipo1_01, poder, poder_01),
     )
 
-    caminho_final = diretorio_saida / "index.html"
-    caminho_final.write_text(html, encoding="utf-8")
-    return caminho_final
+    if diretorio_saida != DIR_DASHBOARD:
+        caminho_final = diretorio_saida / "index.html"
+        caminho_final.write_text(html, encoding="utf-8")
+        return caminho_final
+
+    # Quando apontado para DIR_DASHBOARD, compila a SPA React
+    if (DIR_DASHBOARD / "package.json").exists():
+        try:
+            subprocess.run(["npm", "run", "build"], cwd=DIR_DASHBOARD, check=True, capture_output=True)
+        except Exception:
+            pass
+        dist_index = DIR_DASHBOARD / "dist" / "index.html"
+        if dist_index.exists():
+            return dist_index
+
+    return ARQUIVO_BUNDLE
 
