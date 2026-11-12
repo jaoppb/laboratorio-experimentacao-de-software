@@ -79,7 +79,7 @@ def _falhas(tipo1: pd.DataFrame, piv: pd.DataFrame) -> tuple[list[str], bool]:
     nao_conservador = welch[welch["taxa_rejeicao"] >= ALFA - TOLERANCIA_ERRO_TIPO1]
     if not nao_conservador.empty:
         falhas.append(
-            "o Welch conservador (ficou em 4% ou mais em "
+            f"o Welch conservador (ficou em {_pct(ALFA - TOLERANCIA_ERRO_TIPO1)} ou mais em "
             f"{_lista(list(nao_conservador['cenario']))})"
         )
     return falhas, mw_sustenta
