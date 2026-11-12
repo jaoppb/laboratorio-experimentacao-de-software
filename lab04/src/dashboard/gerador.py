@@ -7,7 +7,7 @@ Gera ``dashboard/index.html`` contendo:
 - Seção 3: Como os testes funcionam (com gráfico G2 interativo em Plotly);
 - Seção 4: Erro tipo I (G3) e Seção 5: Poder (G4), a partir dos CSVs de Q1, Q2 e Q3;
 - Seção 6: Dados reais (tabela de ``resultado_testes.json``);
-- Seção 7: Placeholder obrigatório da entrega final;
+- Seção 7: conclusão (expectativa × resultado e recomendação), a partir de G3 e G4;
 - Plotly.js embutido para funcionamento 100% offline sem servidor.
 """
 
@@ -21,6 +21,7 @@ from plotly.offline import get_plotlyjs
 
 from scripts.exemplo_simulado import carregar_parametros, executar as executar_exemplo
 from src.graficos.g1 import carregar_dados_reais, figura_g1
+from src.dashboard.conclusao import texto_conclusao
 from src.dashboard.formato import num as _num
 from src.dashboard.formato import pct as _pct
 from src.dashboard.sensibilidade import texto_sensibilidade
@@ -178,6 +179,7 @@ def construir_html(
     texto_s4 = texto_erro_tipo1(tipo1)
     texto_s5 = texto_poder(poder)
     texto_s6 = texto_dados_reais(resultado_reais)
+    texto_s7 = texto_conclusao(tipo1, poder)
     tabela_s6 = tabela_dados_reais(resultado_reais)
     n_total = len(df_reais)
     n_com = len(df_reais[df_reais["grupo"] == "com_bot"])
@@ -301,15 +303,6 @@ def construir_html(
       border-radius: 8px;
       overflow: hidden;
     }}
-    .aviso-sprint2 {{
-      padding: 16px 20px;
-      background: #fffbeb;
-      border: 1px dashed #f59e0b;
-      border-radius: 8px;
-      color: #b45309;
-      font-weight: 500;
-      font-size: 0.95rem;
-    }}
     table.tabela-testes {{
       width: 100%;
       border-collapse: collapse;
@@ -411,9 +404,9 @@ def construir_html(
     <!-- 7. Conclusão -->
     <section class="card" id="conclusao">
       <h2>7. Conclusão</h2>
-      <div class="aviso-sprint2">
-        A ser preenchido na Sprint 2/entrega final.
-      </div>
+      <p class="secao-texto" id="conclusao-texto">
+        {texto_s7}
+      </p>
     </section>
   </main>
 </body>
