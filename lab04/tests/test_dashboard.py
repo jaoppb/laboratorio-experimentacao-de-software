@@ -99,3 +99,24 @@ def test_dashboard_duas_execucoes_sao_identicas(tmp_path):
     c1 = gerar_dashboard(diretorio_saida=tmp_path / "exec1")
     c2 = gerar_dashboard(diretorio_saida=tmp_path / "exec2")
     assert c1.read_text(encoding="utf-8") == c2.read_text(encoding="utf-8")
+
+
+def test_secoes_1_a_3_e_6_tem_texto_de_2_a_4_frases(tmp_path):
+    conteudo = gerar_dashboard(diretorio_saida=tmp_path).read_text(encoding="utf-8")
+    for inicio, fim in (
+        ("<h2>1. Cenário</h2>", "<h2>2. Os dados (G1)</h2>"),
+        ("<h2>2. Os dados (G1)</h2>", "<h2>3. Como os testes funcionam (G2)</h2>"),
+        ("<h2>3. Como os testes funcionam (G2)</h2>", "<h2>4. Erro tipo I</h2>"),
+        ("<h2>6. Dados reais</h2>", "<h2>7. Conclusão</h2>"),
+    ):
+        secao = _secao(conteudo, inicio, fim)
+        texto = re.search(r'<p class="secao-texto">(.*?)</p>', secao, re.S).group(1)
+        frases = [f for f in re.split(r"(?<=[.!?])\s+", " ".join(texto.split())) if f]
+        assert 2 <= len(frases) <= 4, (inicio, frases)
+
+
+def test_links_ficam_no_topo_antes_da_primeira_secao(tmp_path):
+    conteudo = gerar_dashboard(diretorio_saida=tmp_path).read_text(encoding="utf-8")
+    primeira_secao = conteudo.find("<h2>1. Cenário</h2>")
+    for link in (LINK_REPO, LINK_PROJECTS, LINK_PAGES):
+        assert 0 < conteudo.find(link) < primeira_secao
