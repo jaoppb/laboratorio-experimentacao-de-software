@@ -44,6 +44,14 @@ O resultado final é `dashboard/index.html`, que abre diretamente em qualquer na
 
 Como a semente é fixa, rodar o comando duas vezes (ou em um clone limpo) gera os mesmos arquivos: `git status` não deve mostrar mudanças em `dados/` nem em `dashboard/`.
 
+**Tempo esperado:** cerca de **3,5 a 4 minutos** em uma máquina comum com uma CPU (medido: Q1 ≈ 10 s, Q2 ≈ 68 s, Q3 ≈ 137 s, com 10.000 repetições por ponto; o restante leva poucos segundos). Quase todo o tempo vem das simulações.
+
+As simulações Q1, Q2 e Q3 rodam em sequência por `scripts/rodar_simulacoes.py`, que o comando único chama e que também pode ser executado sozinho (grava em `dados/simulado/`):
+
+```bash
+uv run python scripts/rodar_simulacoes.py
+```
+
 ### Só o dashboard (rápido)
 
 Os CSVs das simulações já estão versionados. Para apenas regenerar a página a partir deles:
@@ -78,6 +86,7 @@ lab04/
 │   ├── estimar_parametros.py   # Estimação dos parâmetros lognormais
 │   ├── exemplo_simulado.py     # Execução do exemplo simulado (semente 42)
 │   ├── testar_dados_reais.py   # Welch e Mann-Whitney nos dados reais
+│   ├── rodar_simulacoes.py     # Roda Q1, Q2 e Q3 em sequência
 │   ├── simular_q1.py           # Q1: erro tipo I
 │   ├── simular_q2.py           # Q2: poder
 │   ├── simular_q3.py           # Q3: violações dos pressupostos

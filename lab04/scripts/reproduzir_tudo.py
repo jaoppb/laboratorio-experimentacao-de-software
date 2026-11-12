@@ -5,10 +5,9 @@ Uso (a partir de ``lab04/``):
 
 Refaz, nesta ordem, tudo o que alimenta o dashboard e termina gerando-o:
 1. ``testar_dados_reais.py``  -> dados/reais/resultado_testes.json
-2. ``simular_q1.py``          -> dados/simulado/q1_erro_tipo1.csv
-3. ``simular_q2.py``          -> dados/simulado/q2_poder.csv
-4. ``simular_q3.py``          -> dados/simulado/q3_erro_tipo1.csv e q3_poder.csv
-5. ``gerar_dashboard.py``     -> dashboard/index.html (inclui o exemplo simulado)
+2. ``rodar_simulacoes.py``    -> dados/simulado/q1_erro_tipo1.csv, q2_poder.csv,
+                                 q3_erro_tipo1.csv e q3_poder.csv (Q1, Q2 e Q3)
+3. ``gerar_dashboard.py``     -> dashboard/index.html (inclui o exemplo simulado)
 
 Como todas as simulações usam ``numpy.random.default_rng(42)``, uma segunda
 execução gera arquivos idênticos (``git status`` não deve mostrar mudanças).
@@ -29,9 +28,7 @@ if str(RAIZ) not in sys.path:
 
 ETAPAS = (
     "testar_dados_reais.py",
-    "simular_q1.py",
-    "simular_q2.py",
-    "simular_q3.py",
+    "rodar_simulacoes.py",
     "gerar_dashboard.py",
 )
 
