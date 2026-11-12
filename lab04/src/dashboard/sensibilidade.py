@@ -4,19 +4,17 @@ from __future__ import annotations
 
 import pandas as pd
 
+from src.dashboard.formato import num as _num
+from src.dashboard.formato import pct as _pct
 
-def _pct(valor: float) -> str:
-    return f"{valor * 100:.1f}".replace(".", ",") + "%"
+
+def _alfa(valor: float) -> str:
+    return f"{valor:g}".replace(".", ",")
 
 
 def _faixa(df: pd.DataFrame, teste: str) -> str:
     taxas = df[df["teste"] == teste]["taxa_rejeicao"]
     return f"{_pct(taxas.min())} a {_pct(taxas.max())}"
-
-
-def _num(valor: float, casas: int | None = None) -> str:
-    texto = f"{valor:g}" if casas is None else f"{valor:.{casas}f}"
-    return texto.replace(".", ",")
 
 
 def _com_efeito(poder: pd.DataFrame) -> pd.DataFrame:
@@ -44,7 +42,7 @@ def texto_sensibilidade(
         else "A ordem entre os testes mudou em alguma situação ou efeito"
     )
     return (
-        f"Com α = {_num(b)} em vez de {_num(a)}, o erro tipo I esperado cai de {_pct(a)} para "
+        f"Com α = {_alfa(b)} em vez de {_alfa(a)}, o erro tipo I esperado cai de {_pct(a)} para "
         f"{_pct(b)}: o Mann-Whitney foi de {_faixa(tipo1, 'mannwhitney')} para "
         f"{_faixa(tipo1_alt, 'mannwhitney')} e o Welch de {_faixa(tipo1, 'welch')} para "
         f"{_faixa(tipo1_alt, 'welch')}. "

@@ -12,7 +12,7 @@ import pandas as pd
 import plotly.graph_objects as go
 
 from src.estilo import COR_CRITICO, COR_MANNWHITNEY, COR_WELCH, LAYOUT_BASE_PLOTLY
-from src.graficos.seletor_alfa import adicionar_seletor
+from src.graficos.seletor_alfa import adicionar_seletor, validar_alfas
 from src.graficos.dados_simulacao import (
     NOME_TESTE,
     ROTULO_SITUACAO,
@@ -57,10 +57,13 @@ def _barras(df, situacoes, rotulos, visivel):
                 textposition="outside",
                 hovertemplate="%{x}<br>%{y:.2f}%<extra>" + NOME_TESTE[teste] + "</extra>",
                 visible=visivel,
-                showlegend=visivel,
             )
         )
     return tracos
+
+
+def _texto_linha(alfa: float) -> str:
+    return f"α = {alfa * 100:g}% (esperado)"
 
 
 def _limite_y(df: pd.DataFrame) -> float:
@@ -85,12 +88,7 @@ def figura_g3(
     Returns:
         ``plotly.graph_objects.Figure`` com barras agrupadas por situação.
     """
-    if not 0.0 < alfa < 1.0:
-        raise ValueError(f"alfa deve estar em (0, 1); recebido {alfa!r}")
-    if (erro_tipo1_alt is None) != (alfa_alt is None):
-        raise ValueError("erro_tipo1_alt e alfa_alt devem ser dados juntos")
-    if alfa_alt is not None and not 0.0 < alfa_alt < 1.0:
-        raise ValueError(f"alfa_alt deve estar em (0, 1); recebido {alfa_alt!r}")
+    validar_alfas(alfa, erro_tipo1_alt, alfa_alt)
     df = carregar_erro_tipo1() if erro_tipo1 is None else erro_tipo1.copy()
     _validar(df)
 
@@ -127,7 +125,3 @@ def figura_g3(
             (_limite_y(df), _limite_y(erro_tipo1_alt)),
         )
     return fig
-
-
-def _texto_linha(alfa: float) -> str:
-    return f"α = {alfa * 100:g}% (esperado)"

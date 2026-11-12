@@ -60,7 +60,7 @@ def test_g3_com_seletor_tem_dois_conjuntos_e_o_alternativo_oculto():
     assert [t.visible for t in fig.data] == [True, True, False, False]
     assert list(fig.data[2].y) == pytest.approx([0.8])
     botoes = fig.layout.updatemenus[0].buttons
-    assert [b.label for b in botoes] == ["α = 0,05", "α = 0,01"]
+    assert [b.label for b in botoes] == ["Nível α = 0,05", "Nível α = 0,01"]
     visivel, layout = botoes[1].args
     assert visivel["visible"] == [False, False, True, True]
     assert layout["shapes[0].y0"] == pytest.approx(1.0)
@@ -85,3 +85,17 @@ def test_sem_alternativo_nao_tem_botoes():
 def test_alternativo_exige_dados_e_alfa_juntos(fabrica):
     with pytest.raises(ValueError, match="juntos"):
         fabrica()
+
+
+def test_legenda_continua_visivel_em_todos_os_tracos():
+    for fig in (figura_g3(T5, 0.05, T1, 0.01), figura_g4(P5, 0.05, P1, 0.01)):
+        assert all(t.showlegend is not False for t in fig.data)
+
+
+def test_seletor_exige_so_a_linha_de_referencia():
+    from src.graficos.seletor_alfa import adicionar_seletor
+
+    fig = figura_g3(T5, 0.05, T1, 0.01)
+    fig.add_hline(y=3)
+    with pytest.raises(ValueError, match="linha de referência"):
+        adicionar_seletor(fig, 2, (0.05, 0.01), str, (8.0, 8.0))

@@ -21,6 +21,8 @@ from plotly.offline import get_plotlyjs
 
 from scripts.exemplo_simulado import carregar_parametros, executar as executar_exemplo
 from src.graficos.g1 import carregar_dados_reais, figura_g1
+from src.dashboard.formato import num as _num
+from src.dashboard.formato import pct as _pct
 from src.dashboard.sensibilidade import texto_sensibilidade
 from src.graficos.dados_simulacao import (
     carregar_erro_tipo1,
@@ -37,16 +39,6 @@ DIR_DASHBOARD = RAIZ / "dashboard"
 ARQUIVO_HTML = DIR_DASHBOARD / "index.html"
 ARQUIVO_RESULTADO_REAIS = RAIZ / "dados" / "reais" / "resultado_testes.json"
 ALFA_SENSIBILIDADE = 0.01
-
-
-def _pct(valor: float) -> str:
-    """Formata proporção como porcentagem em pt-BR (ex.: 0,0456 -> '4,6%')."""
-    return f"{valor * 100:.1f}".replace(".", ",") + "%"
-
-
-def _num(valor: float, casas: int = 3) -> str:
-    """Formata número com vírgula decimal."""
-    return f"{valor:.{casas}f}".replace(".", ",")
 
 
 def texto_erro_tipo1(tipo1: pd.DataFrame, alpha: float = 0.05) -> str:
@@ -180,7 +172,7 @@ def construir_html(
     tipo1: pd.DataFrame,
     poder: pd.DataFrame,
     resultado_reais: dict,
-    texto_alfa: str = "",
+    texto_alfa: str,
 ) -> str:
     """Monta o documento HTML completo com textos alimentados pelos dados."""
     texto_s4 = texto_erro_tipo1(tipo1)

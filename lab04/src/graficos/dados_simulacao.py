@@ -71,7 +71,6 @@ def situacoes_presentes(df: pd.DataFrame) -> list[str]:
     return conhecidas + [s for s in presentes if s not in ORDEM_SITUACOES]
 
 
-
 def carregar_erro_tipo1_em(alfa: float, diretorio: Path | str = DIR_SIMULADO) -> pd.DataFrame:
     """Erro tipo I de Q1 e Q3 recalculado em ``alfa`` a partir dos p-valores guardados."""
     d = Path(diretorio)
