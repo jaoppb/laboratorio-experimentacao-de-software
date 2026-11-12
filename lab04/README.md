@@ -20,9 +20,9 @@ O objetivo deste laboratório é compreender o funcionamento interno e os limite
 
 | Pergunta | O que mede | Script | Saída |
 |---|---|---|---|
-| Q1 | Erro tipo I (H₀ verdadeira, 10.000 repetições) | `scripts/simular_q1.py` | `dados/simulado/q1_erro_tipo1.csv` |
-| Q2 | Poder com efeitos crescentes (razão de medianas de 1,0 a 8,0) | `scripts/simular_q2.py` | `dados/simulado/q2_poder.csv` |
-| Q3 | Erro tipo I e poder com violação dos pressupostos (n pequeno, assimetria extrema, outliers); ver [docs/violacoes_q3.md](docs/violacoes_q3.md) | `scripts/simular_q3.py` | `dados/simulado/q3_erro_tipo1.csv` e `q3_poder.csv` |
+| Q1 | Erro tipo I (H₀ verdadeira, 10.000 repetições) | `scripts/simular_q1.py` | `dados/simulado/q1_erro_tipo1.csv` e `q1_p_valores.npz` |
+| Q2 | Poder com efeitos crescentes (razão de medianas de 1,0 a 8,0) | `scripts/simular_q2.py` | `dados/simulado/q2_poder.csv` e `q2_p_valores.npz` |
+| Q3 | Erro tipo I e poder com violação dos pressupostos (n pequeno, assimetria extrema, outliers); ver [docs/violacoes_q3.md](docs/violacoes_q3.md) | `scripts/simular_q3.py` | `dados/simulado/q3_erro_tipo1.csv` e `q3_poder.csv` e `q3_p_valores.npz` |
 
 Gráficos: **G1** (dados reais × simulados), **G2** (estatística sob H₀ e p-valor), **G3** (erro tipo I em cada situação, Q1 e Q3) e **G4** (curvas de poder, Q2 e Q3).
 
@@ -77,7 +77,7 @@ lab04/
 ├── dados/
 │   ├── parametros.json         # Parâmetros estimados dos dados reais
 │   ├── reais/                  # pr_merge_time.csv, FONTE.md e resultado_testes.json
-│   └── simulado/               # exemplo, q1_erro_tipo1, q2_poder, q3_erro_tipo1 e q3_poder
+│   └── simulado/               # exemplo, q1_erro_tipo1, q2_poder, q3_erro_tipo1, q3_poder e os p_valores (.npz, usados no α = 0,01)
 ├── dashboard/
 │   └── index.html              # Página web do dashboard (gerada por código)
 ├── docs/                       # Enunciado, decisões, cenário, interpretações e roteiro oral

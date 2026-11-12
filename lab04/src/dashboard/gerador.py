@@ -21,7 +21,13 @@ from plotly.offline import get_plotlyjs
 
 from scripts.exemplo_simulado import carregar_parametros, executar as executar_exemplo
 from src.graficos.g1 import carregar_dados_reais, figura_g1
-from src.graficos.dados_simulacao import carregar_erro_tipo1, carregar_poder
+from src.dashboard.sensibilidade import texto_sensibilidade
+from src.graficos.dados_simulacao import (
+    carregar_erro_tipo1,
+    carregar_erro_tipo1_em,
+    carregar_poder,
+    carregar_poder_em,
+)
 from src.graficos.g2_plotly import figura_g2_plotly
 from src.graficos.g3 import figura_g3
 from src.graficos.g4 import figura_g4
@@ -30,6 +36,7 @@ RAIZ = Path(__file__).resolve().parents[2]
 DIR_DASHBOARD = RAIZ / "dashboard"
 ARQUIVO_HTML = DIR_DASHBOARD / "index.html"
 ARQUIVO_RESULTADO_REAIS = RAIZ / "dados" / "reais" / "resultado_testes.json"
+ALFA_SENSIBILIDADE = 0.01
 
 
 def _pct(valor: float) -> str:
@@ -173,6 +180,7 @@ def construir_html(
     tipo1: pd.DataFrame,
     poder: pd.DataFrame,
     resultado_reais: dict,
+    texto_alfa: str = "",
 ) -> str:
     """Monta o documento HTML completo com textos alimentados pelos dados."""
     texto_s4 = texto_erro_tipo1(tipo1)
@@ -396,6 +404,7 @@ def construir_html(
       <div class="grafico-container">
         {div_g4}
       </div>
+      <p class="secao-texto" id="sensibilidade-alfa">{texto_alfa}</p>
     </section>
 
     <!-- 6. Dados reais -->
@@ -451,10 +460,12 @@ def gerar_dashboard(diretorio_saida: Path = DIR_DASHBOARD) -> Path:
     # 3b. Sprint 2: G3 e G4 a partir dos CSVs de Q1, Q2 e Q3 (já versionados)
     tipo1 = carregar_erro_tipo1()
     poder = carregar_poder()
-    div_g3 = figura_g3(tipo1).to_html(
+    tipo1_01 = carregar_erro_tipo1_em(ALFA_SENSIBILIDADE)
+    poder_01 = carregar_poder_em(ALFA_SENSIBILIDADE)
+    div_g3 = figura_g3(tipo1, 0.05, tipo1_01, ALFA_SENSIBILIDADE).to_html(
         include_plotlyjs=False, full_html=False, div_id="grafico_g3"
     )
-    div_g4 = figura_g4(poder).to_html(
+    div_g4 = figura_g4(poder, 0.05, poder_01, ALFA_SENSIBILIDADE).to_html(
         include_plotlyjs=False, full_html=False, div_id="grafico_g4"
     )
     resultado_reais = json.loads(ARQUIVO_RESULTADO_REAIS.read_text(encoding="utf-8"))
@@ -471,6 +482,7 @@ def gerar_dashboard(diretorio_saida: Path = DIR_DASHBOARD) -> Path:
         tipo1=tipo1,
         poder=poder,
         resultado_reais=resultado_reais,
+        texto_alfa=texto_sensibilidade(tipo1, tipo1_01, poder, poder_01),
     )
 
     caminho_final = diretorio_saida / "index.html"

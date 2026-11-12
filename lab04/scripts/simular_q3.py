@@ -30,6 +30,7 @@ if str(RAIZ) not in sys.path:
     sys.path.insert(0, str(RAIZ))
 
 from src.montecarlo import N_REP_PADRAO, ResultadoMonteCarlo  # noqa: E402
+from src.pvalores import chave, salvar  # noqa: E402
 from src.simulacao import gerar_dados  # noqa: E402
 from src.testes import aplicar_mannwhitney, aplicar_welch  # noqa: E402
 
@@ -52,14 +53,15 @@ ARQUIVO_PARAMETROS = RAIZ / "dados" / "parametros.json"
 DIRETORIO_SAIDA = RAIZ / "dados" / "simulado"
 CSV_TIPO1 = "q3_erro_tipo1.csv"
 CSV_PODER = "q3_poder.csv"
+NOME_P_VALORES = "q3_p_valores.npz"
 COLUNAS_TIPO1 = ["cenario", "teste", "n_rep", "alfa", "taxa_rejeicao"]
 COLUNAS_PODER = ["cenario", "teste", "razao_medianas", "n_rep", "alfa", "taxa_rejeicao"]
 
 
-def simular_ponto(
+def p_valores_ponto(
     mediana: float, razao: float, n: int, sigma: float, prob_outlier: float, n_rep: int
-) -> dict[str, float]:
-    """Taxa de rejeição dos dois testes em um (cenário, razão)."""
+) -> ResultadoMonteCarlo:
+    """p-valores dos dois testes em um (cenário, razão)."""
     rng = np.random.default_rng(SEMENTE)
     p_welch = np.empty(n_rep)
     p_mw = np.empty(n_rep)
@@ -70,7 +72,14 @@ def simular_ponto(
             b = np.where(rng.random(n) < prob_outlier, b * FATOR_OUTLIER, b)
         p_welch[i] = aplicar_welch(a, b)["p_valor"]
         p_mw[i] = aplicar_mannwhitney(a, b)["p_valor"]
-    return ResultadoMonteCarlo(p_welch, p_mw).taxa_rejeicao(ALFA)
+    return ResultadoMonteCarlo(p_welch, p_mw)
+
+
+def simular_ponto(
+    mediana: float, razao: float, n: int, sigma: float, prob_outlier: float, n_rep: int
+) -> dict[str, float]:
+    """Taxa de rejeição dos dois testes em um (cenário, razão)."""
+    return p_valores_ponto(mediana, razao, n, sigma, prob_outlier, n_rep).taxa_rejeicao(ALFA)
 
 
 def _escrever(caminho: Path, colunas: list[str], linhas: list[dict]) -> None:
@@ -92,10 +101,15 @@ def executar(
         mediana = float(json.load(f)["sem_bot"]["mediana"])
 
     tipo1, poder = [], []
+    p_valores = {}
     for cenario, (n, sigma, prob) in CENARIOS.items():
         for razao in razoes:
-            taxas = simular_ponto(mediana, razao, n, sigma, prob, n_rep)
+            resultado = p_valores_ponto(mediana, razao, n, sigma, prob, n_rep)
+            taxas = resultado.taxa_rejeicao(ALFA)
             for teste in TESTES:
+                p_valores[chave(cenario, razao, teste)] = (
+                    resultado.p_welch if teste == "welch" else resultado.p_mannwhitney
+                )
                 base = {"cenario": cenario, "teste": teste, "n_rep": n_rep, "alfa": ALFA}
                 poder.append({**base, "razao_medianas": razao, "taxa_rejeicao": taxas[teste]})
                 if razao == 1.0:
@@ -104,6 +118,7 @@ def executar(
     diretorio.mkdir(parents=True, exist_ok=True)
     _escrever(diretorio / CSV_TIPO1, COLUNAS_TIPO1, tipo1)
     _escrever(diretorio / CSV_PODER, COLUNAS_PODER, poder)
+    salvar(diretorio / NOME_P_VALORES, p_valores)
     return tipo1, poder
 
 

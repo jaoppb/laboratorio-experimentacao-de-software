@@ -120,3 +120,12 @@ def test_links_ficam_no_topo_antes_da_primeira_secao(tmp_path):
     primeira_secao = conteudo.find("<h2>1. Cenário</h2>")
     for link in (LINK_REPO, LINK_PROJECTS, LINK_PAGES):
         assert 0 < conteudo.find(link) < primeira_secao
+
+
+def test_dashboard_tem_seletor_de_alfa_e_resumo_da_sensibilidade(tmp_path):
+    conteudo = gerar_dashboard(diretorio_saida=tmp_path).read_text(encoding="utf-8")
+    secao = _secao(conteudo, "<h2>5. Poder</h2>", "<h2>6. Dados reais</h2>")
+    resumo = re.search(r'<p class="secao-texto" id="sensibilidade-alfa">(.*?)</p>', secao, re.S)
+    assert resumo and "α = 0,01 em vez de 0,05" in resumo.group(1)
+    assert conteudo.count("updatemenus") >= 2  # G3 e G4
+    assert "α = 0,01" in conteudo

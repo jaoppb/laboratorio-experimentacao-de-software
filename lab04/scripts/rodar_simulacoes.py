@@ -6,9 +6,9 @@ Também é chamado por ``scripts/gerar_dashboard.py`` (comando único).
 Cada simulação usa semente fixa (``default_rng(42)``) e 10.000 repetições por
 ponto, então duas execuções geram CSVs idênticos:
 
-- Q1 -> ``q1_erro_tipo1.csv``
-- Q2 -> ``q2_poder.csv``
-- Q3 -> ``q3_erro_tipo1.csv`` e ``q3_poder.csv``
+- Q1 -> ``q1_erro_tipo1.csv`` e ``q1_p_valores.npz``
+- Q2 -> ``q2_poder.csv`` e ``q2_p_valores.npz``
+- Q3 -> ``q3_erro_tipo1.csv``, ``q3_poder.csv`` e ``q3_p_valores.npz``
 """
 
 from __future__ import annotations
