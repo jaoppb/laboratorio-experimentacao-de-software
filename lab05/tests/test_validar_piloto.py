@@ -158,7 +158,7 @@ def test_dados_simulados_sao_recusados_por_padrao(tmp_path):
     assert any("meta.origem" in p for p in problemas)
 
 
-def test_release_ausente_ou_desconhecido(tmp_path):
+def test_release_ausente_ou_vazio(tmp_path):
     meta = {"origem": "real", "releases_moodle": {"4.5_lts": ""}}
     problemas = vp.validar_diretorio(_gravar(tmp_path, meta, axe=True))
     assert sum("releases_moodle" in p for p in problemas) == 2
@@ -209,10 +209,19 @@ def test_axe_sem_campos_obrigatorios_ou_json_invalido(tmp_path):
     del dados["violacoes"]
     sem_campos.write_text(json.dumps(dados), encoding="utf-8")
     (tmp_path / "axe" / "4.5_lts_login.json").write_text("{truncado", encoding="utf-8")
+    (tmp_path / "axe" / "4.5_lts_curso.json").write_text("[]", encoding="utf-8")
 
     problemas = vp.validar_axe(tmp_path / "axe")
     assert any("sem violacoes/por_impacto" in p for p in problemas)
     assert any("não é JSON válido" in p for p in problemas)
+    assert any("não contém um objeto JSON" in p for p in problemas)
+
+
+def test_resumo_com_json_invalido_e_reportado(tmp_path):
+    _gravar(tmp_path)
+    (tmp_path / "resumo_piloto.json").write_text("{truncado", encoding="utf-8")
+    problemas = vp.validar_diretorio(tmp_path, exigir_real=False)
+    assert problemas and "não é JSON válido" in problemas[0]
 
 
 def test_csv_gravado_tem_cabecalho_esperado(tmp_path):

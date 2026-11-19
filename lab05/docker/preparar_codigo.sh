@@ -30,5 +30,6 @@ done
 
 # O Apache da imagem roda como www-data (uid 33) e grava config.php no código montado;
 # em hosts Linux o código clonado pertence ao usuário do host, então libera a escrita.
-# O ambiente é local e descartável (dados sintéticos).
-find "$DESTINO" -user "$(id -u)" -exec chmod a+rwX {} +
+# Arquivos de outros donos (como o config.php criado pelo www-data) já são graváveis e são
+# ignorados de propósito. O ambiente é local e descartável (dados sintéticos).
+find "$DESTINO" -user "$(id -u)" ! -type l -exec chmod a+rwX {} +

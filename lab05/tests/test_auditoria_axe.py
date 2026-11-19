@@ -2,7 +2,14 @@
 
 from __future__ import annotations
 
+import sys
+import types
+
+import pytest
+
 import auditoria_axe as aa
+import coleta_piloto as cp
+import validar_piloto as vp
 
 
 def test_resumir_resultado_conta_violacoes_por_impacto():
@@ -65,3 +72,96 @@ def test_main_repassa_alvo_e_reporta_falha(monkeypatch, tmp_path, capsys):
     assert recebido["telas"]["questionario"] == "/mod/quiz/view.php?id=9"
     assert recebido["usuario"] == "aluno_teste_1"
     assert recebido["destino"] == tmp_path
+
+
+class _Navegador:
+    """Dublê mínimo de Playwright: registra os contextos abertos."""
+
+    def __init__(self):
+        self.contextos: list = []
+
+    def new_context(self):
+        contexto = types.SimpleNamespace(fechado=False)
+        contexto.close = lambda: setattr(contexto, "fechado", True)
+
+        def goto(url):
+            pagina.url = url
+
+        pagina = types.SimpleNamespace(
+            context=contexto,
+            url="http://x/my/",
+            goto=goto,
+            fill=lambda *a, **k: None,
+            click=lambda *a, **k: None,
+            wait_for_url=lambda *a, **k: None,
+            wait_for_load_state=lambda *a, **k: None,
+        )
+        contexto.new_page = lambda: pagina
+        self.contextos.append(contexto)
+        return contexto
+
+    def close(self):
+        pass
+
+
+def _instalar_dubles(monkeypatch, navegador, falha_na_versao: str | None = None):
+    chamadas = {"n": 0}
+
+    class Axe:
+        def run(self, pagina, options=None):
+            chamadas["n"] += 1
+            # A falha acontece na 1ª tela auditada da versão 5.3 (a 5ª auditoria).
+            if falha_na_versao and chamadas["n"] == 5:
+                raise RuntimeError(f"falha simulada em {falha_na_versao}")
+            return types.SimpleNamespace(response={"passes": [{}], "violations": []})
+
+    class ContextoPw:
+        chromium = types.SimpleNamespace(launch=lambda: navegador)
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return False
+
+    pw_mod = types.ModuleType("playwright.sync_api")
+    pw_mod.sync_playwright = lambda: ContextoPw()
+    pw_mod.TimeoutError = TimeoutError
+    axe_mod = types.ModuleType("axe_playwright_python.sync_playwright")
+    axe_mod.Axe = Axe
+    monkeypatch.setitem(sys.modules, "playwright", types.ModuleType("playwright"))
+    monkeypatch.setitem(sys.modules, "playwright.sync_api", pw_mod)
+    monkeypatch.setitem(sys.modules, "axe_playwright_python", types.ModuleType("axe_playwright_python"))
+    monkeypatch.setitem(sys.modules, "axe_playwright_python.sync_playwright", axe_mod)
+
+
+URLS = {"4.5_lts": "http://a", "5.3_lts": "http://b"}
+
+
+def test_auditar_grava_8_relatorios_validos_e_fecha_contextos(monkeypatch, tmp_path):
+    navegador = _Navegador()
+    _instalar_dubles(monkeypatch, navegador)
+
+    gravados = aa.auditar(URLS, cp.TELAS, "aluno", "senha", tmp_path / "axe")
+
+    assert sorted(p.name for p in gravados) == sorted(
+        f"{v}_{t}.json" for v in cp.VERSOES for t, _ in cp.TELAS
+    )
+    assert vp.validar_axe(tmp_path / "axe") == []
+    assert all(c.fechado for c in navegador.contextos)
+
+
+def test_auditar_nao_grava_nada_quando_uma_auditoria_falha(monkeypatch, tmp_path):
+    navegador = _Navegador()
+    _instalar_dubles(monkeypatch, navegador, falha_na_versao="5.3_lts")
+    destino = tmp_path / "axe"
+    destino.mkdir()
+    antigo = destino / "4.5_lts_login.json"
+    antigo.write_text("relatório de execução anterior", encoding="utf-8")
+
+    with pytest.raises(RuntimeError, match="falha simulada"):
+        aa.auditar(URLS, cp.TELAS, "aluno", "senha", destino)
+
+    assert [p.name for p in destino.iterdir()] == [antigo.name]
+    assert antigo.read_text(encoding="utf-8") == "relatório de execução anterior"
+    assert all(c.fechado for c in navegador.contextos)

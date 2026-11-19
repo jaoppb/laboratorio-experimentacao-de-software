@@ -168,6 +168,9 @@ def validar_axe(diretorio: Path) -> list[str]:
             except json.JSONDecodeError as erro:
                 problemas.append(f"axe: {caminho.name} não é JSON válido ({erro})")
                 continue
+            if not isinstance(dados, dict):
+                problemas.append(f"axe: {caminho.name} não contém um objeto JSON")
+                continue
             if (dados.get("versao"), dados.get("tela")) != (versao, tela):
                 problemas.append(f"axe: {caminho.name} com versao/tela divergentes")
             violacoes = dados.get("violacoes")
@@ -201,8 +204,11 @@ def validar_diretorio(
     if problemas:
         return problemas
 
-    with open(caminho_json, encoding="utf-8") as f:
-        resumo = json.load(f)
+    try:
+        with open(caminho_json, encoding="utf-8") as f:
+            resumo = json.load(f)
+    except json.JSONDecodeError as erro:
+        return [f"{caminho_json.name} não é JSON válido ({erro})"]
     problemas = validar_resumo([tipar_linha(bruta) for bruta in linhas], resumo)
     if exigir_real:
         problemas += validar_meta(resumo)
