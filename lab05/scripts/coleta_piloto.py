@@ -39,11 +39,13 @@ DIR_DADOS_PILOTO = RAIZ_LAB05 / "dados" / "piloto"
 DIR_DADOS_SIMULADO = RAIZ_LAB05 / "dados" / "piloto_simulado"
 ARQUIVO_COMPOSE = RAIZ_LAB05 / "docker" / "docker-compose.yml"
 
+# Rotas determinísticas: docker/instalar_moodle.sh cria curso id=2 e quiz cmid=6 nas duas
+# instâncias (a saída do script imprime ``curso_id`` e ``quiz_cmid`` para conferência).
 TELAS = (
     ("login", "/login/index.php"),
     ("dashboard", "/my/"),
     ("curso", "/course/view.php?id=2"),
-    ("questionario", "/mod/quiz/view.php?id=1"),
+    ("questionario", "/mod/quiz/view.php?id=6"),
 )
 
 VERSOES = ("4.5_lts", "5.3_lts")
@@ -117,45 +119,52 @@ def medir_requisicao(cliente: httpx.Client, rota: str) -> dict[str, Any]:
     }
 
 
-def purgar_cache(servico: str) -> None:
-    """Purga os caches do Moodle para que a 1ª repetição seja de fato ``cold``."""
-    subprocess.run(
-        [
-            "docker", "compose", "-f", str(ARQUIVO_COMPOSE), "exec", "-T", servico,
-            "php", "admin/cli/purge_caches.php",
-        ],
-        check=True,
+def _compose_exec(servico: str, *comando: str, **kwargs: Any) -> subprocess.CompletedProcess:
+    """Executa um comando dentro do serviço Docker Compose do piloto."""
+    return subprocess.run(
+        ["docker", "compose", "-f", str(ARQUIVO_COMPOSE), "exec", "-T", servico, *comando],
+        **kwargs,
     )
 
 
-def coletar_amostras_reais(
-    clientes: dict[str, httpx.Client],
-    telas: tuple[tuple[str, str], ...] = TELAS,
-    clientes_publicos: dict[str, httpx.Client] | None = None,
-    n_repeticoes: int = 10,
-    pausa_ms: tuple[int, int] = (200, 500),
-    semente: int = 42,
-    dormir: Callable[[float], None] = time.sleep,
-) -> list[dict[str, Any]]:
-    """Mede todas as telas nas duas versões, alternando a versão a cada requisição.
+def purgar_cache(servico: str) -> None:
+    """Purga os caches do Moodle para que a 1ª repetição seja de fato ``cold``."""
+    _compose_exec(servico, "php", "admin/cli/purge_caches.php", check=True)
 
-    Qualquer status diferente de 200 aborta a coleta: o piloto precisa expor o
-    problema em vez de gravar dados que o Plano de Análise teria de descartar.
-    ``clientes`` carregam a sessão do estudante; ``clientes_publicos`` (sem cookie)
-    medem as telas de ``TELAS_PUBLICAS`` e, se omitidos, ``clientes`` é usado.
+
+def ler_release_moodle(servico: str) -> str:
+    """Lê ``$release`` do ``version.php`` dentro do contêiner (raiz no 4.5, public/ no 5.x).
+
+    O release exato é o tratamento do experimento, então a falha aborta a coleta.
     """
-    clientes_publicos = clientes_publicos or clientes
-    gerador = random.Random(semente)
+    resultado = _compose_exec(
+        servico, "sh", "-c", "cat $(ls version.php public/version.php 2>/dev/null)",
+        capture_output=True, text=True,
+    )
+    achado = re.search(r"\$release\s*=\s*'([^']+)'", resultado.stdout)
+    if resultado.returncode != 0 or not achado:
+        raise ErroColeta(f"Não foi possível ler o release do Moodle em {servico}")
+    return achado.group(1)
+
+
+Medidor = Callable[[str, str, str, int], "dict[str, Any]"]
+
+
+def coletar_amostras(
+    medir: Medidor,
+    telas: tuple[tuple[str, str], ...],
+    n_repeticoes: int,
+) -> list[dict[str, Any]]:
+    """Percorre repetição → tela → versão (versões alternadas a cada requisição).
+
+    ``medir(versao, tela, rota, repeticao)`` devolve ``status_http``, ``ttfb_ms``,
+    ``tempo_total_ms`` e ``tamanho_bytes``. Ordem, ``id`` e marcação de cache ficam
+    aqui para que os modos real e simulado produzam exatamente o mesmo formato.
+    """
     amostras: list[dict[str, Any]] = []
     for repeticao in range(1, n_repeticoes + 1):
         for tela, rota in telas:
             for versao in VERSOES:
-                cliente = (clientes_publicos if tela in TELAS_PUBLICAS else clientes)[versao]
-                medida = medir_requisicao(cliente, rota)
-                if medida["status_http"] != 200:
-                    raise ErroColeta(
-                        f"{versao} {tela} {rota}: status {medida['status_http']}"
-                    )
                 amostras.append(
                     {
                         "id": len(amostras) + 1,
@@ -164,11 +173,40 @@ def coletar_amostras_reais(
                         "rota": rota,
                         "repeticao": repeticao,
                         "cache": "cold" if repeticao == 1 else "warm",
-                        **medida,
+                        **medir(versao, tela, rota, repeticao),
                     }
                 )
-                dormir(gerador.uniform(*pausa_ms) / 1000)
     return amostras
+
+
+def coletar_amostras_reais(
+    clientes: dict[str, httpx.Client],
+    clientes_publicos: dict[str, httpx.Client],
+    telas: tuple[tuple[str, str], ...] = TELAS,
+    n_repeticoes: int = 10,
+    pausa_ms: tuple[int, int] = (200, 500),
+    semente: int = 42,
+    dormir: Callable[[float], None] | None = None,
+) -> list[dict[str, Any]]:
+    """Mede todas as telas nas duas versões via HTTP.
+
+    Qualquer status diferente de 200 aborta a coleta: o piloto precisa expor o
+    problema em vez de gravar dados que o Plano de Análise teria de descartar.
+    ``clientes`` carregam a sessão do estudante e ``clientes_publicos`` (sem cookie)
+    medem as telas de ``TELAS_PUBLICAS``.
+    """
+    dormir = dormir or time.sleep
+    gerador = random.Random(semente)
+
+    def medir(versao: str, tela: str, rota: str, _repeticao: int) -> dict[str, Any]:
+        cliente = (clientes_publicos if tela in TELAS_PUBLICAS else clientes)[versao]
+        medida = medir_requisicao(cliente, rota)
+        if medida["status_http"] != 200:
+            raise ErroColeta(f"{versao} {tela} {rota}: status {medida['status_http']}")
+        dormir(gerador.uniform(*pausa_ms) / 1000)
+        return medida
+
+    return coletar_amostras(medir, telas, n_repeticoes)
 
 
 # --------------------------------------------------------------------------- #
@@ -182,7 +220,6 @@ def coletar_amostras_simuladas(
 ) -> list[dict[str, Any]]:
     """Gera amostras sintéticas lognormais. Não representam medições reais."""
     rng = np.random.default_rng(semente)
-    amostras: list[dict[str, Any]] = []
 
     # Mediana (ms) e sigma_log por versão e tela.
     calibracao = {
@@ -200,31 +237,19 @@ def coletar_amostras_simuladas(
         },
     }
 
-    for i in range(n_repeticoes):
-        for tela_nome, rota in TELAS:
-            for versao in VERSOES:
-                mediana_base, sigma = calibracao[versao][tela_nome]
-                is_cold = i == 0
-                fator_frio = 1.6 if is_cold else 1.0
-                ttfb = float(
-                    rng.lognormal(mean=np.log(mediana_base * fator_frio), sigma=sigma)
-                )
-                tempo_total = ttfb + float(rng.uniform(15.0, 45.0))
-                amostras.append(
-                    {
-                        "id": len(amostras) + 1,
-                        "versao": versao,
-                        "tela": tela_nome,
-                        "rota": rota,
-                        "repeticao": i + 1,
-                        "cache": "cold" if is_cold else "warm",
-                        "status_http": 200,
-                        "ttfb_ms": round(ttfb, 2),
-                        "tempo_total_ms": round(tempo_total, 2),
-                        "tamanho_bytes": 18450 if tela_nome != "curso" else 42100,
-                    }
-                )
-    return amostras
+    def medir(versao: str, tela: str, _rota: str, repeticao: int) -> dict[str, Any]:
+        mediana_base, sigma = calibracao[versao][tela]
+        fator_frio = 1.6 if repeticao == 1 else 1.0
+        ttfb = float(rng.lognormal(mean=np.log(mediana_base * fator_frio), sigma=sigma))
+        tempo_total = ttfb + float(rng.uniform(15.0, 45.0))
+        return {
+            "status_http": 200,
+            "ttfb_ms": round(ttfb, 2),
+            "tempo_total_ms": round(tempo_total, 2),
+            "tamanho_bytes": 18450 if tela != "curso" else 42100,
+        }
+
+    return coletar_amostras(medir, TELAS, n_repeticoes)
 
 
 # --------------------------------------------------------------------------- #
@@ -299,6 +324,25 @@ def salvar_dados_piloto(
 # --------------------------------------------------------------------------- #
 
 
+def adicionar_args_alvo(parser: argparse.ArgumentParser) -> None:
+    """Flags que identificam as instâncias e o usuário medidos (compartilhadas com o axe)."""
+    parser.add_argument("--url-4-5", default=URLS_PADRAO["4.5_lts"])
+    parser.add_argument("--url-5-3", default=URLS_PADRAO["5.3_lts"])
+    parser.add_argument("--rota-curso", default=dict(TELAS)["curso"])
+    parser.add_argument("--rota-quiz", default=dict(TELAS)["questionario"])
+    parser.add_argument("--usuario", default="aluno_teste_1")
+
+
+def resolver_alvo(
+    args: argparse.Namespace,
+) -> tuple[dict[str, str], tuple[tuple[str, str], ...]]:
+    """Devolve as URLs por versão e as telas com as rotas informadas nas flags."""
+    sobrescritas = {"curso": args.rota_curso, "questionario": args.rota_quiz}
+    telas = tuple((nome, sobrescritas.get(nome, rota)) for nome, rota in TELAS)
+    urls = {"4.5_lts": args.url_4_5, "5.3_lts": args.url_5_3}
+    return urls, telas
+
+
 def construir_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Coleta piloto Lab05 - Moodle")
     parser.add_argument(
@@ -312,11 +356,7 @@ def construir_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Gera dados sintéticos em dados/piloto_simulado/ (não são medições)",
     )
-    parser.add_argument("--url-4-5", default=URLS_PADRAO["4.5_lts"])
-    parser.add_argument("--url-5-3", default=URLS_PADRAO["5.3_lts"])
-    parser.add_argument("--rota-curso", default="/course/view.php?id=2")
-    parser.add_argument("--rota-quiz", default="/mod/quiz/view.php?id=1")
-    parser.add_argument("--usuario", default="aluno_teste_1")
+    adicionar_args_alvo(parser)
     parser.add_argument(
         "--sem-purga",
         action="store_true",
@@ -329,20 +369,6 @@ def construir_parser() -> argparse.ArgumentParser:
         help="Diretório de saída (default: dados/piloto, ou dados/piloto_simulado)",
     )
     return parser
-
-
-def _release_moodle(servico: str) -> str:
-    """Lê ``$release`` do ``version.php`` dentro do contêiner (raiz no 4.5, public/ no 5.x)."""
-    resultado = subprocess.run(
-        [
-            "docker", "compose", "-f", str(ARQUIVO_COMPOSE), "exec", "-T", servico,
-            "sh", "-c", "cat version.php public/version.php 2>/dev/null",
-        ],
-        capture_output=True,
-        text=True,
-    )
-    achado = re.search(r"\$release\s*=\s*'([^']+)'", resultado.stdout)
-    return achado.group(1) if achado else "desconhecida"
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -359,11 +385,8 @@ def main(argv: list[str] | None = None) -> int:
             print("Defina MOODLE_ALUNO_SENHA (ver docker/.env.example).", file=sys.stderr)
             return 2
         destino = args.saida or DIR_DADOS_PILOTO
-        telas = tuple(
-            (nome, {"curso": args.rota_curso, "questionario": args.rota_quiz}.get(nome, rota))
-            for nome, rota in TELAS
-        )
-        urls = {"4.5_lts": args.url_4_5, "5.3_lts": args.url_5_3}
+        urls, telas = resolver_alvo(args)
+
         def novo_cliente(versao: str) -> httpx.Client:
             return httpx.Client(
                 base_url=urls[versao], follow_redirects=True, timeout=TIMEOUT_S
@@ -372,7 +395,7 @@ def main(argv: list[str] | None = None) -> int:
         clientes = {v: novo_cliente(v) for v in VERSOES}
         publicos = {v: novo_cliente(v) for v in VERSOES}
         try:
-            releases = {v: _release_moodle(SERVICOS[v]) for v in VERSOES}
+            releases = {v: ler_release_moodle(SERVICOS[v]) for v in VERSOES}
             for cliente in clientes.values():
                 autenticar(cliente, args.usuario, senha)
             # Purga depois do login para que a 1ª repetição de cada tela seja de fato fria.
@@ -380,7 +403,9 @@ def main(argv: list[str] | None = None) -> int:
                 for versao in VERSOES:
                     purgar_cache(SERVICOS[versao])
             print(f"Coletando {args.repeticoes} repetições por tela e versão...")
-            amostras = coletar_amostras_reais(clientes, telas, publicos, args.repeticoes)
+            amostras = coletar_amostras_reais(
+                clientes, publicos, telas, args.repeticoes
+            )
         except (ErroColeta, httpx.HTTPError, subprocess.CalledProcessError) as erro:
             print(f"Coleta abortada: {erro}", file=sys.stderr)
             return 1

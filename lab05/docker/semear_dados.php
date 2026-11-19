@@ -10,6 +10,10 @@ require_once $CFG->dirroot . '/question/editlib.php';
 require_once $CFG->dirroot . '/user/lib.php';
 require_once $CFG->dirroot . '/mod/quiz/locallib.php';
 
+if (!getenv('ALUNO_SENHA')) {
+    fwrite(STDERR, "Defina ALUNO_SENHA.\n");
+    exit(1);
+}
 \core\session\manager::set_user(get_admin());
 $curso = $DB->get_record('course', ['shortname' => 'lab05'], '*', MUST_EXIST);
 

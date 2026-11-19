@@ -4,7 +4,10 @@
 # Requer: docker compose up -d e docker/.env preenchido.
 set -euo pipefail
 cd "$(dirname "$0")"
+[ -f ./.env ] || { echo "Copie .env.example para .env e preencha as senhas." >&2; exit 1; }
 set -a; . ./.env; set +a
+: "${MYSQL_PASSWORD:?defina em docker/.env}" "${MOODLE_ADMIN_SENHA:?defina em docker/.env}"
+: "${MOODLE_ALUNO_SENHA:?defina em docker/.env}"
 
 instalar() {
   local servico="$1" porta="$2" db="$3"

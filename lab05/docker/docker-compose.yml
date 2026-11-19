@@ -1,15 +1,19 @@
 # Ambiente do piloto Lab05: Moodle 4.5 LTS e 5.3 LTS lado a lado, com a mesma
-name: lab05
 # infraestrutura (PHP 8.3, MariaDB 11.4, mesmos limites de CPU/memória e OPcache).
 # O código do Moodle vem de docker/codigo/ (ver preparar_codigo.sh) e não é versionado.
+# As imagens são fixadas por digest para que a infraestrutura não mude entre execuções.
+name: lab05
+
 x-moodle: &moodle
-  image: moodlehq/moodle-php-apache:8.3
+  image: moodlehq/moodle-php-apache:8.3@sha256:1db7b6ed013fcb5268095b5e28c410ba9117d38d9b6a324c100c48fcbe69745e
   cpus: "2.0"
   mem_limit: 2048m
   restart: "no"
 
 x-db: &db
-  image: mariadb:11.4
+  image: mariadb:11.4@sha256:5e73baf8179b29f115101bb102763a47a017361f3e9792daccba6646c3ab1532
+  cpus: "2.0"
+  mem_limit: 2048m
   restart: "no"
   command: >-
     --character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci

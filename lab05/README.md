@@ -41,8 +41,8 @@ Cada integrante é responsável por áreas metodológicas e técnicas estruturad
 | **#162** | Gabriel Assis | Papel A | [docs/escolha_software.md](docs/escolha_software.md) — Evidências dos 3 critérios (Real, Em operação, Alto impacto com +500M de usuários). |
 | **#163** | Gabriel Assis | Papel A | [docs/planejamento_pesquisa.md](docs/planejamento_pesquisa.md) — GQM, hipóteses nulas e alternativas, variáveis e classificação nas 7 categorias de pesquisa. |
 | **#164** | Marcela Campos | Papel B | [docs/plano_coleta_instrumentacao.md](docs/plano_coleta_instrumentacao.md) — Ambiente Docker, roteiro de coleta, instrumentação HTTP/axe, regras de ética e [scripts/coleta_piloto.py](scripts/coleta_piloto.py). |
-| **#166** | Marcela Campos | Papel B | [docs/plano_coleta_instrumentacao.md](docs/plano_coleta_instrumentacao.md) §7 — Coleta piloto em Moodle real (Docker), dados em `dados/piloto/`, validador, auditoria axe-core e registro de problemas e ajustes. |
 | **#165** | Marcela Campos | Papel C | [docs/plano_analise.md](docs/plano_analise.md) — Escalas de métricas, estatística descritiva, teste de Mann-Whitney, tamanho do efeito ($\Delta$ de Cliff), poder estatístico e fórmula de estimativa de impacto. |
+| **#166** | Marcela Campos | Papel B | [docs/plano_coleta_instrumentacao.md](docs/plano_coleta_instrumentacao.md) §7 — Coleta piloto em Moodle real (Docker), dados em `dados/piloto/`, validador, auditoria axe-core e registro de problemas e ajustes. |
 
 ---
 
@@ -55,6 +55,7 @@ Reprodução (requer Docker, `git` e Python >= 3.9):
 ```bash
 cd lab05
 python3 -m venv .venv && . .venv/bin/activate
+# versões mínimas em pyproject.toml (dependências e extras axe/dev)
 pip install httpx numpy pytest playwright axe-playwright-python
 playwright install chromium
 
@@ -62,10 +63,11 @@ cp docker/.env.example docker/.env     # defina senhas locais
 docker/preparar_codigo.sh              # baixa as tags oficiais para docker/codigo/ (ignorado pelo git)
 docker compose -f docker/docker-compose.yml --env-file docker/.env up -d
 docker/instalar_moodle.sh              # instala as duas instâncias e povoa os dados sintéticos
+                                       # (imprime curso_id=2 e quiz_cmid=6, usados nas rotas padrão)
 
 set -a; . docker/.env; set +a          # exporta MOODLE_ALUNO_SENHA
-python scripts/coleta_piloto.py --rota-quiz "/mod/quiz/view.php?id=6"
-python scripts/auditoria_axe.py --rota-quiz "/mod/quiz/view.php?id=6"
+python scripts/coleta_piloto.py
+python scripts/auditoria_axe.py
 python scripts/validar_piloto.py       # confere completude, consistência e formato
 pytest                                 # testes dos scripts (sem rede e sem Docker)
 ```
@@ -75,6 +77,8 @@ Saídas versionadas em `dados/piloto/`:
 - `resumo_piloto.json`: mediana, IQR, média, p95, mínimo e máximo por tela e versão, mais `meta` (releases exatos, data, purga de cache).
 - `axe/<versao>_<tela>.json`: violações WCAG 2.1 A/AA por tela e versão.
 
+Para apagar o ambiente e os volumes: `docker compose -f docker/docker-compose.yml down -v` (apague também `docker/codigo/*/config.php` antes de reinstalar).
+
 `python scripts/coleta_piloto.py --simulado` gera dados sintéticos em `dados/piloto_simulado/` apenas para testar o pipeline sem contêineres; esses dados não são medições.
 
 ---
@@ -83,7 +87,7 @@ Saídas versionadas em `dados/piloto/`:
 
 Em estrita consonância com o enunciado do laboratório:
 1. **Sem teste de carga em terceiros:** todo o tráfego de medição ocorre estritamente em contêineres locais isolados (`localhost`).
-2. **Sem dados pessoais:** todos os cursos e usuários são sintéticos (`aluno_teste_1`), gerados por utilitários internos do Moodle.
+2. **Sem dados pessoais:** todos os cursos e usuários são sintéticos (`aluno_teste_1`), gerados pelo utilitário interno do Moodle (`maketestcourse.php`) e por `docker/semear_dados.php`.
 3. **Respeito a robôs e termos de uso:** eventuais acessos externos a documentações respeitam o teto de no máximo 1 requisição por segundo e o `robots.txt`.
 
 ---

@@ -33,10 +33,10 @@ Para isolar o efeito da versão do software (fator independente de 2 níveis: 4.
 
 ### 2.2. Parâmetros de Recursos e Otimização do PHP
 
-Ambos os contêineres recebem exatamente os mesmos limites operacionais no arquivo `docker-compose.yml`:
-- **Limites de Contêiner:** `cpus: "2.0"` e `mem_limit: "2048m"` (2 GB de RAM dedicados por instância).
+Ambos os contêineres recebem exatamente os mesmos limites operacionais em `docker/docker-compose.yml` (limites e imagens) e `docker/php-moodle.ini` (PHP e OPcache):
+- **Limites de Contêiner:** `cpus: "2.0"` e `mem_limit: "2048m"` (2 GB de RAM dedicados por instância), valendo também para os bancos de dados. As imagens são fixadas por digest.
 - **PHP OPcache:** Ativado em ambos com os mesmos parâmetros (`opcache.enable=1`, `opcache.memory_consumption=128`, `opcache.max_accelerated_files=10000`, `opcache.revalidate_freq=0`).
-- **PHP Configurações:** `memory_limit = 512M`, `max_execution_time = 60`, `post_max_size = 64M`, `upload_max_filesize = 64M`.
+- **PHP Configurações:** `memory_limit = 512M`, `max_execution_time = 60`, `post_max_size = 64M`, `upload_max_filesize = 64M`, `max_input_vars = 5000`.
 
 ### 2.3. Especificações da Máquina Host (Registro para Reprodutibilidade)
 
@@ -56,13 +56,13 @@ Seguindo o GQM definido na Issue #163, foram selecionadas as 4 telas de maior tr
 1. **Login (`/login/index.php`):** Requisição pública, representativa de autenticação e carga inicial.
 2. **Painel do Aluno (`/my/`):** Tela autenticada, com agregação de cursos, prazos, linha do tempo e múltiplos blocos dinâmicos.
 3. **Página de Curso Sintético (`/course/view.php?id=2`):** Tela com módulos de aprendizado, seções de tópicos, links e mídias.
-4. **Tentativa de Questionário / Quiz (`/mod/quiz/view.php?id=X`):** Operação de avaliação interativa, crítica para o aluno e de alta concorrência em períodos de prova.
+4. **Página do Questionário / Quiz (`/mod/quiz/view.php?id=6`):** Página de entrada do quiz, crítica para o aluno em períodos de prova. A tela de *tentativa* do quiz (com questões) não é medida no piloto (ver §7, problema P6, pendente para a S02).
 
 ### 3.2. Cursos e Usuários Sintéticos
 
 - Não são utilizados dados de instituições reais nem contas de alunos reais.
 - Os dados do ambiente são povoados por meio da ferramenta padrão do Moodle para testes de benchmark e QA (`admin/tool/generator/cli/maketestcourse.php --size=XS`), criando 1 curso sintético e 1 usuário estudante de teste (`aluno_teste_1`). O quiz é criado por `docker/semear_dados.php` (ver §7, problema P6).
-- As duas instâncias são instaladas do zero pelos mesmos scripts (`docker/instalar_moodle.sh`) e ficam com os mesmos identificadores (curso `id=2`, quiz `id=6`).
+- As duas instâncias são instaladas do zero pelos mesmos scripts (`docker/instalar_moodle.sh`) e ficam com os mesmos identificadores (curso `id=2`, quiz `cmid=6`; `instalar_moodle.sh` imprime `curso_id` e `quiz_cmid` para conferência).
 
 ### 3.3. Instrumentação de Desempenho (TTFB e Tempo Total)
 
@@ -75,13 +75,13 @@ A coleta de desempenho é realizada por script automatizado em Python (`scripts/
   - `cache`: `cold` (1ª repetição de cada tela e versão, após `purge_caches.php`) ou `warm` (repetições 2 a 10).
   - Esquema completo do CSV: `id, versao, tela, rota, repeticao, cache, status_http, ttfb_ms, tempo_total_ms, tamanho_bytes`. Os nomes em português substituem os nomes em inglês da versão 1.0 do plano.
 - **Sessão:** a tela `login` é medida sem cookie (visitante). As demais usam o estudante `aluno_teste_1` autenticado.
-- **Mitigação de Confundimento Térmico / Ordem:** As coletas utilizam **ordem alternada balanceada** (ex.: bloco Moodle 4.5 seguido de Moodle 5.3, repetindo alternadamente), evitando que aquecimento de CPU ou cache do SO favoreçam a segunda versão testada.
+- **Mitigação de Confundimento Térmico / Ordem:** As coletas alternam as versões a cada requisição (4.5, 5.3, 4.5, 5.3, ...), de modo que o aquecimento de CPU ou do cache do SO afete as duas de forma parecida. A ordem é fixa (4.5 sempre primeiro em cada par): ver §7, problema P13.
 
 ### 3.4. Instrumentação de Acessibilidade (WCAG 2.1 / axe-core)
 
 A avaliação da característica de usabilidade e acessibilidade (ISO/IEC 25010) é automatizada utilizando o motor padrão de mercado `axe-core`:
-- Cada uma das 4 telas nas duas versões é renderizada em navegador headless (via Playwright / `@axe-core/cli`).
-- O script injeta o `axe.run()` e exporta o relatório JSON com:
+- Cada uma das 4 telas nas duas versões é renderizada em navegador headless (Playwright com Chromium headless e `axe-playwright-python`, em `scripts/auditoria_axe.py`).
+- O script executa o `axe.run()` com as tags WCAG 2.0/2.1 A e AA e grava um JSON por tela e versão em `dados/piloto/axe/<versao>_<tela>.json`, com:
   - Total de violações por tela.
   - Classificação por severidade: *crítico* (`critical`), *sério* (`serious`), *moderado* (`moderate`) e *leve* (`minor`).
   - IDs das regras WCAG violadas (ex.: contraste de cores, labels de formulários, estrutura semântica de headings).
@@ -128,7 +128,7 @@ lab05/
 ├── docs/
 │   ├── escolha_software.md              # [Gabriel, #162] Evidências dos 3 critérios
 │   ├── planejamento_pesquisa.md         # [Gabriel, #163] GQM, hipóteses, 7 categorias
-│   ├── plano_coleta_instrumentacao.md   # [Marcela, #164] Ambiente, roteiro, ética e piloto
+│   ├── plano_coleta_instrumentacao.md   # [Marcela, #164/#166] Ambiente, roteiro, ética e piloto
 │   └── plano_analise.md                 # [Marcela, #165] Métricas, testes, poder e impacto
 ├── scripts/
 │   ├── coleta_piloto.py                 # [Marcela, #164/#166] Medição HTTP/TTFB (real e --simulado)
@@ -153,6 +153,7 @@ lab05/
   - `#164` Plano de coleta e instrumentação e regras de ética (Responsável: Marcela) — Concluído.
   - `#165` Plano de análise, testes, poder e estimativa de impacto (Responsável: Marcela) — Concluído.
   - `#166` Coleta piloto (B) (Responsável: Marcela) — Concluído (§7).
+  - `#167` Análise do piloto e consolidação da entrega da S01 (C) — Pendente. Usa os dados de `dados/piloto/`.
 
 ---
 
@@ -161,9 +162,9 @@ lab05/
 ### 7.1. O que foi executado
 
 - Duas instâncias reais (Moodle 4.5.16 e 5.3.1) em Docker, instaladas por CLI do zero, com o mesmo curso sintético, o mesmo estudante e as mesmas configurações de PHP e de limites (2 CPUs e 2 GB por instância).
-- 80 requisições de desempenho (10 repetições × 4 telas × 2 versões), em ordem alternada, com pausa aleatória de 200 a 500 ms e purga de cache antes da coleta. Dados em `dados/piloto/amostra_piloto.csv` e `resumo_piloto.json`.
+- 80 requisições de desempenho (10 repetições × 4 telas × 2 versões), em ordem alternada, com pausa aleatória de 200 a 500 ms e purga de cache antes da coleta. Dados em `dados/piloto/amostra_piloto.csv` e `resumo_piloto.json`. O piloto foi executado duas vezes na mesma máquina (a 1ª execução serviu de ensaio, e a 2ª é a versionada).
 - 8 auditorias axe-core (4 telas × 2 versões) com as tags WCAG 2.0/2.1 A e AA, em `dados/piloto/axe/`.
-- Validação com `scripts/validar_piloto.py`: esquema do CSV, 80 linhas, 10 amostras por tela e versão, `status_http = 200`, TTFB positivo e menor que o tempo total, cache frio só na repetição 1, ordem alternada e resumo JSON igual ao recálculo a partir do CSV. Resultado: sem problemas.
+- Validação com `scripts/validar_piloto.py`: esquema do CSV, 80 linhas, 10 amostras por tela e versão, `status_http = 200`, TTFB positivo e não maior que o tempo total, uma rota por tela, cache frio só na repetição 1, ordem alternada e resumo JSON igual ao recálculo a partir do CSV. Também confere `meta.origem = real`, os releases exatos e os 8 relatórios axe. Resultado: sem problemas. Os testes (`tests/`, `pytest`) rodam o validador sobre os dados versionados.
 
 Os dados que o #164 havia versionado eram sintéticos (distribuições lognormais geradas por `coleta_piloto.py`) e foram substituídos por esta coleta. O gerador continua disponível com `--simulado`, grava em `dados/piloto_simulado/` e não escreve em `dados/piloto/`.
 
@@ -174,26 +175,28 @@ Os dados que o #164 havia versionado eram sintéticos (distribuições lognormai
 | P1 | O piloto do #164 não media nenhum Moodle: os valores eram gerados por um sorteio lognormal. Plano e README descreviam `httpx`, Docker e axe-core que não existiam no repositório. | Piloto refeito em Moodle real. Runner HTTP, `docker/`, auditoria axe e validador criados. Gerador sintético isolado em `--simulado`. |
 | P2 | O Moodle 5.3 exige PHP >= 8.3 (o plano previa PHP 8.2). A instalação do 5.3 abortou com PHP 8.2.35. | As duas versões rodam em PHP 8.3 (o 4.5 suporta 8.3), para manter a mesma infraestrutura nos dois tratamentos. |
 | P3 | O Moodle 5.3 exige MariaDB >= 11.4 (o plano previa 10.11). | As duas versões usam MariaDB 11.4. |
-| P4 | Não há imagem pronta do Moodle 4.5/5.x utilizável (`bitnami/moodle:4.5` e `5.0` não existem no registry). A imagem `moodlehq/moodle-php-apache` traz só PHP e Apache. | O código vem das tags oficiais (`docker/preparar_codigo.sh`, em `docker/codigo/`, fora do git), com `composer install --no-dev` em contêiner. O servidor web passa a ser o Apache da imagem (o plano previa Nginx). O 5.x serve a partir de `public/` (`APACHE_DOCUMENT_ROOT`) e mantém `admin/tool/.../cli` em `public/`. |
+| P4 | Não há imagem pronta do Moodle 4.5/5.x utilizável (`bitnami/moodle:4.5` e `5.0` não existem no registry). A imagem `moodlehq/moodle-php-apache` traz só PHP e Apache. | O código vem das tags oficiais (`docker/preparar_codigo.sh`, em `docker/codigo/`, fora do git), com `composer install --no-dev` em contêiner. O servidor web passa a ser o Apache da imagem (o plano previa Nginx). O 5.x serve a partir de `public/` (`APACHE_DOCUMENT_ROOT`) e move os scripts de `admin/tool/.../cli` para `public/`. As imagens ficam fixadas por digest. |
 | P5 | O contêiner do Moodle subiu sem rede quando a porta já estava ocupada por outro projeto Compose, e a instalação falhou com "could not connect to the database". | O projeto Compose tem nome fixo (`lab05`). Em caso de conflito de porta, `docker compose down` e `up -d --force-recreate`. |
 | P6 | `maketestcourse.php` não cria quiz, e a API de banco de questões difere entre 4.5 e 5.x. Também falhou com MariaDB 11.4 em modo estrito (`password` nulo) ao criar o quiz. | `docker/semear_dados.php` cria o quiz pela API de módulos (`quizpassword = ''`), **sem questões**. A tela medida (`/mod/quiz/view.php`) não depende delas. **Pendência para a S02:** a tela de tentativa de quiz (5 questões) não foi medida. |
 | P7 | Com o cookie do estudante, `/login/index.php` não é a tela pública de login. | A tela `login` é medida por cliente HTTP sem sessão. |
-| P8 | O login do estudante antes da purga aquecia caches, e o login depois da purga contaminava a 1ª repetição. | Ordem fixada: autenticar, purgar caches, medir. A 1ª repetição de cada tela é `cold`. |
+| P8 | A ordem entre login e purga de cache altera o que a 1ª repetição mede: com a purga antes do login, o próprio login (sessão, caches de usuário) aquece caches da 1ª repetição. | Ordem fixada: autenticar, purgar caches, medir. A 1ª repetição de cada tela é `cold`. |
 | P9 | O Moodle não expõe a versão na página de login (sem `<meta generator>`). | O `release` é lido de `version.php` dentro do contêiner e gravado em `resumo_piloto.json` (`meta.releases_moodle`). |
-| P10 | Os nomes de colunas do plano (`status_code`, `total_time_ms`, ...) divergiam do CSV. | O plano (§3.3) adota os nomes do CSV, que o #165 e o #167 consomem. |
-| P11 | Só a repetição 1 é fria (n = 1 por tela e versão). Nas telas autenticadas a 1ª requisição ficou em até 1,4 vez a mediana, mas na tela pública `login` a 1ª requisição levou 438 ms (4.5) e 487 ms (5.3), contra medianas de 41 e 51 ms. Média e p95 do resumo misturam frio e quente. | **Ajuste proposto, decisão no #167:** analisar `cold` e `warm` em separado. Para a S02, avaliar mais repetições frias (purga entre elas) em vez de uma por grupo. |
+| P10 | Os nomes de colunas do plano (`status_code`, `total_time_ms`, ...) divergiam do CSV. | O plano (§3.3) adota os nomes do CSV, que o `validar_piloto.py` e a análise do #167 consomem. |
+| P11 | Só a repetição 1 é fria (n = 1 por tela e versão). Nas telas autenticadas a 1ª requisição ficou entre 1,1 e 2,2 vezes a mediana (maior caso: dashboard 4.5, 195 ms contra 90 ms). Na tela pública `login` ela levou 458 ms (4.5) e 505 ms (5.3), contra medianas de 43 e 45 ms. Média e p95 do resumo misturam frio e quente. | **Ajuste proposto, decisão no #167:** analisar `cold` e `warm` em separado. Para a S02, avaliar mais repetições frias (purga entre elas) em vez de uma por grupo. |
+| P12 | Em uma tentativa intermediária, o login do estudante foi recusado ("Invalid login") três vezes seguidas, com a mesma senha que funcionou antes e depois (o contador `login_failed_count_since_success` ficou em 3). Não foi reproduzido nem explicado. | Os scripts abortam com mensagem clara (`Falha de autenticação`) sem gravar dados parciais, e a execução foi repetida com sucesso. Se voltar na S02, investigar antes de aumentar o volume. |
+| P13 | A ordem é fixa: 4.5 sempre precede 5.3 dentro de cada par. A "ordem alternada balanceada" do plano 1.0 não se cumpre (a versão 5.3 sempre é medida logo após a 4.5). | **Decisão no #167/S02:** inverter a ordem em metade das repetições (ABBA) ou sortear. Não alterado no piloto, para manter o formato validado. |
 
 ### 7.3. Resultados descritivos do piloto (TTFB, ms, n = 10 por célula)
 
 | Tela | 4.5: mediana (IQR) | 5.3: mediana (IQR) |
 |---|---|---|
-| login | 40,97 (8,79) | 50,88 (11,42) |
-| dashboard | 95,56 (13,29) | 89,99 (4,41) |
-| curso | 83,45 (9,61) | 93,06 (10,57) |
-| questionario | 86,11 (14,61) | 91,69 (17,86) |
+| login | 42,85 (11,18) | 45,30 (5,93) |
+| dashboard | 90,09 (11,45) | 92,34 (6,25) |
+| curso | 88,97 (14,00) | 95,31 (5,74) |
+| questionario | 82,89 (14,63) | 90,81 (7,85) |
 
-Todas as 80 requisições retornaram 200. O axe-core não reportou violações em nenhuma das 8 combinações. O motor foi verificado com uma página de teste que contém violações conhecidas (detectou `image-alt`, `label`, `html-has-lang` e `document-title`), e cada relatório registra o número de regras aprovadas e incompletas. Com n = 10 e uma única passada, estes números só validam o pipeline. A comparação estatística fica para o #167.
+Todas as 80 requisições retornaram 200. O axe-core não reportou violações em nenhuma das 8 combinações (22 a 28 regras aprovadas por tela; as regras "incompletas", que exigem revisão manual, são 0 ou 1 por tela e ficam registradas nos relatórios). O motor foi verificado manualmente com uma página que contém violações conhecidas (detectou `image-alt`, `label`, `html-has-lang` e `document-title`). Entre a 1ª e a 2ª execução do piloto, as medianas variaram até cerca de 6 ms na mesma configuração (por exemplo, `curso` 4.5: 83,45 e 88,97 ms), o que indica o nível de ruído esperado. Com n = 10 e uma única passada, estes números só validam o pipeline. A comparação estatística fica para o #167.
 
 ### 7.4. Como reproduzir
 
-Ver `README.md`, seção 4.
+Ver [README.md, seção 4](../README.md#4-coleta-piloto).
