@@ -1,0 +1,80 @@
+{
+  "versoes": {
+    "4.5_lts": {
+      "login": {
+        "n": 10,
+        "mediana_ms": 132.68,
+        "iqr_ms": 36.56,
+        "media_ms": 131.48,
+        "p95_ms": 191.81,
+        "min_ms": 70.42,
+        "max_ms": 207.2
+      },
+      "dashboard": {
+        "n": 10,
+        "mediana_ms": 218.69,
+        "iqr_ms": 32.38,
+        "media_ms": 226.42,
+        "p95_ms": 271.32,
+        "min_ms": 193.72,
+        "max_ms": 276.04
+      },
+      "curso": {
+        "n": 10,
+        "mediana_ms": 265.01,
+        "iqr_ms": 128.88,
+        "media_ms": 319.13,
+        "p95_ms": 545.29,
+        "min_ms": 172.13,
+        "max_ms": 588.33
+      },
+      "questionario": {
+        "n": 10,
+        "mediana_ms": 285.11,
+        "iqr_ms": 91.37,
+        "media_ms": 303.57,
+        "p95_ms": 468.61,
+        "min_ms": 203.04,
+        "max_ms": 491.49
+      }
+    },
+    "5.3_lts": {
+      "login": {
+        "n": 10,
+        "mediana_ms": 123.79,
+        "iqr_ms": 32.6,
+        "media_ms": 121.13,
+        "p95_ms": 174.23,
+        "min_ms": 82.23,
+        "max_ms": 207.59
+      },
+      "dashboard": {
+        "n": 10,
+        "mediana_ms": 239.63,
+        "iqr_ms": 114.91,
+        "media_ms": 232.6,
+        "p95_ms": 328.39,
+        "min_ms": 135.63,
+        "max_ms": 349.14
+      },
+      "curso": {
+        "n": 10,
+        "mediana_ms": 224.54,
+        "iqr_ms": 127.03,
+        "media_ms": 273.74,
+        "p95_ms": 478.31,
+        "min_ms": 153.03,
+        "max_ms": 598.58
+      },
+      "questionario": {
+        "n": 10,
+        "mediana_ms": 264.62,
+        "iqr_ms": 83.38,
+        "media_ms": 288.29,
+        "p95_ms": 446.57,
+        "min_ms": 152.94,
+        "max_ms": 446.82
+      }
+    }
+  }
+}
