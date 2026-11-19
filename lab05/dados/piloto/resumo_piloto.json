@@ -1,79 +1,88 @@
 {
+  "meta": {
+    "origem": "real",
+    "releases_moodle": {
+      "4.5_lts": "4.5.16 (Build: 20261112)",
+      "5.3_lts": "5.3.1 (Build: 20261112)"
+    },
+    "gerado_em": "2026-11-19T23:27:05.289338+00:00",
+    "cache_purgado_antes": true
+  },
   "versoes": {
     "4.5_lts": {
       "login": {
         "n": 10,
-        "mediana_ms": 132.68,
-        "iqr_ms": 36.56,
-        "media_ms": 131.48,
-        "p95_ms": 191.81,
-        "min_ms": 70.42,
-        "max_ms": 207.2
+        "mediana_ms": 40.97,
+        "iqr_ms": 8.79,
+        "media_ms": 82.05,
+        "p95_ms": 266.58,
+        "min_ms": 33.67,
+        "max_ms": 437.92
       },
       "dashboard": {
         "n": 10,
-        "mediana_ms": 218.69,
-        "iqr_ms": 32.38,
-        "media_ms": 226.42,
-        "p95_ms": 271.32,
-        "min_ms": 193.72,
-        "max_ms": 276.04
+        "mediana_ms": 95.56,
+        "iqr_ms": 13.29,
+        "media_ms": 99.28,
+        "p95_ms": 121.65,
+        "min_ms": 88.72,
+        "max_ms": 133.86
       },
       "curso": {
         "n": 10,
-        "mediana_ms": 265.01,
-        "iqr_ms": 128.88,
-        "media_ms": 319.13,
-        "p95_ms": 545.29,
-        "min_ms": 172.13,
-        "max_ms": 588.33
+        "mediana_ms": 83.45,
+        "iqr_ms": 9.61,
+        "media_ms": 85.42,
+        "p95_ms": 104.35,
+        "min_ms": 59.65,
+        "max_ms": 113.28
       },
       "questionario": {
         "n": 10,
-        "mediana_ms": 285.11,
-        "iqr_ms": 91.37,
-        "media_ms": 303.57,
-        "p95_ms": 468.61,
-        "min_ms": 203.04,
-        "max_ms": 491.49
+        "mediana_ms": 86.11,
+        "iqr_ms": 14.61,
+        "media_ms": 85.69,
+        "p95_ms": 102.1,
+        "min_ms": 63.26,
+        "max_ms": 105.01
       }
     },
     "5.3_lts": {
       "login": {
         "n": 10,
-        "mediana_ms": 123.79,
-        "iqr_ms": 32.6,
-        "media_ms": 121.13,
-        "p95_ms": 174.23,
-        "min_ms": 82.23,
-        "max_ms": 207.59
+        "mediana_ms": 50.88,
+        "iqr_ms": 11.42,
+        "media_ms": 88.86,
+        "p95_ms": 293.01,
+        "min_ms": 21.43,
+        "max_ms": 487.31
       },
       "dashboard": {
         "n": 10,
-        "mediana_ms": 239.63,
-        "iqr_ms": 114.91,
-        "media_ms": 232.6,
-        "p95_ms": 328.39,
-        "min_ms": 135.63,
-        "max_ms": 349.14
+        "mediana_ms": 89.99,
+        "iqr_ms": 4.41,
+        "media_ms": 98.27,
+        "p95_ms": 139.61,
+        "min_ms": 80.87,
+        "max_ms": 172.35
       },
       "curso": {
         "n": 10,
-        "mediana_ms": 224.54,
-        "iqr_ms": 127.03,
-        "media_ms": 273.74,
-        "p95_ms": 478.31,
-        "min_ms": 153.03,
-        "max_ms": 598.58
+        "mediana_ms": 93.06,
+        "iqr_ms": 10.57,
+        "media_ms": 93.12,
+        "p95_ms": 116.84,
+        "min_ms": 52.82,
+        "max_ms": 122.0
       },
       "questionario": {
         "n": 10,
-        "mediana_ms": 264.62,
-        "iqr_ms": 83.38,
-        "media_ms": 288.29,
-        "p95_ms": 446.57,
-        "min_ms": 152.94,
-        "max_ms": 446.82
+        "mediana_ms": 91.69,
+        "iqr_ms": 17.86,
+        "media_ms": 91.52,
+        "p95_ms": 115.12,
+        "min_ms": 68.98,
+        "max_ms": 118.0
       }
     }
   }

@@ -1,0 +1,15 @@
+{
+  "versao": "5.3_lts",
+  "tela": "dashboard",
+  "rota": "/my/",
+  "total_violacoes": 0,
+  "por_impacto": {
+    "critical": 0,
+    "serious": 0,
+    "moderate": 0,
+    "minor": 0
+  },
+  "regras_aprovadas": 22,
+  "regras_incompletas": 0,
+  "violacoes": []
+}
