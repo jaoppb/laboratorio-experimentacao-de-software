@@ -279,7 +279,9 @@ class _Ambiente:
 
         def executar(comando, **kwargs):
             if not docker_ok:
-                raise subprocess.CalledProcessError(1, comando)
+                if kwargs.get("check"):
+                    raise subprocess.CalledProcessError(1, comando)
+                return subprocess.CompletedProcess(comando, 1, "$release = '1.0';", "")
             if any("purge_caches.php" in parte for parte in comando):
                 eventos.append("purga")
                 return subprocess.CompletedProcess(comando, 0, "", "")
@@ -335,6 +337,16 @@ def test_main_real_aborta_quando_docker_falha(monkeypatch, tmp_path):
 
     assert cp.main(["--repeticoes", "1", "--saida", str(tmp_path)]) == 1
     assert list(tmp_path.iterdir()) == []
+
+
+def test_ler_release_falha_quando_docker_retorna_erro(monkeypatch):
+    monkeypatch.setattr(
+        cp.subprocess,
+        "run",
+        lambda c, **k: subprocess.CompletedProcess(c, 1, "$release = '1.0';", ""),
+    )
+    with pytest.raises(cp.ErroColeta):
+        cp.ler_release_moodle("moodle45")
 
 
 def test_ler_release_falha_quando_nao_acha_release(monkeypatch):

@@ -3,7 +3,7 @@
 Protocolo de medição da Sprint Lab05S01 (ver ``docs/plano_coleta_instrumentacao.md``):
 
 - mede TTFB (ms), tempo total (ms), status HTTP e tamanho do corpo por requisição;
-- alterna as versões a cada requisição (ordem alternada balanceada);
+- alterna as versões a cada requisição (4.5 sempre antes de 5.3 em cada par);
 - marca a 1ª repetição de cada tela/versão como ``cold`` (após purga de cache) e as
   demais como ``warm``;
 - grava o CSV bruto e o resumo estatístico em JSON.

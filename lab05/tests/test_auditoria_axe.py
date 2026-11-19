@@ -41,3 +41,27 @@ def test_impacto_ausente_ou_desconhecido_conta_como_indefinido():
     assert resumo["total_violacoes"] == 2
     assert resumo["por_impacto"]["indefinido"] == 2
     assert sum(resumo["por_impacto"].values()) == resumo["total_violacoes"]
+
+
+def test_main_exige_senha(monkeypatch, capsys):
+    monkeypatch.delenv("MOODLE_ALUNO_SENHA", raising=False)
+    assert aa.main([]) == 2
+    assert "MOODLE_ALUNO_SENHA" in capsys.readouterr().err
+
+
+def test_main_repassa_alvo_e_reporta_falha(monkeypatch, tmp_path, capsys):
+    monkeypatch.setenv("MOODLE_ALUNO_SENHA", "segredo")
+    recebido = {}
+
+    def auditar_falso(urls, telas, usuario, senha, destino):
+        recebido.update(urls=urls, telas=dict(telas), usuario=usuario, destino=destino)
+        raise RuntimeError("navegador indisponível")
+
+    monkeypatch.setattr(aa, "auditar", auditar_falso)
+    codigo = aa.main(["--rota-quiz", "/mod/quiz/view.php?id=9", "--saida", str(tmp_path)])
+
+    assert codigo == 1
+    assert "navegador indisponível" in capsys.readouterr().err
+    assert recebido["telas"]["questionario"] == "/mod/quiz/view.php?id=9"
+    assert recebido["usuario"] == "aluno_teste_1"
+    assert recebido["destino"] == tmp_path

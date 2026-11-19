@@ -93,6 +93,7 @@ def test_linha_faltando_aponta_contagem_total_e_por_grupo(tmp_path):
         (0, "versao", "6.0", "versão desconhecida"),
         (0, "tela", "inexistente", "tela desconhecida"),
         (0, "repeticao", "11", "fora de 1..10"),
+        (1, "repeticao", "0", "fora de 1..10"),
         (79, "cache", "cold", "cache 'cold'"),
         (1, "versao", "4.5_lts", "não alternada"),
         (2, "rota", "/outra/", "rotas diferentes"),
@@ -102,6 +103,12 @@ def test_cada_defeito_do_csv_e_apontado(tmp_path, indice, campo, valor, mensagem
     colunas, linhas = _linhas(_gravar(tmp_path))
     linhas[indice][campo] = valor
     assert any(mensagem in p for p in vp.validar_amostras(colunas, linhas))
+
+
+def test_ttfb_igual_ao_tempo_total_e_aceito(tmp_path):
+    colunas, linhas = _linhas(_gravar(tmp_path))
+    linhas[0]["ttfb_ms"] = linhas[0]["tempo_total_ms"]
+    assert vp.validar_amostras(colunas, linhas) == []
 
 
 def test_cache_warm_na_primeira_repeticao_e_apontado(tmp_path):
@@ -152,7 +159,7 @@ def test_dados_simulados_sao_recusados_por_padrao(tmp_path):
 
 
 def test_release_ausente_ou_desconhecido(tmp_path):
-    meta = {"origem": "real", "releases_moodle": {"4.5_lts": "desconhecida"}}
+    meta = {"origem": "real", "releases_moodle": {"4.5_lts": ""}}
     problemas = vp.validar_diretorio(_gravar(tmp_path, meta, axe=True))
     assert sum("releases_moodle" in p for p in problemas) == 2
 
@@ -183,6 +190,29 @@ def test_axe_com_versao_ou_tela_trocadas(tmp_path):
     alvo.write_text(json.dumps(dados), encoding="utf-8")
 
     assert any("divergentes" in p for p in vp.validar_axe(tmp_path / "axe"))
+
+
+def test_axe_com_por_impacto_que_nao_soma_o_total(tmp_path):
+    _gravar(tmp_path, META_REAL, axe=True)
+    alvo = tmp_path / "axe" / "5.3_lts_curso.json"
+    dados = json.loads(alvo.read_text(encoding="utf-8"))
+    dados["por_impacto"] = {"serious": 2}
+    alvo.write_text(json.dumps(dados), encoding="utf-8")
+
+    assert any("não soma o total" in p for p in vp.validar_axe(tmp_path / "axe"))
+
+
+def test_axe_sem_campos_obrigatorios_ou_json_invalido(tmp_path):
+    _gravar(tmp_path, META_REAL, axe=True)
+    sem_campos = tmp_path / "axe" / "5.3_lts_curso.json"
+    dados = json.loads(sem_campos.read_text(encoding="utf-8"))
+    del dados["violacoes"]
+    sem_campos.write_text(json.dumps(dados), encoding="utf-8")
+    (tmp_path / "axe" / "4.5_lts_login.json").write_text("{truncado", encoding="utf-8")
+
+    problemas = vp.validar_axe(tmp_path / "axe")
+    assert any("sem violacoes/por_impacto" in p for p in problemas)
+    assert any("não é JSON válido" in p for p in problemas)
 
 
 def test_csv_gravado_tem_cabecalho_esperado(tmp_path):

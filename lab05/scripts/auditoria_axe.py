@@ -76,8 +76,7 @@ def auditar(
     from axe_playwright_python.sync_playwright import Axe
     from playwright.sync_api import sync_playwright
 
-    destino.mkdir(parents=True, exist_ok=True)
-    gravados: list[Path] = []
+    relatorios: dict[str, dict[str, Any]] = {}
     axe = Axe()
     opcoes = {"runOnly": {"type": "tag", "values": TAGS_WCAG}}
     with sync_playwright() as pw:
@@ -85,32 +84,38 @@ def auditar(
         try:
             for versao in VERSOES:
                 logada = _entrar(navegador, urls[versao], usuario, senha)
-                for tela, rota in telas:
-                    # Telas públicas (login) só renderizam para visitante: contexto limpo.
-                    publica = tela in TELAS_PUBLICAS
-                    alvo = navegador.new_context().new_page() if publica else logada
-                    try:
-                        alvo.goto(f"{urls[versao]}{rota}")
-                        alvo.wait_for_load_state("networkidle")
-                        resultado = axe.run(alvo, options=opcoes)
-                    finally:
-                        if publica:
-                            alvo.context.close()
-                    conteudo = {
-                        "versao": versao,
-                        "tela": tela,
-                        "rota": rota,
-                        **resumir_resultado(resultado.response),
-                    }
-                    caminho = destino / f"{versao}_{tela}.json"
-                    caminho.write_text(
-                        json.dumps(conteudo, indent=2, ensure_ascii=False) + "\n",
-                        encoding="utf-8",
-                    )
-                    gravados.append(caminho)
-                logada.context.close()
+                try:
+                    for tela, rota in telas:
+                        # Telas públicas (login) só renderizam para visitante: contexto limpo.
+                        publica = tela in TELAS_PUBLICAS
+                        alvo = navegador.new_context().new_page() if publica else logada
+                        try:
+                            alvo.goto(f"{urls[versao]}{rota}")
+                            alvo.wait_for_load_state("networkidle")
+                            resultado = axe.run(alvo, options=opcoes)
+                        finally:
+                            if publica:
+                                alvo.context.close()
+                        relatorios[f"{versao}_{tela}"] = {
+                            "versao": versao,
+                            "tela": tela,
+                            "rota": rota,
+                            **resumir_resultado(resultado.response),
+                        }
+                finally:
+                    logada.context.close()
         finally:
             navegador.close()
+
+    # Grava só depois de auditar tudo, para não deixar relatórios de duas execuções misturados.
+    destino.mkdir(parents=True, exist_ok=True)
+    gravados: list[Path] = []
+    for nome, conteudo in relatorios.items():
+        caminho = destino / f"{nome}.json"
+        caminho.write_text(
+            json.dumps(conteudo, indent=2, ensure_ascii=False) + "\n", encoding="utf-8"
+        )
+        gravados.append(caminho)
     return gravados
 
 

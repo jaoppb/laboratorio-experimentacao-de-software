@@ -149,8 +149,8 @@ def validar_meta(resumo: dict[str, Any]) -> list[str]:
     releases = meta.get("releases_moodle", {})
     for versao in VERSOES:
         release = releases.get(versao)
-        if not release or release == "desconhecida":
-            problemas.append(f"meta.releases_moodle[{versao}] ausente ou desconhecido")
+        if not release:
+            problemas.append(f"meta.releases_moodle[{versao}] ausente")
     return problemas
 
 
@@ -163,7 +163,11 @@ def validar_axe(diretorio: Path) -> list[str]:
             if not caminho.is_file():
                 problemas.append(f"axe: arquivo ausente {caminho.name}")
                 continue
-            dados = json.loads(caminho.read_text(encoding="utf-8"))
+            try:
+                dados = json.loads(caminho.read_text(encoding="utf-8"))
+            except json.JSONDecodeError as erro:
+                problemas.append(f"axe: {caminho.name} não é JSON válido ({erro})")
+                continue
             if (dados.get("versao"), dados.get("tela")) != (versao, tela):
                 problemas.append(f"axe: {caminho.name} com versao/tela divergentes")
             violacoes = dados.get("violacoes")
@@ -199,7 +203,7 @@ def validar_diretorio(
 
     with open(caminho_json, encoding="utf-8") as f:
         resumo = json.load(f)
-    problemas = validar_resumo([tipar_linha(l) for l in linhas], resumo)
+    problemas = validar_resumo([tipar_linha(bruta) for bruta in linhas], resumo)
     if exigir_real:
         problemas += validar_meta(resumo)
         problemas += validar_axe(diretorio / "axe")

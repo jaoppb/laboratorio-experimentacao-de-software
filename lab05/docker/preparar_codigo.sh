@@ -31,4 +31,4 @@ done
 # O Apache da imagem roda como www-data (uid 33) e grava config.php no código montado;
 # em hosts Linux o código clonado pertence ao usuário do host, então libera a escrita.
 # O ambiente é local e descartável (dados sintéticos).
-chmod -R a+rwX "$DESTINO"
+find "$DESTINO" -user "$(id -u)" -exec chmod a+rwX {} +

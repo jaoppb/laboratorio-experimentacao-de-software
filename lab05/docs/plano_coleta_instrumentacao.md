@@ -61,7 +61,7 @@ Seguindo o GQM definido na Issue #163, foram selecionadas as 4 telas de maior tr
 ### 3.2. Cursos e Usuários Sintéticos
 
 - Não são utilizados dados de instituições reais nem contas de alunos reais.
-- Os dados do ambiente são povoados por meio da ferramenta padrão do Moodle para testes de benchmark e QA (`admin/tool/generator/cli/maketestcourse.php --size=XS`), criando 1 curso sintético e 1 usuário estudante de teste (`aluno_teste_1`). O quiz é criado por `docker/semear_dados.php` (ver §7, problema P6).
+- Os dados do ambiente são povoados por meio da ferramenta padrão do Moodle para testes de benchmark e QA (`admin/tool/generator/cli/maketestcourse.php --size=XS`), criando o curso sintético `lab05`. O estudante `aluno_teste_1` (matriculado no curso) e o quiz são criados por `docker/semear_dados.php` (ver §7, problema P6).
 - As duas instâncias são instaladas do zero pelos mesmos scripts (`docker/instalar_moodle.sh`) e ficam com os mesmos identificadores (curso `id=2`, quiz `cmid=6`; `instalar_moodle.sh` imprime `curso_id` e `quiz_cmid` para conferência).
 
 ### 3.3. Instrumentação de Desempenho (TTFB e Tempo Total)
@@ -83,7 +83,7 @@ A avaliação da característica de usabilidade e acessibilidade (ISO/IEC 25010)
 - Cada uma das 4 telas nas duas versões é renderizada em navegador headless (Playwright com Chromium headless e `axe-playwright-python`, em `scripts/auditoria_axe.py`).
 - O script executa o `axe.run()` com as tags WCAG 2.0/2.1 A e AA e grava um JSON por tela e versão em `dados/piloto/axe/<versao>_<tela>.json`, com:
   - Total de violações por tela.
-  - Classificação por severidade: *crítico* (`critical`), *sério* (`serious`), *moderado* (`moderate`) e *leve* (`minor`).
+  - Classificação por severidade: *crítico* (`critical`), *sério* (`serious`), *moderado* (`moderate`) e *leve* (`minor`), mais `indefinido` quando o axe não informa o impacto.
   - IDs das regras WCAG violadas (ex.: contraste de cores, labels de formulários, estrutura semântica de headings).
 
 ---
@@ -136,9 +136,10 @@ lab05/
 │   └── validar_piloto.py                # [#166] Validador dos dados do piloto
 ├── docker/                              # [#166] Compose, instalação e dados sintéticos do Moodle
 ├── tests/                               # [#166] Testes dos scripts
+├── pyproject.toml                       # [#166] Dependências dos scripts
 ├── dados/
 │   ├── piloto/                          # Dados reais do piloto (CSV, JSON e axe/)
-│   └── reais/                           # Dados consolidados da coleta (Sprint S02)
+│   └── reais/                           # Dados consolidados da coleta (Sprint S02, a criar)
 ├── enunciado.md                         # Enunciado oficial da disciplina
 └── README.md                            # Guia central do Lab05 e instruções de reprodução
 ```
@@ -162,7 +163,7 @@ lab05/
 ### 7.1. O que foi executado
 
 - Duas instâncias reais (Moodle 4.5.16 e 5.3.1) em Docker, instaladas por CLI do zero, com o mesmo curso sintético, o mesmo estudante e as mesmas configurações de PHP e de limites (2 CPUs e 2 GB por instância).
-- 80 requisições de desempenho (10 repetições × 4 telas × 2 versões), em ordem alternada, com pausa aleatória de 200 a 500 ms e purga de cache antes da coleta. Dados em `dados/piloto/amostra_piloto.csv` e `resumo_piloto.json`. O piloto foi executado duas vezes na mesma máquina (a 1ª execução serviu de ensaio, e a 2ª é a versionada).
+- 80 requisições de desempenho (10 repetições × 4 telas × 2 versões), em ordem alternada, com pausa aleatória de 200 a 500 ms e purga de cache antes da coleta. Dados em `dados/piloto/amostra_piloto.csv` e `resumo_piloto.json`. O piloto teve duas execuções completas na mesma máquina (a 1ª serviu de ensaio, e a 2ª é a versionada), além de uma tentativa abortada (P12).
 - 8 auditorias axe-core (4 telas × 2 versões) com as tags WCAG 2.0/2.1 A e AA, em `dados/piloto/axe/`.
 - Validação com `scripts/validar_piloto.py`: esquema do CSV, 80 linhas, 10 amostras por tela e versão, `status_http = 200`, TTFB positivo e não maior que o tempo total, uma rota por tela, cache frio só na repetição 1, ordem alternada e resumo JSON igual ao recálculo a partir do CSV. Também confere `meta.origem = real`, os releases exatos e os 8 relatórios axe. Resultado: sem problemas. Os testes (`tests/`, `pytest`) rodam o validador sobre os dados versionados.
 
@@ -183,7 +184,7 @@ Os dados que o #164 havia versionado eram sintéticos (distribuições lognormai
 | P9 | O Moodle não expõe a versão na página de login (sem `<meta generator>`). | O `release` é lido de `version.php` dentro do contêiner e gravado em `resumo_piloto.json` (`meta.releases_moodle`). |
 | P10 | Os nomes de colunas do plano (`status_code`, `total_time_ms`, ...) divergiam do CSV. | O plano (§3.3) adota os nomes do CSV, que o `validar_piloto.py` e a análise do #167 consomem. |
 | P11 | Só a repetição 1 é fria (n = 1 por tela e versão). Nas telas autenticadas a 1ª requisição ficou entre 1,1 e 2,2 vezes a mediana (maior caso: dashboard 4.5, 195 ms contra 90 ms). Na tela pública `login` ela levou 458 ms (4.5) e 505 ms (5.3), contra medianas de 43 e 45 ms. Média e p95 do resumo misturam frio e quente. | **Ajuste proposto, decisão no #167:** analisar `cold` e `warm` em separado. Para a S02, avaliar mais repetições frias (purga entre elas) em vez de uma por grupo. |
-| P12 | Em uma tentativa intermediária, o login do estudante foi recusado ("Invalid login") três vezes seguidas, com a mesma senha que funcionou antes e depois (o contador `login_failed_count_since_success` ficou em 3). Não foi reproduzido nem explicado. | Os scripts abortam com mensagem clara (`Falha de autenticação`) sem gravar dados parciais, e a execução foi repetida com sucesso. Se voltar na S02, investigar antes de aumentar o volume. |
+| P12 | Em uma tentativa intermediária, o login do estudante foi recusado ("Invalid login") três vezes seguidas, com a mesma senha que funcionou antes e depois (o contador `login_failed_count_since_success` ficou em 3). Não foi reproduzido nem explicado. | Os scripts abortam com mensagem clara (`Falha de autenticação`) sem gravar dados parciais (`auditoria_axe.py` só grava os relatórios depois de auditar as 8 combinações), e a execução foi repetida com sucesso. Se voltar na S02, investigar antes de aumentar o volume. |
 | P13 | A ordem é fixa: 4.5 sempre precede 5.3 dentro de cada par. A "ordem alternada balanceada" do plano 1.0 não se cumpre (a versão 5.3 sempre é medida logo após a 4.5). | **Decisão no #167/S02:** inverter a ordem em metade das repetições (ABBA) ou sortear. Não alterado no piloto, para manter o formato validado. |
 
 ### 7.3. Resultados descritivos do piloto (TTFB, ms, n = 10 por célula)
@@ -195,7 +196,7 @@ Os dados que o #164 havia versionado eram sintéticos (distribuições lognormai
 | curso | 88,97 (14,00) | 95,31 (5,74) |
 | questionario | 82,89 (14,63) | 90,81 (7,85) |
 
-Todas as 80 requisições retornaram 200. O axe-core não reportou violações em nenhuma das 8 combinações (22 a 28 regras aprovadas por tela; as regras "incompletas", que exigem revisão manual, são 0 ou 1 por tela e ficam registradas nos relatórios). O motor foi verificado manualmente com uma página que contém violações conhecidas (detectou `image-alt`, `label`, `html-has-lang` e `document-title`). Entre a 1ª e a 2ª execução do piloto, as medianas variaram até cerca de 6 ms na mesma configuração (por exemplo, `curso` 4.5: 83,45 e 88,97 ms), o que indica o nível de ruído esperado. Com n = 10 e uma única passada, estes números só validam o pipeline. A comparação estatística fica para o #167.
+Todas as 80 requisições retornaram 200. O axe-core não reportou violações em nenhuma das 8 combinações (22 a 28 regras aprovadas por tela; as regras "incompletas", que exigem revisão manual, são 0 ou 1 por tela e ficam registradas nos relatórios). O motor foi verificado manualmente com uma página que contém violações conhecidas (detectou `image-alt`, `label`, `html-has-lang` e `document-title`). Entre a 1ª e a 2ª execução do piloto, as medianas variaram até cerca de 6 ms na mesma configuração (por exemplo, `curso` 4.5: 83,45 e 88,97 ms), o que indica o nível de ruído esperado. Esse ruído tem o tamanho das diferenças entre versões vistas aqui (2 a 8 ms nas medianas): na tela `dashboard`, a mediana da 4.5 ficou abaixo da 5.3 numa execução e acima na outra (95,56 contra 89,99 ms na 1ª, e 90,09 contra 92,34 ms na 2ª). Com n = 10 e uma única passada, estes números só validam o pipeline. A comparação estatística fica para o #167.
 
 ### 7.4. Como reproduzir
 
