@@ -1,0 +1,62 @@
+# Ambiente do piloto Lab05: Moodle 4.5 LTS e 5.3 LTS lado a lado, com a mesma
+name: lab05
+# infraestrutura (PHP 8.3, MariaDB 11.4, mesmos limites de CPU/memória e OPcache).
+# O código do Moodle vem de docker/codigo/ (ver preparar_codigo.sh) e não é versionado.
+x-moodle: &moodle
+  image: moodlehq/moodle-php-apache:8.3
+  cpus: "2.0"
+  mem_limit: 2048m
+  restart: "no"
+
+x-db: &db
+  image: mariadb:11.4
+  restart: "no"
+  command: >-
+    --character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci
+    --innodb-file-per-table=1
+  environment:
+    MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?defina em docker/.env}
+    MYSQL_DATABASE: moodle
+    MYSQL_USER: moodle
+    MYSQL_PASSWORD: ${MYSQL_PASSWORD:?defina em docker/.env}
+  healthcheck:
+    test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+    interval: 5s
+    timeout: 5s
+    retries: 30
+
+services:
+  db45:
+    <<: *db
+    volumes: [db45:/var/lib/mysql]
+  db53:
+    <<: *db
+    volumes: [db53:/var/lib/mysql]
+
+  moodle45:
+    <<: *moodle
+    depends_on:
+      db45: {condition: service_healthy}
+    ports: ["127.0.0.1:8045:80"]
+    volumes:
+      - ./php-moodle.ini:/usr/local/etc/php/conf.d/zz-lab05.ini:ro
+      - ./codigo/moodle-4.5:/var/www/html
+      - data45:/var/www/moodledata
+
+  moodle53:
+    <<: *moodle
+    depends_on:
+      db53: {condition: service_healthy}
+    ports: ["127.0.0.1:8053:80"]
+    environment:
+      APACHE_DOCUMENT_ROOT: /var/www/html/public  # Moodle 5.x serve a partir de public/
+    volumes:
+      - ./php-moodle.ini:/usr/local/etc/php/conf.d/zz-lab05.ini:ro
+      - ./codigo/moodle-5.3:/var/www/html
+      - data53:/var/www/moodledata
+
+volumes:
+  db45:
+  db53:
+  data45:
+  data53:

@@ -57,3 +57,6 @@ lab03/dados/.regenerar/
 
 # Clone aninhado acidental
 /laboratorio-experimentacao-de-software/
+
+# Lab05: código do Moodle e segredos do ambiente Docker
+lab05/docker/codigo/
