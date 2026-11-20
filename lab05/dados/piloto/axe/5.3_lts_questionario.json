@@ -1,0 +1,16 @@
+{
+  "versao": "5.3_lts",
+  "tela": "questionario",
+  "rota": "/mod/quiz/view.php?id=6",
+  "total_violacoes": 0,
+  "por_impacto": {
+    "critical": 0,
+    "serious": 0,
+    "moderate": 0,
+    "minor": 0,
+    "indefinido": 0
+  },
+  "regras_aprovadas": 28,
+  "regras_incompletas": 1,
+  "violacoes": []
+}
