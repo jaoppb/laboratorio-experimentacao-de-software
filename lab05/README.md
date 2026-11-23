@@ -1,6 +1,6 @@
 # Lab05 — Experimento em Software Real: Medindo o que Importa em Produção
 
-**Sprint 1:** Proposta do software (Moodle) + Pergunta de pesquisa + GQM e hipóteses + 7 Categorias + Plano de coleta e instrumentação + Plano de análise + Coleta piloto (executada em Moodle real).
+**Sprint 1:** Proposta do software (Moodle) + Pergunta de pesquisa + GQM e hipóteses + 7 Categorias + Plano de coleta e instrumentação + Plano de análise + Coleta piloto (executada em Moodle real) + Análise do piloto e consolidação da entrega.
 
 - **Repositório:** <https://github.com/jaoppb/laboratorio-experimentacao-de-software>
 - **GitHub Projects:** <https://github.com/users/jaoppb/projects/3/views/1>
@@ -43,6 +43,7 @@ Cada integrante é responsável por áreas metodológicas e técnicas estruturad
 | **#164** | Marcela Campos | Papel B | [docs/plano_coleta_instrumentacao.md](docs/plano_coleta_instrumentacao.md) — Ambiente Docker, roteiro de coleta, instrumentação HTTP/axe, regras de ética e [scripts/coleta_piloto.py](scripts/coleta_piloto.py). |
 | **#165** | Marcela Campos | Papel C | [docs/plano_analise.md](docs/plano_analise.md) — Escalas de métricas, estatística descritiva, teste de Mann-Whitney, tamanho do efeito ($\Delta$ de Cliff), poder estatístico e fórmula de estimativa de impacto. |
 | **#166** | Marcela Campos | Papel B | [docs/plano_coleta_instrumentacao.md](docs/plano_coleta_instrumentacao.md) §7 — Coleta piloto em Moodle real (Docker), dados em `dados/piloto/`, validador, auditoria axe-core e registro de problemas e ajustes. |
+| **#167** | Marcela Campos | Papel C | [docs/analise_piloto.md](docs/analise_piloto.md) — Análise do piloto (pipeline e suficiência da amostra) e [docs/relatorio_s01.md](docs/relatorio_s01.md) — Índice e estado das entregas da S01. |
 
 ---
 
@@ -56,7 +57,7 @@ Reprodução (requer Docker, `git` e Python >= 3.9):
 cd lab05
 python3 -m venv .venv && . .venv/bin/activate
 # versões mínimas em pyproject.toml (dependências e extras axe/dev)
-pip install httpx numpy pytest playwright axe-playwright-python
+pip install httpx numpy scipy pytest playwright axe-playwright-python
 playwright install chromium
 
 cp docker/.env.example docker/.env     # defina senhas locais
@@ -69,6 +70,7 @@ set -a; . docker/.env; set +a          # exporta MOODLE_ALUNO_SENHA
 python scripts/coleta_piloto.py
 python scripts/auditoria_axe.py
 python scripts/validar_piloto.py       # confere completude, consistência e formato
+python scripts/analisar_piloto.py      # análise do piloto (#167); não precisa de Docker
 pytest                                 # testes dos scripts (sem rede e sem Docker)
 ```
 
@@ -76,6 +78,7 @@ Saídas versionadas em `dados/piloto/`:
 - `amostra_piloto.csv`: 80 requisições com versão, tela, repetição, estado de cache, status, TTFB, tempo total e tamanho.
 - `resumo_piloto.json`: mediana, IQR, média, p95, mínimo e máximo por tela e versão, mais `meta` (releases exatos, data, purga de cache).
 - `axe/<versao>_<tela>.json`: violações WCAG 2.1 A/AA por tela e versão.
+- `analise_piloto.json`: saída de `scripts/analisar_piloto.py` (TTFB `warm` por tela, Δ de Cliff, n necessário, M3 e M4). Resultados em [docs/analise_piloto.md](docs/analise_piloto.md).
 
 Para apagar o ambiente e os volumes: `docker compose -f docker/docker-compose.yml down -v` (apague também `docker/codigo/*/config.php` antes de reinstalar).
 
@@ -100,7 +103,9 @@ lab05/
 │   ├── escolha_software.md              # [#162] Evidências dos 3 critérios
 │   ├── planejamento_pesquisa.md         # [#163] GQM, hipóteses, 7 categorias
 │   ├── plano_coleta_instrumentacao.md   # [#164/#166] Ambiente, roteiro, ética e piloto
-│   └── plano_analise.md                 # [#165] Métricas, testes, poder e impacto
+│   ├── plano_analise.md                 # [#165] Métricas, testes, poder e impacto
+│   ├── analise_piloto.md                # [#167] Pipeline e suficiência da amostra
+│   └── relatorio_s01.md                 # [#167] Índice e estado das entregas da S01
 ├── docker/                              # [#166] Ambiente Docker do piloto
 │   ├── docker-compose.yml
 │   ├── php-moodle.ini
@@ -111,12 +116,14 @@ lab05/
 ├── scripts/
 │   ├── coleta_piloto.py                 # [#164/#166] Medição HTTP/TTFB (real e --simulado)
 │   ├── auditoria_axe.py                 # [#166] Auditoria axe-core
-│   └── validar_piloto.py                # [#166] Validador dos dados do piloto
-├── tests/                               # [#166] Testes dos scripts
+│   ├── validar_piloto.py                # [#166] Validador dos dados do piloto
+│   └── analisar_piloto.py               # [#167] Análise do piloto
+├── tests/                               # [#166/#167] Testes dos scripts
 ├── dados/
 │   └── piloto/                          # Dados reais do piloto
 │       ├── amostra_piloto.csv
 │       ├── resumo_piloto.json
+│       ├── analise_piloto.json          # [#167]
 │       └── axe/
 ├── pyproject.toml                       # Dependências dos scripts
 ├── enunciado.md                         # Enunciado oficial da disciplina
