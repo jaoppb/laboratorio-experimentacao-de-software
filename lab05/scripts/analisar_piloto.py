@@ -19,9 +19,14 @@ da diferença entre as versões.
 
 Uso::
 
-    python scripts/analisar_piloto.py [--dir dados/piloto] [--saida analise_piloto.json]
+    python scripts/analisar_piloto.py [--dir dados/piloto] [--saida ARQUIVO]
+
+Por padrão grava ``<dir>/analise_piloto.json``.
 
 Sai com código 0 e grava o JSON, ou 1 se os dados do piloto não passam no validador.
+
+M3 conta apenas respostas 5xx: um timeout aborta a coleta (``ErroColeta``) e não chega
+ao CSV.
 """
 
 from __future__ import annotations
@@ -176,13 +181,20 @@ def estimar_n_necessario(
     n_simulacoes: int = N_SIMULACOES_PADRAO,
     grade: Sequence[int] = GRADE_N,
 ) -> dict[str, Any]:
-    """Menor ``n`` da grade com poder >= 80%, mais a curva de poder simulada."""
-    curva = {n: simular_poder(base, nova, n, rng, n_simulacoes) for n in grade}
+    """Menor ``n`` da grade com poder >= 80%, mais a curva de poder simulada.
+
+    O N planejado entra na grade, de modo que ``poder_no_n_planejado`` é um ponto da
+    própria curva.
+    """
+    curva = {
+        n: simular_poder(base, nova, n, rng, n_simulacoes)
+        for n in sorted({*grade, N_PLANEJADO})
+    }
     n_necessario = next((n for n, poder in curva.items() if poder >= PODER_ALVO), None)
     return {
         "n_necessario": n_necessario,
         "poder_por_n": {str(n): round(poder, 3) for n, poder in curva.items()},
-        "poder_no_n_planejado": round(simular_poder(base, nova, N_PLANEJADO, rng, n_simulacoes), 3),
+        "poder_no_n_planejado": round(curva[N_PLANEJADO], 3),
     }
 
 
@@ -240,57 +252,79 @@ def descrever(valores: Sequence[float]) -> dict[str, float | int]:
     }
 
 
+def comparar_tela(
+    base: Sequence[float],
+    nova: Sequence[float],
+    cold: dict[str, float],
+    semente: int,
+    indice_tela: int,
+    n_bootstrap: int,
+    n_simulacoes: int,
+) -> dict[str, Any]:
+    """M1 de uma tela: descritiva, Mann-Whitney, Δ de Cliff, suficiência e cold descritivo.
+
+    O bootstrap e a simulação de poder usam fluxos aleatórios independentes, para que
+    mudar ``n_bootstrap`` não altere a suficiência.
+    """
+    rng_bootstrap = np.random.default_rng([semente, indice_tela, 0])
+    rng_poder = np.random.default_rng([semente, indice_tela, 1])
+    warm = {VERSAO_BASE: descrever(base), VERSAO_NOVA: descrever(nova)}
+    mediana_base = warm[VERSAO_BASE]["mediana_ms"]
+    mediana_nova = warm[VERSAO_NOVA]["mediana_ms"]
+    desvio_base = warm[VERSAO_BASE]["desvio_padrao_ms"]
+    razao = mediana_nova / mediana_base
+    d = delta_cliff(base, nova)
+    inferior, superior = ic_bootstrap_cliff(base, nova, rng_bootstrap, n_bootstrap)
+    estimativa = estimar_n_necessario(base, nova, rng_poder, n_simulacoes)
+    return {
+        "warm": warm,
+        "razao_medianas": round(razao, 3),
+        "variacao_percentual": round((razao - 1) * 100, 1),
+        "razao_desvios": (
+            round(warm[VERSAO_NOVA]["desvio_padrao_ms"] / desvio_base, 2) if desvio_base else None
+        ),
+        "mann_whitney": mann_whitney(base, nova),
+        "delta_cliff": {
+            "d": round(d, 3),
+            "magnitude": classificar_cliff(d),
+            "ic95": [round(inferior, 3), round(superior, 3)],
+        },
+        "suficiencia": {
+            **estimativa,
+            "faixa": classificar_suficiencia(estimativa["n_necessario"]),
+        },
+        "cold": {
+            versao: {
+                "ttfb_ms": valor,
+                "razao_a_mediana_warm": round(valor / warm[versao]["mediana_ms"], 2),
+            }
+            for versao, valor in cold.items()
+        },
+    }
+
+
 def analisar_ttfb(
     amostras: list[dict[str, Any]],
     semente: int = SEMENTE_PADRAO,
     n_bootstrap: int = N_BOOTSTRAP_PADRAO,
     n_simulacoes: int = N_SIMULACOES_PADRAO,
 ) -> dict[str, Any]:
-    """M1: comparação 4.5 x 5.3 por tela, só com repetições warm."""
+    """M1: comparação 4.5 x 5.3 por tela, só com repetições warm (cold só descrito)."""
     telas: dict[str, Any] = {}
     for indice, (tela, _) in enumerate(TELAS):
-        rng = np.random.default_rng([semente, indice])
-        base = _ttfb(amostras, VERSAO_BASE, tela, "warm")
-        nova = _ttfb(amostras, VERSAO_NOVA, tela, "warm")
-        d = delta_cliff(base, nova)
-        inferior, superior = ic_bootstrap_cliff(base, nova, rng, n_bootstrap)
-        desc_base, desc_nova = descrever(base), descrever(nova)
-        estimativa = estimar_n_necessario(base, nova, rng, n_simulacoes)
-        warm = {VERSAO_BASE: desc_base, VERSAO_NOVA: desc_nova}
-        cold = {versao: _ttfb(amostras, versao, tela, "cold") for versao in VERSOES}
-        telas[tela] = {
-            "warm": warm,
-            "razao_medianas": round(desc_nova["mediana_ms"] / desc_base["mediana_ms"], 3),
-            "variacao_percentual": round(
-                (desc_nova["mediana_ms"] - desc_base["mediana_ms"])
-                / desc_base["mediana_ms"]
-                * 100,
-                1,
-            ),
-            "razao_desvios": round(
-                desc_nova["desvio_padrao_ms"] / desc_base["desvio_padrao_ms"], 2
-            ),
-            "mann_whitney": mann_whitney(base, nova),
-            "delta_cliff": {
-                "d": round(d, 3),
-                "magnitude": classificar_cliff(d),
-                "ic95": [round(inferior, 3), round(superior, 3)],
-            },
-            "suficiencia": {
-                **estimativa,
-                "faixa": classificar_suficiencia(estimativa["n_necessario"]),
-            },
-            "cold": {
-                versao: {
-                    "ttfb_ms": valores[0],
-                    "razao_a_mediana_warm": round(
-                        valores[0] / warm[versao]["mediana_ms"], 2
-                    ),
-                }
-                for versao, valores in cold.items()
-                if len(valores) == 1
-            },
-        }
+        # o validador garante exatamente uma repetição cold por tela e versão
+        cold = {}
+        for versao in VERSOES:
+            (cold[versao],) = _ttfb(amostras, versao, tela, "cold")
+        telas[tela] = comparar_tela(
+            _ttfb(amostras, VERSAO_BASE, tela, "warm"),
+            _ttfb(amostras, VERSAO_NOVA, tela, "warm"),
+            cold,
+            semente,
+            indice,
+            n_bootstrap,
+            n_simulacoes,
+        )
     ajustados = ajustar_holm([t["mann_whitney"]["p"] for t in telas.values()])
     for tela, p_holm in zip(telas, ajustados):
         telas[tela]["mann_whitney"]["p_holm"] = p_holm
@@ -345,7 +379,8 @@ def analisar_acessibilidade(
         "p_minimo_wilcoxon": p_minimo_wilcoxon(len(nao_nulas)),
     }
     if nao_nulas:
-        teste = stats.wilcoxon(diferencas, zero_method="wilcox", alternative="two-sided")
+        # pares nulos saem antes (método de Wilcoxon), o que mantém o teste exato em n pequeno
+        teste = stats.wilcoxon(nao_nulas, alternative="two-sided")
         resultado["wilcoxon"] = {"aplicavel": True, "p": float(teste.pvalue)}
     else:
         resultado["wilcoxon"] = {
@@ -403,7 +438,7 @@ def formatar_resumo(analise: dict[str, Any]) -> str:
         n_nec = suf["n_necessario"] if suf["n_necessario"] is not None else f">{GRADE_N[-1]}"
         linhas.append(
             f"{tela:<14}{r['warm'][VERSAO_BASE]['mediana_ms']:>9.2f}"
-            f"{r['warm'][VERSAO_NOVA]['mediana_ms']:>9.2f}{r['razao_medianas']:>7.2f}"
+            f"{r['warm'][VERSAO_NOVA]['mediana_ms']:>9.2f}{r['razao_medianas']:>7.3f}"
             f"{d['d']:>7.2f}  [{d['ic95'][0]:>5.2f}, {d['ic95'][1]:>5.2f}]  "
             f"{mw['p']:>7.3f}{mw['p_holm']:>8.3f}{n_nec!s:>8}  {suf['faixa']}"
         )

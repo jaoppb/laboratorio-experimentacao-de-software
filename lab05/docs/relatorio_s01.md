@@ -34,4 +34,5 @@ O piloto rodou 80 requisições HTTP e 8 auditorias axe em duas instâncias reai
 | Repetições `cold`: só n = 1 por grupo; planejar coleta fria à parte, com purga entre as repetições | P11 | S02 (orientação em [analise_piloto.md](analise_piloto.md) §6) |
 | M4 por tela pareada não tem poder (Wilcoxon exato: p mínimo de 0,125 com 4 telas) | [analise_piloto.md](analise_piloto.md) §5 | S02: definir a unidade pareada |
 | `planejamento_pesquisa.md` (PP1) fala em "tentativa de questionário", enquanto o piloto mede a entrada do quiz | #163 e #172 | Alinhar o texto quando o #172 for resolvido |
+| M3 não captura timeouts: o runner aborta a coleta em vez de gravar a falha | [analise_piloto.md](analise_piloto.md) §5 | S02: gravar o timeout como erro |
 | Login recusado sem explicação em uma tentativa intermediária | P12 | Investigar antes de aumentar o volume, se voltar na S02 |

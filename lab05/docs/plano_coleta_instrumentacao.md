@@ -138,7 +138,7 @@ lab05/
 │   ├── validar_piloto.py                # [#166] Validador dos dados do piloto
 │   └── analisar_piloto.py               # [#167] Análise do piloto
 ├── docker/                              # [#166] Compose, instalação e dados sintéticos do Moodle
-├── tests/                               # [#166] Testes dos scripts
+├── tests/                               # [#166/#167] Testes dos scripts
 ├── pyproject.toml                       # [#166] Dependências dos scripts
 ├── dados/
 │   ├── piloto/                          # Dados reais do piloto (CSV, JSON e axe/)

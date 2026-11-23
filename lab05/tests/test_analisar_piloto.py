@@ -97,6 +97,13 @@ def test_comparar_proporcoes_usa_fisher_com_contagem_esperada_baixa():
     assert resultado == {"teste": "fisher_exato", "p": pytest.approx(1.0)}
 
 
+def test_comparar_proporcoes_fronteira_entre_fisher_e_z():
+    # 5 erros em 50 + 5 em 50: contagem esperada mínima = 5 -> Z
+    assert ap.comparar_proporcoes(5, 50, 5, 50)["teste"] == "z_duas_proporcoes"
+    # 4 erros em 50 + 5 em 50: contagem esperada mínima = 4,5 -> Fisher
+    assert ap.comparar_proporcoes(4, 50, 5, 50)["teste"] == "fisher_exato"
+
+
 def test_comparar_proporcoes_usa_z_com_contagens_altas():
     resultado = ap.comparar_proporcoes(20, 100, 50, 100)
     assert resultado["teste"] == "z_duas_proporcoes"
@@ -184,6 +191,36 @@ def test_ttfb_razao_e_variacao_percentual_sao_consistentes(ttfb):
         assert tela["variacao_percentual"] == pytest.approx((razao - 1) * 100, abs=0.1)
 
 
+def test_razao_desvios_e_nula_quando_a_base_e_constante():
+    constante = [50.0] * 9
+    variavel = [40.0 + i for i in range(9)]
+    tela = ap.comparar_tela(
+        constante, variavel, {v: 100.0 for v in cp.VERSOES}, 1, 0, N_PEQUENO, N_PEQUENO
+    )
+    assert tela["razao_desvios"] is None
+
+
+def test_ttfb_e_reprodutivel_com_a_mesma_semente(amostras, ttfb):
+    de_novo = ap.analisar_ttfb(amostras, n_bootstrap=N_PEQUENO, n_simulacoes=N_PEQUENO)
+    assert de_novo == ttfb
+
+
+def test_mudar_o_bootstrap_nao_altera_a_suficiencia(amostras, ttfb):
+    outro = ap.analisar_ttfb(amostras, n_bootstrap=N_PEQUENO // 2, n_simulacoes=N_PEQUENO)
+    for tela in ttfb:
+        assert outro[tela]["suficiencia"] == ttfb[tela]["suficiencia"]
+
+
+def test_suficiencia_e_internamente_coerente(ttfb):
+    for tela in ttfb.values():
+        suf = tela["suficiencia"]
+        curva = {int(n): poder for n, poder in suf["poder_por_n"].items()}
+        esperado = next((n for n, poder in curva.items() if poder >= ap.PODER_ALVO), None)
+        assert suf["n_necessario"] == esperado
+        assert suf["faixa"] == ap.classificar_suficiencia(suf["n_necessario"])
+        assert suf["poder_no_n_planejado"] == curva[ap.N_PLANEJADO]
+
+
 # --- M3 e M4 ---------------------------------------------------------------- #
 
 
@@ -193,6 +230,13 @@ def test_erros_do_piloto_real_sao_zero(amostras):
         assert erros["por_versao"][versao]["erros"] == 0
         assert erros["por_versao"][versao]["n"] == 40
     assert erros["comparacao"]["teste"] == "fisher_exato"
+
+
+@pytest.mark.parametrize(("status", "contado"), [(499, 0), (500, 1), (599, 1)])
+def test_erros_fronteiras_da_regra_5xx(amostras, status, contado):
+    alteradas = [dict(a) for a in amostras]
+    next(a for a in alteradas if a["versao"] == "5.3_lts")["status_http"] = status
+    assert ap.analisar_erros(alteradas)["por_versao"]["5.3_lts"]["erros"] == contado
 
 
 def test_erros_conta_apenas_status_5xx(amostras):
@@ -234,6 +278,14 @@ def test_acessibilidade_com_diferencas_aplica_wilcoxon():
     assert resultado["violacoes_por_severidade"]["5.3_lts"]["serious"] == 10
 
 
+def test_acessibilidade_com_diferencas_mistas_descarta_pares_nulos():
+    resultado = ap.analisar_acessibilidade(_relatorios((0, 0, 1, 2)))
+    assert resultado["pares_com_diferenca"] == 2
+    assert resultado["p_minimo_wilcoxon"] == pytest.approx(0.5)
+    assert resultado["wilcoxon"]["aplicavel"] is True
+    assert resultado["wilcoxon"]["p"] >= resultado["p_minimo_wilcoxon"]
+
+
 def test_acessibilidade_dos_dados_versionados_nao_tem_violacoes():
     resultado = ap.analisar_acessibilidade(ap.ler_axe(cp.DIR_DADOS_PILOTO))
     assert resultado["wilcoxon"]["aplicavel"] is False
@@ -251,6 +303,24 @@ def test_json_versionado_bate_com_o_recalculo_dos_dados(ttfb):
             assert salvo[chave] == recalculado[chave]
         assert salvo["delta_cliff"]["d"] == recalculado["delta_cliff"]["d"]
         assert salvo["mann_whitney"] == recalculado["mann_whitney"]
+
+
+def test_json_versionado_tem_m3_e_m4_iguais_ao_recalculo(amostras):
+    versionado = json.loads((cp.DIR_DADOS_PILOTO / ap.ARQUIVO_SAIDA).read_text(encoding="utf-8"))
+    assert versionado["erros_http"] == ap.analisar_erros(amostras)
+    recalculado = ap.analisar_acessibilidade(ap.ler_axe(cp.DIR_DADOS_PILOTO))
+    assert versionado["acessibilidade"] == recalculado
+
+
+def test_json_versionado_tem_suficiencia_coerente():
+    versionado = json.loads((cp.DIR_DADOS_PILOTO / ap.ARQUIVO_SAIDA).read_text(encoding="utf-8"))
+    for tela in versionado["ttfb"].values():
+        suf = tela["suficiencia"]
+        curva = {int(n): poder for n, poder in suf["poder_por_n"].items()}
+        esperado = next((n for n, poder in curva.items() if poder >= ap.PODER_ALVO), None)
+        assert suf["n_necessario"] == esperado
+        assert suf["faixa"] == ap.classificar_suficiencia(suf["n_necessario"])
+        assert suf["poder_no_n_planejado"] == curva[ap.N_PLANEJADO]
 
 
 def test_analisar_recusa_dados_invalidos(tmp_path):
