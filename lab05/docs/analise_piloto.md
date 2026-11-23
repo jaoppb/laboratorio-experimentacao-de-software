@@ -26,7 +26,7 @@ Esta análise **não** diz se a 5.3 é mais lenta ou mais rápida que a 4.5. O p
 | Múltiplas telas | Reporta o p bruto e o p ajustado por Holm sobre as 4 telas. | São 4 comparações sobre os mesmos dados de coleta. |
 | Efeito | Δ de Cliff (5.3 contra 4.5), com IC 95% por bootstrap percentil (10.000 reamostras) e limiares de Romano et al. | Plano #165 §4. |
 | Suficiência | Para cada tela, o menor n da grade (10, 20, 30, 40, 60, 80, 100, 120, 160, 200) com poder simulado >= 80%. A simulação reamostra com reposição os 9 valores `warm` de cada versão (2.000 simulações por n). | Usa a variância e o deslocamento observados, sem supor uma distribuição. |
-| Reprodutibilidade | Semente 167 (`numpy.random.default_rng([semente, índice da tela])`). Mesmos dados e mesmas versões de numpy e scipy dão o mesmo JSON. | |
+| Reprodutibilidade | Semente 167, com fluxos independentes por tela: `numpy.random.default_rng([semente, índice da tela, 0])` para o bootstrap e `[semente, índice da tela, 1]` para a simulação de poder (mudar `--n-bootstrap` não altera a suficiência). Mesmos dados e mesmas versões de numpy e scipy dão o mesmo JSON. | |
 
 ## 3. Pipeline
 
@@ -57,9 +57,9 @@ Valores em ms. Leitura:
 | M3: erros HTTP (5xx) | 0 em 40 requisições por versão (todas com 200) | IC de Wilson 95% de 0 a 8,8% em cada versão. Fisher exato (contagens esperadas < 5): p = 1,0. |
 | M4: violações axe | 0 violações nas 8 combinações (tela × versão) | Wilcoxon pareado **não aplicável**: as 4 diferenças são 0. |
 
-M3 conta só respostas 5xx. O "timeout" da definição do GQM não aparece no CSV, porque um timeout aborta a coleta (`ErroColeta`, 60 s por requisição) em vez de gerar uma linha. Para a S02, o runner precisa registrar timeouts como erro (ver §7).
+O 0 de M3 vale **por construção**: o runner aborta a coleta em qualquer status diferente de 200 (`ErroColeta`) e em timeouts (`httpx.TimeoutException`, 60 s por requisição), e o validador exige `status_http = 200`. Um CSV válido do piloto não pode conter 5xx nem timeout, então M3 não foi realmente testado (a definição do GQM é "5xx e timeout"). Para a S02, o runner precisa gravar 5xx e timeouts como linhas de erro em vez de abortar (ver §7).
 
-Nenhuma conclusão estatística sobre erro ou acessibilidade sai do piloto: o resultado é "não observado em 40 requisições" e "o axe não encontrou violações nas 4 telas", e só.
+Nenhuma conclusão estatística sobre erro ou acessibilidade sai do piloto: o resultado é "nenhuma falha registrada" (por construção, ver acima) e "o axe não encontrou violações nas 4 telas", e só.
 
 Um ponto de planejamento para a S02: com 4 telas pareadas, o Wilcoxon exato **nunca** chega a p < 0,05 (o menor p bicaudal possível é 2/2⁴ = 0,125). Para M4 ter poder de teste, o contraste precisa de mais unidades pareadas (por exemplo, por regra do axe ou por elemento afetado) ou de mais telas. Essa escolha fica para a S02 e não altera o plano #165 agora.
 
@@ -97,7 +97,7 @@ Consequências para a S02, que ficam como orientação e não alteram o #165:
 | Conclusão | Quatro comparações. | p ajustado por Holm reportado ao lado do p bruto. |
 | Construto | A tela `questionario` mede a **entrada do quiz** (quiz sem questões), não a tentativa em período de prova. | Rotulada como "entrada do quiz". Follow-up #172 para a S02. |
 | Construto | O TTFB mede só o tempo de servidor, sem rede nem renderização. | Limite mantido do #163/#165. |
-| Construto | M3 não captura timeouts: o piloto aborta a coleta em vez de registrar a falha. | Registrado em §5. Na S02, gravar o timeout como erro em vez de abortar. |
+| Construto | M3 não captura falhas: o piloto aborta em qualquer status diferente de 200 e em timeouts, em vez de registrá-los. | Registrado em §5. Na S02, gravar 5xx e timeouts como erros em vez de abortar. |
 | Externa | Um servidor local, dados sintéticos, sem plugins. | Sem extrapolação para instalações reais. |
 
 ## 8. Como reproduzir

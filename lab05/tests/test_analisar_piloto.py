@@ -211,14 +211,32 @@ def test_mudar_o_bootstrap_nao_altera_a_suficiencia(amostras, ttfb):
         assert outro[tela]["suficiencia"] == ttfb[tela]["suficiencia"]
 
 
+def _confere_suficiencia(suf):
+    """A curva de poder, o n necessário, a faixa e o poder no N planejado são coerentes."""
+    curva = {int(n): poder for n, poder in suf["poder_por_n"].items()}
+    esperado = next((n for n, poder in curva.items() if poder >= ap.PODER_ALVO), None)
+    assert suf["n_necessario"] == esperado
+    assert suf["faixa"] == ap.classificar_suficiencia(suf["n_necessario"])
+    assert suf["poder_no_n_planejado"] == curva[ap.N_PLANEJADO]
+
+
 def test_suficiencia_e_internamente_coerente(ttfb):
     for tela in ttfb.values():
-        suf = tela["suficiencia"]
-        curva = {int(n): poder for n, poder in suf["poder_por_n"].items()}
-        esperado = next((n for n, poder in curva.items() if poder >= ap.PODER_ALVO), None)
-        assert suf["n_necessario"] == esperado
-        assert suf["faixa"] == ap.classificar_suficiencia(suf["n_necessario"])
-        assert suf["poder_no_n_planejado"] == curva[ap.N_PLANEJADO]
+        _confere_suficiencia(tela["suficiencia"])
+
+
+def test_grade_sem_o_n_planejado_e_recusada():
+    with pytest.raises(ValueError, match="N planejado"):
+        ap.estimar_n_necessario(*SEPARADOS, np.random.default_rng(0), grade=(10, 20))
+
+
+def test_ttfb_exige_exatamente_uma_repeticao_cold(amostras):
+    sem_cold = [a for a in amostras if not (a["cache"] == "cold" and a["tela"] == "login")]
+    with pytest.raises(ValueError):
+        ap.analisar_ttfb(sem_cold, n_bootstrap=N_PEQUENO, n_simulacoes=N_PEQUENO)
+    duplicada = amostras + [next(a for a in amostras if a["cache"] == "cold")]
+    with pytest.raises(ValueError):
+        ap.analisar_ttfb(duplicada, n_bootstrap=N_PEQUENO, n_simulacoes=N_PEQUENO)
 
 
 # --- M3 e M4 ---------------------------------------------------------------- #
@@ -283,7 +301,7 @@ def test_acessibilidade_com_diferencas_mistas_descarta_pares_nulos():
     assert resultado["pares_com_diferenca"] == 2
     assert resultado["p_minimo_wilcoxon"] == pytest.approx(0.5)
     assert resultado["wilcoxon"]["aplicavel"] is True
-    assert resultado["wilcoxon"]["p"] >= resultado["p_minimo_wilcoxon"]
+    assert resultado["wilcoxon"]["p"] == pytest.approx(0.5)  # exato, 2 pares de mesmo sinal
 
 
 def test_acessibilidade_dos_dados_versionados_nao_tem_violacoes():
@@ -315,12 +333,7 @@ def test_json_versionado_tem_m3_e_m4_iguais_ao_recalculo(amostras):
 def test_json_versionado_tem_suficiencia_coerente():
     versionado = json.loads((cp.DIR_DADOS_PILOTO / ap.ARQUIVO_SAIDA).read_text(encoding="utf-8"))
     for tela in versionado["ttfb"].values():
-        suf = tela["suficiencia"]
-        curva = {int(n): poder for n, poder in suf["poder_por_n"].items()}
-        esperado = next((n for n, poder in curva.items() if poder >= ap.PODER_ALVO), None)
-        assert suf["n_necessario"] == esperado
-        assert suf["faixa"] == ap.classificar_suficiencia(suf["n_necessario"])
-        assert suf["poder_no_n_planejado"] == curva[ap.N_PLANEJADO]
+        _confere_suficiencia(tela["suficiencia"])
 
 
 def test_analisar_recusa_dados_invalidos(tmp_path):

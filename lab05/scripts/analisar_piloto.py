@@ -25,8 +25,9 @@ Por padrão grava ``<dir>/analise_piloto.json``.
 
 Sai com código 0 e grava o JSON, ou 1 se os dados do piloto não passam no validador.
 
-M3 conta apenas respostas 5xx: um timeout aborta a coleta (``ErroColeta``) e não chega
-ao CSV.
+M3 conta respostas 5xx, mas o runner do piloto aborta a coleta em qualquer status diferente
+de 200 (``ErroColeta``) e em timeouts (``httpx.TimeoutException``), e o validador exige
+200: um piloto válido tem M3 = 0 por construção.
 """
 
 from __future__ import annotations
@@ -183,13 +184,12 @@ def estimar_n_necessario(
 ) -> dict[str, Any]:
     """Menor ``n`` da grade com poder >= 80%, mais a curva de poder simulada.
 
-    O N planejado entra na grade, de modo que ``poder_no_n_planejado`` é um ponto da
+    O N planejado deve estar na grade, de modo que ``poder_no_n_planejado`` é um ponto da
     própria curva.
     """
-    curva = {
-        n: simular_poder(base, nova, n, rng, n_simulacoes)
-        for n in sorted({*grade, N_PLANEJADO})
-    }
+    if N_PLANEJADO not in grade:
+        raise ValueError(f"a grade {tuple(grade)} deve conter o N planejado ({N_PLANEJADO})")
+    curva = {n: simular_poder(base, nova, n, rng, n_simulacoes) for n in grade}
     n_necessario = next((n for n, poder in curva.items() if poder >= PODER_ALVO), None)
     return {
         "n_necessario": n_necessario,
@@ -332,7 +332,11 @@ def analisar_ttfb(
 
 
 def analisar_erros(amostras: list[dict[str, Any]]) -> dict[str, Any]:
-    """M3: erro = status 5xx (timeouts abortam a coleta). Usa as 40 requisições por versão."""
+    """M3: erro = status 5xx, sobre as 40 requisições por versão.
+
+    Os dados do piloto só têm 200 (o runner aborta nos demais status e em timeouts), então
+    o resultado é 0 por construção; a função está pronta para dados da S02 com falhas.
+    """
     contagens = {}
     for versao in VERSOES:
         status = [a["status_http"] for a in amostras if a["versao"] == versao]
