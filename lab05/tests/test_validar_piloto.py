@@ -95,7 +95,7 @@ def test_linha_faltando_aponta_contagem_total_e_por_grupo(tmp_path):
         (0, "repeticao", "11", "fora de 1..10"),
         (1, "repeticao", "0", "fora de 1..10"),
         (79, "cache", "cold", "cache 'cold'"),
-        (1, "versao", "4.5_lts", "não alternada"),
+        (1, "versao", "4.5_lts", "versão repetida no par"),
         (2, "rota", "/outra/", "rotas diferentes"),
     ],
 )
@@ -115,6 +115,21 @@ def test_cache_warm_na_primeira_repeticao_e_apontado(tmp_path):
     colunas, linhas = _linhas(_gravar(tmp_path))
     linhas[0]["cache"] = "warm"
     assert any("cache 'warm'" in p for p in vp.validar_amostras(colunas, linhas))
+
+
+def test_par_com_tela_divergente_e_apontado(tmp_path):
+    colunas, linhas = _linhas(_gravar(tmp_path))
+    linhas[1]["tela"] = "dashboard"
+    assert any("repeticao/tela divergentes" in p for p in vp.validar_amostras(colunas, linhas))
+
+
+def test_ordem_fixa_e_apontada_como_desbalanceada(tmp_path):
+    colunas, linhas = _linhas(_gravar(tmp_path))
+    for i in range(0, len(linhas), 2):
+        linhas[i]["versao"] = cp.VERSOES[0]
+        linhas[i + 1]["versao"] = cp.VERSOES[1]
+    problemas = vp.validar_amostras(colunas, linhas)
+    assert sum("ordem dos pares desbalanceada" in p for p in problemas) == len(cp.TELAS)
 
 
 # --- resumo ---------------------------------------------------------------- #

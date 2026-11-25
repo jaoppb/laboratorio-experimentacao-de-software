@@ -3,7 +3,8 @@
 Protocolo de medição da Sprint Lab05S01 (ver ``docs/plano_coleta_instrumentacao.md``):
 
 - mede TTFB (ms), tempo total (ms), status HTTP e tamanho do corpo por requisição;
-- alterna as versões a cada requisição (4.5 sempre antes de 5.3 em cada par);
+- contrabalanceia a ordem das versões dentro de cada par em padrão ABBA determinístico
+  (alternando ``4.5 -> 5.3`` e ``5.3 -> 4.5`` por repetição e tela);
 - marca a 1ª repetição de cada tela/versão como ``cold`` (após purga de cache) e as
   demais como ``warm``;
 - grava o CSV bruto e o resumo estatístico em JSON.
@@ -150,12 +151,19 @@ def ler_release_moodle(servico: str) -> str:
 Medidor = Callable[[str, str, str, int], "dict[str, Any]"]
 
 
+def ordem_versoes_par(repeticao: int, indice_tela: int) -> tuple[str, ...]:
+    """Devolve ``VERSOES`` na ordem do par ``(repeticao, indice_tela)`` (ABBA determinístico)."""
+    if (repeticao - 1 + indice_tela) % 2 == 0:
+        return VERSOES
+    return tuple(reversed(VERSOES))
+
+
 def coletar_amostras(
     medir: Medidor,
     telas: tuple[tuple[str, str], ...],
     n_repeticoes: int,
 ) -> list[dict[str, Any]]:
-    """Percorre repetição → tela → versão (versões alternadas a cada requisição).
+    """Percorre repetição → tela → versão (ordem contrabalanceada ABBA por par).
 
     ``medir(versao, tela, rota, repeticao)`` devolve ``status_http``, ``ttfb_ms``,
     ``tempo_total_ms`` e ``tamanho_bytes``. Ordem, ``id`` e marcação de cache ficam
@@ -163,8 +171,8 @@ def coletar_amostras(
     """
     amostras: list[dict[str, Any]] = []
     for repeticao in range(1, n_repeticoes + 1):
-        for tela, rota in telas:
-            for versao in VERSOES:
+        for indice_tela, (tela, rota) in enumerate(telas):
+            for versao in ordem_versoes_par(repeticao, indice_tela):
                 amostras.append(
                     {
                         "id": len(amostras) + 1,
@@ -378,7 +386,11 @@ def main(argv: list[str] | None = None) -> int:
         destino = args.saida or DIR_DADOS_SIMULADO
         print(f"[SIMULADO] {args.repeticoes} repetições por tela (dados sintéticos)...")
         amostras = coletar_amostras_simuladas(n_repeticoes=args.repeticoes)
-        meta = {"origem": "simulado", "gerado_em": datetime.now(timezone.utc).isoformat()}
+        meta = {
+            "origem": "simulado",
+            "ordem_pares": "contrabalanceada_abba",
+            "gerado_em": datetime.now(timezone.utc).isoformat(),
+        }
     else:
         senha = os.environ.get("MOODLE_ALUNO_SENHA")
         if not senha:
@@ -415,6 +427,7 @@ def main(argv: list[str] | None = None) -> int:
         meta = {
             "origem": "real",
             "releases_moodle": releases,
+            "ordem_pares": "contrabalanceada_abba",
             "gerado_em": datetime.now(timezone.utc).isoformat(),
             "cache_purgado_antes": not args.sem_purga,
         }

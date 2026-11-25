@@ -64,13 +64,15 @@ def validar_amostras(
     telas_validas = {nome for nome, _ in TELAS}
     rotas_por_tela: dict[str, set[str]] = {}
     contagem: dict[tuple[str, str], int] = {}
-    versao_anterior = None
+    ordens_por_tela: dict[str, dict[tuple[str, str], int]] = {}
+    primeiro_do_par: tuple[int, dict[str, Any]] | None = None
 
     for numero, bruta in enumerate(linhas, start=2):  # linha 1 é o cabeçalho
         try:
             linha = tipar_linha(bruta)
         except (TypeError, ValueError, KeyError) as erro:
             problemas.append(f"linha {numero}: valor não numérico ou ausente ({erro})")
+            primeiro_do_par = None
             continue
 
         if linha["id"] != numero - 1:
@@ -94,9 +96,27 @@ def validar_amostras(
             problemas.append(
                 f"linha {numero}: cache {linha['cache']!r} (esperado {esperado_cache!r})"
             )
-        if linha["versao"] == versao_anterior:
-            problemas.append(f"linha {numero}: versão repetida em sequência (ordem não alternada)")
-        versao_anterior = linha["versao"]
+
+        if (numero - 2) % 2 == 0:
+            primeiro_do_par = (numero, linha)
+        elif primeiro_do_par is not None:
+            num_primeiro, primeiro = primeiro_do_par
+            primeiro_do_par = None
+            if (primeiro["repeticao"], primeiro["tela"]) != (linha["repeticao"], linha["tela"]):
+                problemas.append(
+                    f"linhas {num_primeiro}-{numero}: par com repeticao/tela divergentes "
+                    f"({primeiro['repeticao']}/{primeiro['tela']} e "
+                    f"{linha['repeticao']}/{linha['tela']})"
+                )
+            elif primeiro["versao"] == linha["versao"]:
+                problemas.append(
+                    f"linhas {num_primeiro}-{numero}: versão repetida no par ({linha['versao']})"
+                )
+            elif primeiro["versao"] in VERSOES and linha["versao"] in VERSOES:
+                contagem_tela = ordens_por_tela.setdefault(linha["tela"], {})
+                par = (primeiro["versao"], linha["versao"])
+                contagem_tela[par] = contagem_tela.get(par, 0) + 1
+
         rotas_por_tela.setdefault(linha["tela"], set()).add(linha["rota"])
 
         chave = (linha["versao"], linha["tela"])
@@ -106,11 +126,25 @@ def validar_amostras(
         if len(rotas) > 1:
             problemas.append(f"{tela}: rotas diferentes entre linhas ({sorted(rotas)})")
 
+    ordem_ab = VERSOES
+    ordem_ba = (VERSOES[1], VERSOES[0])
     for versao in VERSOES:
         for tela, _ in TELAS:
             n = contagem.get((versao, tela), 0)
             if n != repeticoes:
                 problemas.append(f"{versao}/{tela}: {n} amostras (esperado {repeticoes})")
+
+    if repeticoes >= 2:
+        for tela, _ in TELAS:
+            contagem_tela = ordens_por_tela.get(tela, {})
+            n_ab = contagem_tela.get(ordem_ab, 0)
+            n_ba = contagem_tela.get(ordem_ba, 0)
+            if n_ab == 0 or n_ba == 0 or abs(n_ab - n_ba) > 1:
+                problemas.append(
+                    f"{tela}: ordem dos pares desbalanceada "
+                    f"({n_ab}× {ordem_ab[0]}->{ordem_ab[1]}, "
+                    f"{n_ba}× {ordem_ba[0]}->{ordem_ba[1]})"
+                )
 
     return problemas
 
