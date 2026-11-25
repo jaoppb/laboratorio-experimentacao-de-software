@@ -260,10 +260,20 @@ def validar_diretorio(
     return problemas
 
 
-def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="Valida os dados da coleta piloto")
-    parser.add_argument("--dir", type=Path, default=DIR_DADOS_PILOTO)
-    parser.add_argument("--repeticoes", type=int, default=10)
+def main(
+    argv: list[str] | None = None,
+    *,
+    descricao: str = "Valida os dados da coleta piloto",
+    default_dir: Path = DIR_DADOS_PILOTO,
+    default_repeticoes: int = 10,
+    telas: tuple[tuple[str, str], ...] = TELAS,
+    nome_csv: str = "amostra_piloto.csv",
+    nome_json: str = "resumo_piloto.json",
+    rotulo: str = "",
+) -> int:
+    parser = argparse.ArgumentParser(description=descricao)
+    parser.add_argument("--dir", type=Path, default=default_dir)
+    parser.add_argument("--repeticoes", type=int, default=default_repeticoes)
     parser.add_argument(
         "--permitir-simulado",
         action="store_true",
@@ -271,13 +281,21 @@ def main(argv: list[str] | None = None) -> int:
     )
     args = parser.parse_args(argv)
 
-    problemas = validar_diretorio(args.dir, args.repeticoes, not args.permitir_simulado)
+    problemas = validar_diretorio(
+        args.dir,
+        args.repeticoes,
+        not args.permitir_simulado,
+        telas=telas,
+        nome_csv=nome_csv,
+        nome_json=nome_json,
+    )
     if problemas:
         print(f"{len(problemas)} problema(s) em {args.dir}:", file=sys.stderr)
         for problema in problemas:
             print(f"- {problema}", file=sys.stderr)
         return 1
-    print(f"OK: dados de {args.dir} completos, consistentes e no formato esperado.")
+    sufixo = f" {rotulo}" if rotulo else ""
+    print(f"OK: dados{sufixo} de {args.dir} completos, consistentes e no formato esperado.")
     return 0
 
 

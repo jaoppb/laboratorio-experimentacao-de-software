@@ -14,7 +14,7 @@ Este documento é um índice. O conteúdo de cada entrega fica no documento indi
 | Pergunta de pesquisa, GQM e hipóteses | #163 | [planejamento_pesquisa.md](planejamento_pesquisa.md) §2 a §4 | Entregue. Itens **[decisão do grupo]** aguardam validação do trio. |
 | Caminho escolhido (principal: rodar no ambiente do grupo; secundário: qualidade do produto) | #163 | [planejamento_pesquisa.md](planejamento_pesquisa.md) §1 | Entregue. |
 | Primeira versão das 7 categorias | #163 | [planejamento_pesquisa.md](planejamento_pesquisa.md) §6 | Entregue (primeira versão, a revisar nas S02 e S03). |
-| Plano de coleta e instrumentação (ambiente, roteiro, ética) | #164 | [plano_coleta_instrumentacao.md](plano_coleta_instrumentacao.md) §1 a §6 | Entregue e revisado após o piloto (versão 1.1). |
+| Plano de coleta e instrumentação (ambiente, roteiro, ética) | #164 | [plano_coleta_instrumentacao.md](plano_coleta_instrumentacao.md) §1 a §6 | Entregue e revisado após o piloto e S02 (versão 1.3). |
 | Plano de análise (escalas, testes, tamanho do efeito, amostra, impacto) | #165 | [plano_analise.md](plano_analise.md) | Entregue. |
 | Coleta piloto em Moodle real, com dados e registro de problemas | #166 | [plano_coleta_instrumentacao.md](plano_coleta_instrumentacao.md) §7, `dados/piloto/`, `docker/`, `scripts/` | Entregue (Moodle 4.5.16 e 5.3.1). |
 | Análise do piloto: pipeline e suficiência da amostra | #167 | [analise_piloto.md](analise_piloto.md), `scripts/analisar_piloto.py`, `dados/piloto/analise_piloto.json` | Entregue. |

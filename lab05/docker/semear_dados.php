@@ -46,14 +46,19 @@ if (!$DB->record_exists('quiz', ['course' => $curso->id])) {
 }
 
 $quiz = $DB->get_record('quiz', ['course' => $curso->id], '*', MUST_EXIST);
-if ((int) $quiz->questionsperpage !== 0) {
-    $DB->set_field('quiz', 'questionsperpage', 0, ['id' => $quiz->id]);
-    $quiz->questionsperpage = 0;
-}
 $cm = get_coursemodule_from_instance('quiz', $quiz->id, $curso->id, false, MUST_EXIST);
 $quiz->cmid = $cm->id;
 
 $alvo_questoes = 5;
+$transaction = $DB->start_delegated_transaction();
+if ((int) $quiz->questionsperpage !== 0) {
+    $DB->set_field('quiz', 'questionsperpage', 0, ['id' => $quiz->id]);
+    $quiz->questionsperpage = 0;
+    if ($DB->count_records('quiz_slots', ['quizid' => $quiz->id]) > 0) {
+        quiz_repaginate_questions($quiz->id, 0);
+    }
+}
+
 $slots_atuais = $DB->count_records('quiz_slots', ['quizid' => $quiz->id]);
 if ($slots_atuais < $alvo_questoes) {
     $modcontext = context_module::instance($cm->id);
@@ -91,8 +96,16 @@ if ($slots_atuais < $alvo_questoes) {
         $salva = $qtype->save_question($questao, $form);
         quiz_add_quiz_question($salva->id, $quiz, 1, 1.0);
     }
+}
+
+$soma_slots = (float) $DB->get_field_sql(
+    'SELECT COALESCE(SUM(maxmark), 0) FROM {quiz_slots} WHERE quizid = ?',
+    [$quiz->id]
+);
+if (abs((float) $quiz->sumgrades - $soma_slots) > 0.0001) {
     \mod_quiz\quiz_settings::create($quiz->id)->get_grade_calculator()->recompute_quiz_sumgrades();
 }
+$transaction->allow_commit();
 
 $total_questoes = $DB->count_records('quiz_slots', ['quizid' => $quiz->id]);
 echo "curso_id={$curso->id} quiz_cmid={$cm->id} questoes={$total_questoes}\n";

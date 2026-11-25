@@ -1,8 +1,9 @@
 """Auditoria de acessibilidade (axe-core / WCAG 2.1 AA) das 4 telas nas 2 versões.
 
 Renderiza cada tela em Chromium headless (Playwright), executa o axe-core e grava
-um JSON por tela e versão em ``dados/piloto/axe/<versao>_<tela>.json`` com as
-violações (id da regra, impacto, tags WCAG e número de nós afetados).
+um JSON por tela e versão em ``dados/piloto/axe/<versao>_<tela>.json`` (modo piloto)
+ou ``dados/reais/axe/<versao>_<tela>.json`` (modo ``--s02``, que inicia e descarta
+a tentativa em ``tentativa_quiz``).
 """
 
 from __future__ import annotations
@@ -63,6 +64,7 @@ def _entrar(navegador: Any, url: str, usuario: str, senha: str) -> Any:
 
     pagina = navegador.new_context().new_page()
     pagina.goto(f"{url}/login/index.php")
+    pagina.wait_for_load_state("networkidle")
     pagina.fill("#username", usuario)
     pagina.fill("#password", senha)
     pagina.click("#loginbtn")
@@ -91,9 +93,9 @@ def _auditar_tentativa_quiz(
         'form[action*="startattempt.php"] input[type="submit"]'
     ).first.click()
     alvo.wait_for_url("**/mod/quiz/attempt.php**", timeout=30000)
-    alvo.wait_for_load_state("networkidle")
     attempt_id = extrair_attempt_id(alvo.url)
     try:
+        alvo.wait_for_load_state("networkidle")
         return axe.run(alvo, options=opcoes)
     finally:
         descartar_tentativa(servico, attempt_id)
@@ -105,12 +107,12 @@ def auditar(
     usuario: str,
     senha: str,
     destino: Path,
-    cmid: int | None = None,
-    descartar_tentativa: Callable[[str, int], None] = descartar_tentativa_quiz,
+    descartar_tentativa: Callable[[str, int], None] | None = None,
 ) -> list[Path]:
     from axe_playwright_python.sync_playwright import Axe
     from playwright.sync_api import sync_playwright
 
+    descartar = descartar_tentativa or descartar_tentativa_quiz
     relatorios: dict[str, dict[str, Any]] = {}
     axe = Axe()
     opcoes = {"runOnly": {"type": "tag", "values": TAGS_WCAG}}
@@ -126,16 +128,14 @@ def auditar(
                         alvo = navegador.new_context().new_page() if publica else logada
                         try:
                             if tela == "tentativa_quiz":
-                                if cmid is None:
-                                    cmid = extrair_cmid(rota)
                                 resultado = _auditar_tentativa_quiz(
                                     alvo,
                                     urls[versao],
-                                    cmid,
+                                    extrair_cmid(rota),
                                     axe,
                                     opcoes,
                                     SERVICOS[versao],
-                                    descartar_tentativa,
+                                    descartar,
                                 )
                             else:
                                 alvo.goto(f"{urls[versao]}{rota}")
@@ -184,16 +184,14 @@ def main(argv: list[str] | None = None) -> int:
         return 2
 
     if args.s02:
-        urls, telas, cmid = resolver_alvo_s02(args)
+        urls, telas = resolver_alvo_s02(args)
         destino = args.saida or (DIR_DADOS_S02 / "axe")
-        chamada = lambda: auditar(urls, telas, args.usuario, senha, destino, cmid=cmid)
     else:
         urls, telas = resolver_alvo(args)
         destino = args.saida or (DIR_DADOS_PILOTO / "axe")
-        chamada = lambda: auditar(urls, telas, args.usuario, senha, destino)
 
     try:
-        gravados = chamada()
+        gravados = auditar(urls, telas, args.usuario, senha, destino)
     except Exception as erro:  # noqa: BLE001 - reporta qualquer falha de navegador/login
         print(f"Auditoria abortada: {erro}", file=sys.stderr)
         return 1
