@@ -14,8 +14,8 @@ Aplica ao piloto a análise planejada em ``docs/plano_analise.md`` (#165):
   houver diferenças.
 
 Os resultados valem como verificação do pipeline e estimativa provisória: com
-n = 9 e a ordem fixa 4.5 -> 5.3 (P13) o piloto não permite concluir sobre o sentido
-da diferença entre as versões.
+n = 9 por grupo em uma passada (já com ordem contrabalanceada ABBA no #171), o piloto
+dimensiona a coleta sem substituir a amostra definitiva da S02.
 
 Uso::
 

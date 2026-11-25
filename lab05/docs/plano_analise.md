@@ -96,7 +96,7 @@ Reaproveitando os resultados das curvas de poder estatístico simuladas no **Lab
 3. **Plano de Execução:**
    - **Piloto (Lab05S01):** $N = 10$ requisições por tela por versão (total de 80 requisições) para validar estabilidade da variância e ausência de travamentos.
    - **Coleta Final (Lab05S02):** $N = 80$ requisições válidas por tela por versão ($80 \times 4 \text{ telas} \times 2 \text{ versões} = 640 \text{ requisições no total}$). Esse volume leva aproximadamente 3 a 5 minutos para rodar localmente e confere alta solidez estatística.
-4. **Verificação com o piloto (#167):** a análise do piloto (`analise_piloto.md` §6) usou só as repetições `warm` (n = 9 por grupo) e não contradiz o N = 80, que fica mantido como piso. O n necessário estimado (20 a 40) vem de um efeito observado com IC largo e não substitui a premissa de $d \approx 0,35$ deste plano.
+4. **Verificação com o piloto (#167 / #171):** a análise do piloto (`analise_piloto.md` §6) usou só as repetições `warm` (n = 9 por grupo) e não contradiz o N = 80, que fica mantido como piso. O n necessário estimado (10 a 30 na recoleta contrabalanceada do #171) vem de um efeito observado com IC largo e não substitui a premissa de $d \approx 0,35$ deste plano.
 
 ---
 

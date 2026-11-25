@@ -23,13 +23,13 @@ Responsáveis: Gabriel Assis (#162, #163) e Marcela Campos (#164 a #167). Reprod
 
 ## 2. Resultado do piloto em um parágrafo
 
-O piloto rodou 80 requisições HTTP e 8 auditorias axe em duas instâncias reais do Moodle, com o mesmo ambiente, e os dados passam no validador. A análise planejada roda de ponta a ponta sobre eles. Com as 9 repetições `warm` por tela e versão, as medianas de TTFB ficam entre 43 e 95 ms, a 5.3 sai de 2 a 7 ms acima da 4.5, e nenhum p ajustado por Holm fica abaixo de 0,05. Esse resultado não pode ser lido como diferença entre as versões, porque a ordem fixa 4.5 → 5.3 e o ruído entre execuções (cerca de 6 ms) têm o mesmo tamanho. As 80 requisições retornaram 200 e o axe não achou violações nas 8 combinações. Como o runner aborta em qualquer falha, o 0 de erros HTTP vale por construção, e o piloto só valida o pipeline para M3 e M4. Pela variância observada, 20 a 40 repetições `warm` por tela já teriam poder de 80%, e o N = 80 previsto para a S02 fica mantido como piso, sem reduzir (detalhes e ressalvas em [analise_piloto.md](analise_piloto.md) §6).
+O piloto rodou 80 requisições HTTP (já em ordem contrabalanceada ABBA no `#171`) e 8 auditorias axe em duas instâncias reais do Moodle, com o mesmo ambiente, e os dados passam no validador. A análise planejada roda de ponta a ponta sobre eles. Com as 9 repetições `warm` por tela e versão, as medianas de TTFB ficam entre 14 e 63 ms, a 5.3 sai de 1,2% a 12,1% acima da 4.5, e apenas `questionario` (entrada do quiz) tem `p` ajustado por Holm abaixo de 0,05 (`p_holm = 0,002`; nas demais telas `p_holm` fica entre `0,102` e `0,112`). Por ter `n = 9` em uma única passada, o resultado de M1 também não é definitivo e serve apenas para exercitar o pipeline e dimensionar a coleta da S02. As 80 requisições retornaram 200 e o axe não achou violações nas 8 combinações. Como o runner aborta em qualquer falha, o 0 de erros HTTP vale por construção, e o piloto só valida o pipeline para M3 e M4. Pela variância observada, 10 a 30 repetições `warm` por tela já teriam poder de 80%, e o N = 80 previsto para a S02 fica mantido como piso, sem reduzir (detalhes e ressalvas em [analise_piloto.md](analise_piloto.md) §6).
 
 ## 3. Pendências e decisões para a S02
 
 | Item | Origem | Destino |
 |---|---|---|
-| Ordem fixa 4.5 → 5.3: contrabalancear (ABBA ou sorteio) e refazer o piloto | P13 | Issue #171 |
+| Ordem fixa 4.5 → 5.3: contrabalancear (ABBA) e refazer o piloto | P13 | **Concluído no #171** (ABBA determinístico por par e piloto refeito) |
 | Tela de tentativa do quiz (com questões) não medida; o piloto mede a entrada do quiz | P6 | Issue #172 |
 | Repetições `cold`: só n = 1 por grupo; planejar coleta fria à parte, com purga entre as repetições | P11 | S02 (orientação em [analise_piloto.md](analise_piloto.md) §6) |
 | M4 por tela pareada não tem poder (Wilcoxon exato: p mínimo de 0,125 com 4 telas) | [analise_piloto.md](analise_piloto.md) §5 | S02: definir a unidade pareada |

@@ -67,7 +67,7 @@ def test_ttfb_e_o_tempo_ate_os_cabecalhos_e_nao_ate_o_fim_do_corpo(monkeypatch):
 # --- loop de coleta -------------------------------------------------------- #
 
 
-def test_coletar_amostras_reais_alterna_versoes_e_marca_cache():
+def test_coletar_amostras_reais_contrabalanceia_versoes_e_marca_cache():
     clientes, publicos = _clientes_ok()
     amostras = cp.coletar_amostras_reais(
         clientes, publicos, n_repeticoes=3, dormir=lambda _s: None
@@ -75,11 +75,34 @@ def test_coletar_amostras_reais_alterna_versoes_e_marca_cache():
 
     assert len(amostras) == 3 * len(cp.TELAS) * len(cp.VERSOES)
     assert [a["id"] for a in amostras] == list(range(1, len(amostras) + 1))
-    versoes = [a["versao"] for a in amostras]
-    assert all(a != b for a, b in zip(versoes, versoes[1:]))
+    pares = list(zip(amostras[0::2], amostras[1::2]))
+    assert all(
+        a["repeticao"] == b["repeticao"]
+        and a["tela"] == b["tela"]
+        and {a["versao"], b["versao"]} == set(cp.VERSOES)
+        for a, b in pares
+    )
     assert {a["cache"] for a in amostras if a["repeticao"] == 1} == {"cold"}
     assert {a["cache"] for a in amostras if a["repeticao"] > 1} == {"warm"}
     assert list(amostras[0]) == list(cp.COLUNAS_CSV)
+
+
+def test_coletar_amostras_contrabalanceia_pares_em_abba():
+    amostras = cp.coletar_amostras_simuladas(n_repeticoes=10)
+    pares = list(zip(amostras[0::2], amostras[1::2]))
+    for tela, _ in cp.TELAS:
+        ordens = [
+            (a["versao"], b["versao"]) for a, b in pares if a["tela"] == tela
+        ]
+        assert ordens.count(cp.VERSOES) == 5
+        assert ordens.count(tuple(reversed(cp.VERSOES))) == 5
+        assert all(a != b for a, b in zip(ordens, ordens[1:]))
+    for repeticao in range(1, 11):
+        ordens = [
+            (a["versao"], b["versao"]) for a, b in pares if a["repeticao"] == repeticao
+        ]
+        assert ordens.count(cp.VERSOES) == 2
+        assert ordens.count(tuple(reversed(cp.VERSOES))) == 2
 
 
 def test_coletar_amostras_reais_aplica_pausa_entre_requisicoes():
@@ -242,6 +265,7 @@ def test_modo_simulado_grava_so_no_diretorio_simulado_por_padrao(tmp_path, monke
     assert not real.exists()
     meta = json.loads((simulado / "resumo_piloto.json").read_text(encoding="utf-8"))["meta"]
     assert meta["origem"] == "simulado"
+    assert meta["ordem_pares"] == "contrabalanceada_abba"
 
 
 def test_modo_real_exige_senha_no_ambiente(monkeypatch, capsys):
@@ -307,6 +331,7 @@ def test_main_real_faz_login_depois_purga_depois_mede(monkeypatch, tmp_path):
     assert max(i for i, e in enumerate(amb.eventos) if e == "purga") < primeira_medicao
     meta = json.loads((tmp_path / "resumo_piloto.json").read_text(encoding="utf-8"))["meta"]
     assert meta["origem"] == "real"
+    assert meta["ordem_pares"] == "contrabalanceada_abba"
     assert meta["cache_purgado_antes"] is True
     assert meta["releases_moodle"] == {"4.5_lts": "9.9.9 (Build: 1)", "5.3_lts": "9.9.9 (Build: 1)"}
     assert amb.fechados == 4
