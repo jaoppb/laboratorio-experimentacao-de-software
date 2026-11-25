@@ -126,8 +126,6 @@ def validar_amostras(
         if len(rotas) > 1:
             problemas.append(f"{tela}: rotas diferentes entre linhas ({sorted(rotas)})")
 
-    ordem_ab = VERSOES
-    ordem_ba = (VERSOES[1], VERSOES[0])
     for versao in VERSOES:
         for tela, _ in TELAS:
             n = contagem.get((versao, tela), 0)
@@ -135,11 +133,13 @@ def validar_amostras(
                 problemas.append(f"{versao}/{tela}: {n} amostras (esperado {repeticoes})")
 
     if repeticoes >= 2:
+        ordem_ab = VERSOES
+        ordem_ba = tuple(reversed(VERSOES))
         for tela, _ in TELAS:
             contagem_tela = ordens_por_tela.get(tela, {})
             n_ab = contagem_tela.get(ordem_ab, 0)
             n_ba = contagem_tela.get(ordem_ba, 0)
-            if n_ab == 0 or n_ba == 0 or abs(n_ab - n_ba) > 1:
+            if abs(n_ab - n_ba) > 1:
                 problemas.append(
                     f"{tela}: ordem dos pares desbalanceada "
                     f"({n_ab}× {ordem_ab[0]}->{ordem_ab[1]}, "

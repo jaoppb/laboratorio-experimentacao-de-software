@@ -21,7 +21,7 @@ Esta análise **não** é resultado definitivo do estudo: o piloto tem n = 9 rep
 
 | Tema | Decisão | Motivo |
 |---|---|---|
-| Cache | A análise principal usa só as repetições `warm` (repetições 2 a 10, n = 9 por tela e versão). A repetição `cold` (n = 1 por grupo) é só descrita, sem teste. | Com n = 1 não há teste nem tamanho do efeito. Misturar frio e quente faria o `login` frio (458 e 505 ms, contra medianas de 43 e 45 ms) dominar média e p95. Fecha o P11. |
+| Cache | A análise principal usa só as repetições `warm` (repetições 2 a 10, n = 9 por tela e versão). A repetição `cold` (n = 1 por grupo) é só descrita, sem teste. | Com n = 1 não há teste nem tamanho do efeito. Misturar frio e quente faria o `login` frio (445,56 e 488,40 ms, contra medianas `warm` de 14,25 e 15,97 ms) dominar média e p95. Fecha o P11. |
 | Teste de M1 | Mann-Whitney bicaudal (`scipy.stats.mannwhitneyu`, `method="auto"`), α = 0,05. | Plano #165 §3.1. |
 | Múltiplas telas | Reporta o p bruto e o p ajustado por Holm sobre as 4 telas. | São 4 comparações sobre os mesmos dados de coleta. |
 | Efeito | Δ de Cliff (5.3 contra 4.5), com IC 95% por bootstrap percentil (10.000 reamostras) e limiares de Romano et al. | Plano #165 §4. |

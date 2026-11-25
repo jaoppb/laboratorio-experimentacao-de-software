@@ -1,7 +1,7 @@
 # Plano de Coleta e Instrumentação: Moodle 4.5 LTS × 5.3 LTS
 
-**Issue:** #164 · **Papel:** B (Instrumentação e Operação) · **Responsável:** Marcela Campos  
-**Versão:** 1.1 (Lab05S01, revisada após o piloto #166) · **Data:** 19/11/2026  
+**Issue:** #164 (revisada no #166 e #171) · **Papel:** B (Instrumentação e Operação) · **Responsável:** Marcela Campos  
+**Versão:** 1.2 (Lab05S01, revisada após o piloto #166 e o contrabalanceamento #171) · **Data:** 25/11/2026  
 **Software:** Moodle (LMS open source em operação em produção)  
 **Documentos de referência:** `escolha_software.md` (#162) e `planejamento_pesquisa.md` (#163)
 
@@ -186,7 +186,7 @@ Os dados que o #164 havia versionado eram sintéticos (distribuições lognormai
 | P8 | A ordem entre login e purga de cache altera o que a 1ª repetição mede: com a purga antes do login, o próprio login (sessão, caches de usuário) aquece caches da 1ª repetição. | Ordem fixada: autenticar, purgar caches, medir. A 1ª repetição de cada tela é `cold`. |
 | P9 | O Moodle não expõe a versão na página de login (sem `<meta generator>`). | O `release` é lido de `version.php` dentro do contêiner e gravado em `resumo_piloto.json` (`meta.releases_moodle`). |
 | P10 | Os nomes de colunas do plano (`status_code`, `total_time_ms`, ...) divergiam do CSV. | O plano (§3.3) adota os nomes do CSV, que o `validar_piloto.py` e a análise do #167 consomem. |
-| P11 | Só a repetição 1 é fria (n = 1 por tela e versão). Nas telas autenticadas a 1ª requisição ficou entre 1,1 e 2,2 vezes a mediana (maior caso: dashboard 4.5, 195 ms contra 90 ms). Na tela pública `login` ela levou 458 ms (4.5) e 505 ms (5.3), contra medianas de 43 e 45 ms. Média e p95 do resumo misturam frio e quente. | **Decidido no #167:** a análise principal usa só `warm` (n = 9 por grupo), e `cold` é só descrito (n = 1, sem teste). Para a S02, coletar `cold` à parte, com várias repetições e purga entre elas, em vez de uma por grupo. |
+| P11 | Só a repetição 1 é fria (n = 1 por tela e versão). Nas telas autenticadas a 1ª requisição ficou entre 1,9 e 3,1 vezes a mediana `warm` (maior caso: dashboard 4.5, 195 ms contra 62 ms). Na tela pública `login` ela levou 446 ms (4.5) e 488 ms (5.3), contra medianas `warm` de 14 e 16 ms. Média e p95 do resumo misturam frio e quente. | **Decidido no #167:** a análise principal usa só `warm` (n = 9 por grupo), e `cold` é só descrito (n = 1, sem teste). Para a S02, coletar `cold` à parte, com várias repetições e purga entre elas, em vez de uma por grupo. |
 | P12 | Em uma tentativa intermediária, o login do estudante foi recusado ("Invalid login") três vezes seguidas, com a mesma senha que funcionou antes e depois (o contador `login_failed_count_since_success` ficou em 3). Não foi reproduzido nem explicado. | Os scripts abortam com mensagem clara (`Falha de autenticação`) sem gravar dados parciais (`auditoria_axe.py` só grava os relatórios depois de auditar as 8 combinações), e a execução foi repetida com sucesso. Se voltar na S02, investigar antes de aumentar o volume. |
 | P13 | A ordem original era fixa: 4.5 sempre precedia 5.3 dentro de cada par. A "ordem alternada balanceada" do plano 1.0 não se cumpria (a versão 5.3 sempre era medida logo após a 4.5). | **Resolvido no #171:** `coleta_piloto.py` passa a contrabalancear os pares em padrão ABBA determinístico (`(repeticao - 1 + indice_tela) % 2`, com `meta.ordem_pares = "contrabalanceada_abba"`), `validar_piloto.py` e os testes conferem o pareamento e o equilíbrio por tela, e o piloto real em Docker foi refeito. |
 

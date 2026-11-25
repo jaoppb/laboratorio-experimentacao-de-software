@@ -96,6 +96,7 @@ def test_coletar_amostras_contrabalanceia_pares_em_abba():
         ]
         assert ordens.count(cp.VERSOES) == 5
         assert ordens.count(tuple(reversed(cp.VERSOES))) == 5
+        assert all(a != b for a, b in zip(ordens, ordens[1:]))
     for repeticao in range(1, 11):
         ordens = [
             (a["versao"], b["versao"]) for a, b in pares if a["repeticao"] == repeticao

@@ -132,6 +132,25 @@ def test_ordem_fixa_e_apontada_como_desbalanceada(tmp_path):
     assert sum("ordem dos pares desbalanceada" in p for p in problemas) == len(cp.TELAS)
 
 
+def test_desbalanceamento_parcial_por_tela_e_apontado(tmp_path):
+    colunas, linhas = _linhas(_gravar(tmp_path))
+    # Troca um par BA de "login" para AB -> 6 AB / 4 BA (diferença 2 > 1).
+    for i in range(0, len(linhas), 2):
+        if linhas[i]["tela"] == "login" and linhas[i]["versao"] == cp.VERSOES[1]:
+            linhas[i]["versao"], linhas[i + 1]["versao"] = cp.VERSOES[0], cp.VERSOES[1]
+            break
+    problemas = vp.validar_amostras(colunas, linhas)
+    assert any("login: ordem dos pares desbalanceada" in p for p in problemas)
+
+
+@pytest.mark.parametrize("repeticoes", [1, 3])
+def test_uma_repeticao_ou_repeticoes_impares_sao_aceitas(tmp_path, repeticoes):
+    amostras = cp.coletar_amostras_simuladas(n_repeticoes=repeticoes)
+    cp.salvar_dados_piloto(amostras, tmp_path)
+    colunas, linhas = _linhas(tmp_path)
+    assert vp.validar_amostras(colunas, linhas, repeticoes=repeticoes) == []
+
+
 # --- resumo ---------------------------------------------------------------- #
 
 
