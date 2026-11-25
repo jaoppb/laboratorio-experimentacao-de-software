@@ -56,7 +56,7 @@ Seguindo o GQM definido na Issue #163, foram selecionadas as 4 telas de maior tr
 1. **Login (`/login/index.php`):** Requisição pública, representativa de autenticação e carga inicial.
 2. **Painel do Aluno (`/my/`):** Tela autenticada, com agregação de cursos, prazos, linha do tempo e múltiplos blocos dinâmicos.
 3. **Página de Curso Sintético (`/course/view.php?id=2`):** Tela com módulos de aprendizado, seções de tópicos, links e mídias.
-4. **Página do Questionário / Quiz (`/mod/quiz/view.php?id=6`):** Página de entrada do quiz, crítica para o aluno em períodos de prova. A tela de *tentativa* do quiz (com questões) não é medida no piloto (ver §7, problema P6, pendente para a S02).
+4. **Página do Questionário / Quiz (`/mod/quiz/view.php?id=6` no piloto; `/mod/quiz/attempt.php` na S02):** No piloto (#166), foi medida a página de entrada do quiz (`questionario`). Na coleta da S02 (#172), essa tela é substituída pela tentativa do quiz com 5 questões de múltipla escolha na mesma página (`tentativa_quiz`, `/mod/quiz/attempt.php?cmid=6`), iniciada via `POST /mod/quiz/startattempt.php`, medida apenas no `GET /mod/quiz/attempt.php` e descartada via CLI (`quiz_delete_attempt`) ao fim de cada repetição para não acumular estado entre repetições (ver §7, problema P6).
 
 ### 3.2. Cursos e Usuários Sintéticos
 
@@ -133,9 +133,11 @@ lab05/
 │   ├── analise_piloto.md                # [Marcela, #167] Pipeline e suficiência da amostra
 │   └── relatorio_s01.md                 # [Marcela, #167] Índice e estado das entregas da S01
 ├── scripts/
-│   ├── coleta_piloto.py                 # [Marcela, #164/#166] Medição HTTP/TTFB (real e --simulado)
-│   ├── auditoria_axe.py                 # [#166] Auditoria axe-core
+│   ├── coleta_piloto.py                 # [Marcela, #164/#166] Medição HTTP/TTFB do piloto (real e --simulado)
+│   ├── coleta_s02.py                    # [#172] Medição HTTP/TTFB da S02 com tentativa_quiz (real e --simulado)
+│   ├── auditoria_axe.py                 # [#166/#172] Auditoria axe-core (piloto e --s02)
 │   ├── validar_piloto.py                # [#166] Validador dos dados do piloto
+│   ├── validar_s02.py                   # [#172] Validador dos dados da S02
 │   └── analisar_piloto.py               # [#167] Análise do piloto
 ├── docker/                              # [#166] Compose, instalação e dados sintéticos do Moodle
 ├── tests/                               # [#166/#167] Testes dos scripts
@@ -181,7 +183,7 @@ Os dados que o #164 havia versionado eram sintéticos (distribuições lognormai
 | P3 | O Moodle 5.3 exige MariaDB >= 11.4 (o plano previa 10.11). | As duas versões usam MariaDB 11.4. |
 | P4 | Não há imagem pronta do Moodle 4.5/5.x utilizável (`bitnami/moodle:4.5` e `5.0` não existem no registry). A imagem `moodlehq/moodle-php-apache` traz só PHP e Apache. | O código vem das tags oficiais (`docker/preparar_codigo.sh`, em `docker/codigo/`, fora do git), com `composer install --no-dev` em contêiner. O servidor web passa a ser o Apache da imagem (o plano previa Nginx). O 5.x serve a partir de `public/` (`APACHE_DOCUMENT_ROOT`) e move os scripts de `admin/tool/.../cli` para `public/`. As imagens ficam fixadas por digest. |
 | P5 | O contêiner do Moodle subiu sem rede quando a porta já estava ocupada por outro projeto Compose, e a instalação falhou com "could not connect to the database". | O projeto Compose tem nome fixo (`lab05`). Em caso de conflito de porta, `docker compose down` e `up -d --force-recreate`. |
-| P6 | `maketestcourse.php` não cria quiz, e a API de banco de questões difere entre 4.5 e 5.x. Também falhou com MariaDB 11.4 em modo estrito (`password` nulo) ao criar o quiz. | `docker/semear_dados.php` cria o quiz pela API de módulos (`quizpassword = ''`), **sem questões**. A tela medida (`/mod/quiz/view.php`) não depende delas. **Pendência para a S02:** a tela de tentativa de quiz (5 questões) não foi medida (follow-up #172). |
+| P6 | `maketestcourse.php` não cria quiz, e a API de banco de questões difere entre 4.5 e 5.x. Também falhou com MariaDB 11.4 em modo estrito (`password` nulo) ao criar o quiz. | `docker/semear_dados.php` cria o quiz (`quizpassword = ''`, `questionsperpage = 0`) e, para o #172, semeia 5 questões `multichoice` de forma compatível com 4.5 e 5.3 (`context_module` + `question_get_default_category` / `question_make_default_categories`, `quiz_add_quiz_question` e `recompute_quiz_sumgrades`). O piloto S01 manteve `questionario` (`/mod/quiz/view.php`); a S02 usa `coleta_s02.py`, `validar_s02.py` e `auditoria_axe.py --s02` para medir `tentativa_quiz` (`/mod/quiz/attempt.php`) com início via `startattempt.php` e descarte via `quiz_delete_attempt` a cada repetição. |
 | P7 | Com o cookie do estudante, `/login/index.php` não é a tela pública de login. | A tela `login` é medida por cliente HTTP sem sessão. |
 | P8 | A ordem entre login e purga de cache altera o que a 1ª repetição mede: com a purga antes do login, o próprio login (sessão, caches de usuário) aquece caches da 1ª repetição. | Ordem fixada: autenticar, purgar caches, medir. A 1ª repetição de cada tela é `cold`. |
 | P9 | O Moodle não expõe a versão na página de login (sem `<meta generator>`). | O `release` é lido de `version.php` dentro do contêiner e gravado em `resumo_piloto.json` (`meta.releases_moodle`). |

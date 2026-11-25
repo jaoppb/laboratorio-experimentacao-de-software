@@ -12,14 +12,22 @@ import json
 import os
 import sys
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 from coleta_piloto import (
     DIR_DADOS_PILOTO,
+    SERVICOS,
     TELAS_PUBLICAS,
     VERSOES,
     adicionar_args_alvo,
     resolver_alvo,
+)
+from coleta_s02 import (
+    DIR_DADOS_S02,
+    descartar_tentativa_quiz,
+    extrair_attempt_id,
+    extrair_cmid,
+    resolver_alvo_s02,
 )
 
 TAGS_WCAG = ["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"]
@@ -66,12 +74,39 @@ def _entrar(navegador: Any, url: str, usuario: str, senha: str) -> Any:
     return pagina
 
 
+def _auditar_tentativa_quiz(
+    alvo: Any,
+    url_base: str,
+    cmid: int,
+    axe: Any,
+    opcoes: dict[str, Any],
+    servico: str,
+    descartar_tentativa: Callable[[str, int], None],
+) -> Any:
+    """Inicia uma tentativa pelo navegador, executa o axe e descarta a tentativa."""
+    alvo.goto(f"{url_base}/mod/quiz/view.php?id={cmid}")
+    alvo.wait_for_load_state("networkidle")
+    alvo.locator(
+        'form[action*="startattempt.php"] button[type="submit"], '
+        'form[action*="startattempt.php"] input[type="submit"]'
+    ).first.click()
+    alvo.wait_for_url("**/mod/quiz/attempt.php**", timeout=30000)
+    alvo.wait_for_load_state("networkidle")
+    attempt_id = extrair_attempt_id(alvo.url)
+    try:
+        return axe.run(alvo, options=opcoes)
+    finally:
+        descartar_tentativa(servico, attempt_id)
+
+
 def auditar(
     urls: dict[str, str],
     telas: tuple[tuple[str, str], ...],
     usuario: str,
     senha: str,
     destino: Path,
+    cmid: int | None = None,
+    descartar_tentativa: Callable[[str, int], None] = descartar_tentativa_quiz,
 ) -> list[Path]:
     from axe_playwright_python.sync_playwright import Axe
     from playwright.sync_api import sync_playwright
@@ -90,9 +125,22 @@ def auditar(
                         publica = tela in TELAS_PUBLICAS
                         alvo = navegador.new_context().new_page() if publica else logada
                         try:
-                            alvo.goto(f"{urls[versao]}{rota}")
-                            alvo.wait_for_load_state("networkidle")
-                            resultado = axe.run(alvo, options=opcoes)
+                            if tela == "tentativa_quiz":
+                                if cmid is None:
+                                    cmid = extrair_cmid(rota)
+                                resultado = _auditar_tentativa_quiz(
+                                    alvo,
+                                    urls[versao],
+                                    cmid,
+                                    axe,
+                                    opcoes,
+                                    SERVICOS[versao],
+                                    descartar_tentativa,
+                                )
+                            else:
+                                alvo.goto(f"{urls[versao]}{rota}")
+                                alvo.wait_for_load_state("networkidle")
+                                resultado = axe.run(alvo, options=opcoes)
                         finally:
                             if publica:
                                 alvo.context.close()
@@ -120,9 +168,14 @@ def auditar(
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="Auditoria axe-core do piloto Lab05")
+    parser = argparse.ArgumentParser(description="Auditoria axe-core do Lab05")
     adicionar_args_alvo(parser)
-    parser.add_argument("--saida", type=Path, default=DIR_DADOS_PILOTO / "axe")
+    parser.add_argument(
+        "--s02",
+        action="store_true",
+        help="Audita as 4 telas da S02 (substitui questionario por tentativa_quiz)",
+    )
+    parser.add_argument("--saida", type=Path, default=None)
     args = parser.parse_args(argv)
 
     senha = os.environ.get("MOODLE_ALUNO_SENHA")
@@ -130,13 +183,21 @@ def main(argv: list[str] | None = None) -> int:
         print("Defina MOODLE_ALUNO_SENHA (ver docker/.env.example).", file=sys.stderr)
         return 2
 
-    urls, telas = resolver_alvo(args)
+    if args.s02:
+        urls, telas, cmid = resolver_alvo_s02(args)
+        destino = args.saida or (DIR_DADOS_S02 / "axe")
+        chamada = lambda: auditar(urls, telas, args.usuario, senha, destino, cmid=cmid)
+    else:
+        urls, telas = resolver_alvo(args)
+        destino = args.saida or (DIR_DADOS_PILOTO / "axe")
+        chamada = lambda: auditar(urls, telas, args.usuario, senha, destino)
+
     try:
-        gravados = auditar(urls, telas, args.usuario, senha, args.saida)
+        gravados = chamada()
     except Exception as erro:  # noqa: BLE001 - reporta qualquer falha de navegador/login
         print(f"Auditoria abortada: {erro}", file=sys.stderr)
         return 1
-    print(f"{len(gravados)} relatórios axe gravados em {args.saida}")
+    print(f"{len(gravados)} relatórios axe gravados em {destino}")
     return 0
 
 

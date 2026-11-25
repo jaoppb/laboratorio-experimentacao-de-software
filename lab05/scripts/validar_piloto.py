@@ -49,6 +49,7 @@ def validar_amostras(
     colunas: list[str],
     linhas: list[dict[str, str]],
     repeticoes: int = 10,
+    telas: tuple[tuple[str, str], ...] = TELAS,
 ) -> list[str]:
     """Retorna a lista de problemas encontrados no CSV bruto (vazia se válido)."""
     problemas: list[str] = []
@@ -57,11 +58,11 @@ def validar_amostras(
         problemas.append(f"colunas inesperadas: {colunas} (esperado {list(COLUNAS_CSV)})")
         return problemas
 
-    esperado = repeticoes * len(TELAS) * len(VERSOES)
+    esperado = repeticoes * len(telas) * len(VERSOES)
     if len(linhas) != esperado:
         problemas.append(f"{len(linhas)} linhas (esperado {esperado})")
 
-    telas_validas = {nome for nome, _ in TELAS}
+    telas_validas = {nome for nome, _ in telas}
     rotas_por_tela: dict[str, set[str]] = {}
     contagem: dict[tuple[str, str], int] = {}
     ordens_por_tela: dict[str, dict[tuple[str, str], int]] = {}
@@ -127,7 +128,7 @@ def validar_amostras(
             problemas.append(f"{tela}: rotas diferentes entre linhas ({sorted(rotas)})")
 
     for versao in VERSOES:
-        for tela, _ in TELAS:
+        for tela, _ in telas:
             n = contagem.get((versao, tela), 0)
             if n != repeticoes:
                 problemas.append(f"{versao}/{tela}: {n} amostras (esperado {repeticoes})")
@@ -135,7 +136,7 @@ def validar_amostras(
     if repeticoes >= 2:
         ordem_ab = VERSOES
         ordem_ba = tuple(reversed(VERSOES))
-        for tela, _ in TELAS:
+        for tela, _ in telas:
             contagem_tela = ordens_por_tela.get(tela, {})
             n_ab = contagem_tela.get(ordem_ab, 0)
             n_ba = contagem_tela.get(ordem_ba, 0)
@@ -152,14 +153,15 @@ def validar_amostras(
 def validar_resumo(
     amostras: list[dict[str, Any]],
     resumo: dict[str, Any],
+    telas: tuple[tuple[str, str], ...] = TELAS,
 ) -> list[str]:
     """Confere que o JSON de resumo corresponde ao recálculo a partir do CSV."""
     problemas: list[str] = []
-    recalculado = calcular_resumo_estatistico(amostras)["versoes"]
+    recalculado = calcular_resumo_estatistico(amostras, telas=telas)["versoes"]
     gravado = resumo.get("versoes", {})
 
     for versao in VERSOES:
-        for tela, _ in TELAS:
+        for tela, _ in telas:
             esperado = recalculado.get(versao, {}).get(tela)
             atual = gravado.get(versao, {}).get(tela)
             if esperado is None or atual is None:
@@ -188,11 +190,14 @@ def validar_meta(resumo: dict[str, Any]) -> list[str]:
     return problemas
 
 
-def validar_axe(diretorio: Path) -> list[str]:
-    """Confere os 8 relatórios axe (1 por versão e tela) e a consistência das contagens."""
+def validar_axe(
+    diretorio: Path,
+    telas: tuple[tuple[str, str], ...] = TELAS,
+) -> list[str]:
+    """Confere os relatórios axe (1 por versão e tela) e a consistência das contagens."""
     problemas: list[str] = []
     for versao in VERSOES:
-        for tela, _ in TELAS:
+        for tela, _ in telas:
             caminho = diretorio / f"{versao}_{tela}.json"
             if not caminho.is_file():
                 problemas.append(f"axe: arquivo ausente {caminho.name}")
@@ -225,16 +230,19 @@ def validar_diretorio(
     diretorio: Path,
     repeticoes: int = 10,
     exigir_real: bool = True,
+    telas: tuple[tuple[str, str], ...] = TELAS,
+    nome_csv: str = "amostra_piloto.csv",
+    nome_json: str = "resumo_piloto.json",
 ) -> list[str]:
     """Valida CSV, resumo e (se ``exigir_real``) a origem real e os relatórios axe."""
-    caminho_csv = diretorio / "amostra_piloto.csv"
-    caminho_json = diretorio / "resumo_piloto.json"
+    caminho_csv = diretorio / nome_csv
+    caminho_json = diretorio / nome_json
     for caminho in (caminho_csv, caminho_json):
         if not caminho.is_file():
             return [f"arquivo ausente: {caminho}"]
 
     colunas, linhas = ler_csv(caminho_csv)
-    problemas = validar_amostras(colunas, linhas, repeticoes)
+    problemas = validar_amostras(colunas, linhas, repeticoes, telas=telas)
     if problemas:
         return problemas
 
@@ -243,10 +251,12 @@ def validar_diretorio(
             resumo = json.load(f)
     except json.JSONDecodeError as erro:
         return [f"{caminho_json.name} não é JSON válido ({erro})"]
-    problemas = validar_resumo([tipar_linha(bruta) for bruta in linhas], resumo)
+    problemas = validar_resumo(
+        [tipar_linha(bruta) for bruta in linhas], resumo, telas=telas
+    )
     if exigir_real:
         problemas += validar_meta(resumo)
-        problemas += validar_axe(diretorio / "axe")
+        problemas += validar_axe(diretorio / "axe", telas=telas)
     return problemas
 
 

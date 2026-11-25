@@ -30,9 +30,9 @@ O piloto rodou 80 requisições HTTP (já em ordem contrabalanceada ABBA no `#17
 | Item | Origem | Destino |
 |---|---|---|
 | Ordem fixa 4.5 → 5.3: contrabalancear (ABBA) e refazer o piloto | P13 | **Concluído no #171** (ABBA determinístico por par e piloto refeito) |
-| Tela de tentativa do quiz (com questões) não medida; o piloto mede a entrada do quiz | P6 | Issue #172 |
+| Tela de tentativa do quiz (com questões) não medida; o piloto mede a entrada do quiz | P6 | **Implementado no #172** (`semear_dados.php` com 5 questões, `coleta_s02.py`, `validar_s02.py` e `auditoria_axe.py --s02`; falta rodar a coleta definitiva da S02) |
 | Repetições `cold`: só n = 1 por grupo; planejar coleta fria à parte, com purga entre as repetições | P11 | S02 (orientação em [analise_piloto.md](analise_piloto.md) §6) |
 | M4 por tela pareada não tem poder (Wilcoxon exato: p mínimo de 0,125 com 4 telas) | [analise_piloto.md](analise_piloto.md) §5 | S02: definir a unidade pareada |
-| `planejamento_pesquisa.md` (PP1) fala em "tentativa de questionário", enquanto o piloto mede a entrada do quiz | #163 e #172 | Alinhar o texto quando o #172 for resolvido |
+| `planejamento_pesquisa.md` (PP1) fala em "tentativa de questionário", enquanto o piloto mede a entrada do quiz | #163 e #172 | Alinhado na instrumentação da S02 (`tentativa_quiz` em `coleta_s02.py`, #172); o piloto S01 mantém `questionario` como limite de construto |
 | M3 não captura falhas (5xx ou timeout): o runner aborta em qualquer status diferente de 200, então M3 = 0 por construção | [analise_piloto.md](analise_piloto.md) §5 | S02: gravar 5xx e timeouts como erros |
 | Login recusado sem explicação em uma tentativa intermediária | P12 | Investigar antes de aumentar o volume, se voltar na S02 |

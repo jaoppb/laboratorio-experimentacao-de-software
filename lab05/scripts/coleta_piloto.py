@@ -265,13 +265,16 @@ def coletar_amostras_simuladas(
 # --------------------------------------------------------------------------- #
 
 
-def calcular_resumo_estatistico(amostras: list[dict[str, Any]]) -> dict[str, Any]:
+def calcular_resumo_estatistico(
+    amostras: list[dict[str, Any]],
+    telas: tuple[tuple[str, str], ...] = TELAS,
+) -> dict[str, Any]:
     """Calcula estatísticas descritivas (mediana, IQR, p95) por versão e tela."""
     resumo: dict[str, Any] = {"versoes": {}}
 
     for versao in VERSOES:
         resumo["versoes"][versao] = {}
-        for tela_nome, _ in TELAS:
+        for tela_nome, _ in telas:
             valores = [
                 a["ttfb_ms"]
                 for a in amostras
@@ -301,6 +304,9 @@ def salvar_dados_piloto(
     amostras: list[dict[str, Any]],
     diretorio: Path = DIR_DADOS_PILOTO,
     meta: dict[str, Any] | None = None,
+    telas: tuple[tuple[str, str], ...] = TELAS,
+    nome_csv: str = "amostra_piloto.csv",
+    nome_json: str = "resumo_piloto.json",
 ) -> tuple[Path, Path]:
     """Grava amostras em CSV e resumo estatístico em JSON.
 
@@ -309,15 +315,15 @@ def salvar_dados_piloto(
     if not amostras:
         raise ErroColeta("Nenhuma amostra para salvar")
     diretorio.mkdir(parents=True, exist_ok=True)
-    caminho_csv = diretorio / "amostra_piloto.csv"
-    caminho_json = diretorio / "resumo_piloto.json"
+    caminho_csv = diretorio / nome_csv
+    caminho_json = diretorio / nome_json
 
     with open(caminho_csv, "w", newline="", encoding="utf-8") as f:
         escritor = csv.DictWriter(f, fieldnames=list(COLUNAS_CSV))
         escritor.writeheader()
         escritor.writerows(amostras)
 
-    resumo = calcular_resumo_estatistico(amostras)
+    resumo = calcular_resumo_estatistico(amostras, telas=telas)
     if meta:
         resumo = {"meta": meta, **resumo}
     with open(caminho_json, "w", encoding="utf-8") as f:
