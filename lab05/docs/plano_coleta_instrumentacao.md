@@ -1,7 +1,7 @@
 # Plano de Coleta e Instrumentação: Moodle 4.5 LTS × 5.3 LTS
 
-**Issue:** #164 (revisada no #166 e #171) · **Papel:** B (Instrumentação e Operação) · **Responsável:** Marcela Campos  
-**Versão:** 1.2 (Lab05S01, revisada após o piloto #166 e o contrabalanceamento #171) · **Data:** 25/11/2026  
+**Issue:** #164 (revisada no #166, #171 e #172) · **Papel:** B (Instrumentação e Operação) · **Responsável:** Marcela Campos  
+**Versão:** 1.3 (Lab05S01/S02, revisada após #166, #171 e #172) · **Data:** 25/11/2026  
 **Software:** Moodle (LMS open source em operação em produção)  
 **Documentos de referência:** `escolha_software.md` (#162) e `planejamento_pesquisa.md` (#163)
 
@@ -56,23 +56,23 @@ Seguindo o GQM definido na Issue #163, foram selecionadas as 4 telas de maior tr
 1. **Login (`/login/index.php`):** Requisição pública, representativa de autenticação e carga inicial.
 2. **Painel do Aluno (`/my/`):** Tela autenticada, com agregação de cursos, prazos, linha do tempo e múltiplos blocos dinâmicos.
 3. **Página de Curso Sintético (`/course/view.php?id=2`):** Tela com módulos de aprendizado, seções de tópicos, links e mídias.
-4. **Página do Questionário / Quiz (`/mod/quiz/view.php?id=6`):** Página de entrada do quiz, crítica para o aluno em períodos de prova. A tela de *tentativa* do quiz (com questões) não é medida no piloto (ver §7, problema P6, pendente para a S02).
+4. **Página do Questionário / Quiz (`/mod/quiz/view.php?id=6` no piloto; `/mod/quiz/attempt.php` na S02):** No piloto (#166), foi medida a página de entrada do quiz (`questionario`). Na coleta da S02 (#172), essa tela é substituída pela tentativa do quiz com 5 questões de múltipla escolha na mesma página (`tentativa_quiz`, `/mod/quiz/attempt.php?cmid=6`), iniciada via `POST /mod/quiz/startattempt.php`, medida apenas no `GET /mod/quiz/attempt.php` e descartada via CLI (`quiz_delete_attempt`) ao fim de cada repetição para não acumular estado entre repetições (ver §7, problema P6).
 
 ### 3.2. Cursos e Usuários Sintéticos
 
 - Não são utilizados dados de instituições reais nem contas de alunos reais.
-- Os dados do ambiente são povoados por meio da ferramenta padrão do Moodle para testes de benchmark e QA (`admin/tool/generator/cli/maketestcourse.php --size=XS`), criando o curso sintético `lab05`. O estudante `aluno_teste_1` (matriculado no curso) e o quiz são criados por `docker/semear_dados.php` (ver §7, problema P6).
-- As duas instâncias são instaladas do zero pelos mesmos scripts (`docker/instalar_moodle.sh`) e ficam com os mesmos identificadores (curso `id=2`, quiz `cmid=6`; `instalar_moodle.sh` imprime `curso_id` e `quiz_cmid` para conferência).
+- Os dados do ambiente são povoados por meio da ferramenta padrão do Moodle para testes de benchmark e QA (`admin/tool/generator/cli/maketestcourse.php --size=XS`), criando o curso sintético `lab05`. O estudante `aluno_teste_1` (matriculado no curso), o quiz (`questionsperpage = 0`) e 5 questões `multichoice` (4 alternativas na mesma página) são criados por `docker/semear_dados.php` de forma idempotente; re-executar `docker/instalar_moodle.sh` ou `docker/semear_dados.php` completa um ambiente S01 existente sem duplicar dados (ver §7, problema P6).
+- As duas instâncias são instaladas do zero pelos mesmos scripts (`docker/instalar_moodle.sh`) e ficam com os mesmos identificadores (curso `id=2`, quiz `cmid=6`; `instalar_moodle.sh` e `semear_dados.php` imprimem `curso_id`, `quiz_cmid` e `questoes=5` para conferência).
 
 ### 3.3. Instrumentação de Desempenho (TTFB e Tempo Total)
 
-A coleta de desempenho é realizada por script automatizado em Python (`scripts/coleta_piloto.py` e posterior runner completo da S02), utilizando a biblioteca `httpx` com conexão TCP/HTTP direta:
+A coleta de desempenho é realizada por script automatizado em Python (`scripts/coleta_piloto.py` no piloto S01 e `scripts/coleta_s02.py` na S02, com validação em `scripts/validar_piloto.py` e `scripts/validar_s02.py`), utilizando a biblioteca `httpx` com conexão TCP/HTTP direta. No modo `--simulado`, os runners gravam dados sintéticos em `dados/piloto_simulado/` e `dados/reais_simulado/`, sem sobrescrever `dados/piloto/` ou `dados/reais/`:
 - **Métricas extraídas a cada requisição:**
   - `status_http`: código HTTP retornado (esperado: 200).
   - `ttfb_ms`: *Time To First Byte* em milissegundos (tempo transcorrido desde o envio da requisição HTTP até o recebimento dos cabeçalhos de resposta).
   - `tempo_total_ms`: tempo total até o fim do corpo da resposta.
   - `tamanho_bytes`: tamanho do corpo (já descompactado) em bytes.
-  - `cache`: `cold` (1ª repetição de cada tela e versão, após `purge_caches.php`) ou `warm` (repetições 2 a 10).
+  - `cache`: `cold` (1ª repetição de cada tela e versão, após `purge_caches.php`) ou `warm` (repetições 2 a N; `n = 10` no piloto S01 e `n = 80` por padrão em `coleta_s02.py` gravando `dados/reais/amostra_s02.csv` e `resumo_s02.json`).
   - Esquema completo do CSV: `id, versao, tela, rota, repeticao, cache, status_http, ttfb_ms, tempo_total_ms, tamanho_bytes`. Os nomes em português substituem os nomes em inglês da versão 1.0 do plano.
 - **Sessão:** a tela `login` é medida sem cookie (visitante). As demais usam o estudante `aluno_teste_1` autenticado.
 - **Mitigação de Confundimento Térmico / Ordem:** As coletas contrabalanceiam a ordem das versões dentro de cada par em padrão ABBA determinístico (`(repeticao - 1 + indice_tela) % 2`), alternando `4.5 -> 5.3` e `5.3 -> 4.5` por repetição e tela (5 pares em cada ordem por tela em `n = 10`, registrado em `meta.ordem_pares = "contrabalanceada_abba"` no resumo), de modo que o aquecimento de CPU, cache do SO ou deriva temporal afete as duas versões de forma equilibrada. Ver §7, problema P13 (resolvido no `#171`).
@@ -80,8 +80,8 @@ A coleta de desempenho é realizada por script automatizado em Python (`scripts/
 ### 3.4. Instrumentação de Acessibilidade (WCAG 2.1 / axe-core)
 
 A avaliação da característica de usabilidade e acessibilidade (ISO/IEC 25010) é automatizada utilizando o motor padrão de mercado `axe-core`:
-- Cada uma das 4 telas nas duas versões é renderizada em navegador headless (Playwright com Chromium headless e `axe-playwright-python`, em `scripts/auditoria_axe.py`).
-- O script executa o `axe.run()` com as tags WCAG 2.0/2.1 A e AA e grava um JSON por tela e versão em `dados/piloto/axe/<versao>_<tela>.json`, com:
+- Cada uma das 4 telas nas duas versões é renderizada em navegador headless (Playwright com Chromium headless e `axe-playwright-python`, em `scripts/auditoria_axe.py`). No piloto S01, o script grava em `dados/piloto/axe/<versao>_<tela>.json`. Com a flag `--s02`, substitui `questionario` por `tentativa_quiz` (inicia a tentativa via formulário `startattempt.php`, executa o axe em `/mod/quiz/attempt.php` e descarta a tentativa via `quiz_delete_attempt` ao final) e grava em `dados/reais/axe/<versao>_<tela>.json`.
+- O script executa o `axe.run()` com as tags WCAG 2.0/2.1 A e AA e grava um JSON por tela e versão com:
   - Total de violações por tela.
   - Classificação por severidade: *crítico* (`critical`), *sério* (`serious`), *moderado* (`moderate`) e *leve* (`minor`), mais `indefinido` quando o axe não informa o impacto.
   - IDs das regras WCAG violadas (ex.: contraste de cores, labels de formulários, estrutura semântica de headings).
@@ -128,17 +128,19 @@ lab05/
 ├── docs/
 │   ├── escolha_software.md              # [Gabriel, #162] Evidências dos 3 critérios
 │   ├── planejamento_pesquisa.md         # [Gabriel, #163] GQM, hipóteses, 7 categorias
-│   ├── plano_coleta_instrumentacao.md   # [Marcela, #164/#166] Ambiente, roteiro, ética e piloto
+│   ├── plano_coleta_instrumentacao.md   # [Marcela, #164/#166/#171/#172] Ambiente, roteiro, ética e piloto
 │   ├── plano_analise.md                 # [Marcela, #165] Métricas, testes, poder e impacto
 │   ├── analise_piloto.md                # [Marcela, #167] Pipeline e suficiência da amostra
-│   └── relatorio_s01.md                 # [Marcela, #167] Índice e estado das entregas da S01
+│   └── relatorio_s01.md                 # [Marcela, #167/#172] Índice e estado das entregas da S01
 ├── scripts/
-│   ├── coleta_piloto.py                 # [Marcela, #164/#166] Medição HTTP/TTFB (real e --simulado)
-│   ├── auditoria_axe.py                 # [#166] Auditoria axe-core
+│   ├── coleta_piloto.py                 # [Marcela, #164/#166] Medição HTTP/TTFB do piloto (real e --simulado)
+│   ├── coleta_s02.py                    # [#172] Medição HTTP/TTFB da S02 com tentativa_quiz (real e --simulado)
+│   ├── auditoria_axe.py                 # [#166/#172] Auditoria axe-core (piloto e --s02)
 │   ├── validar_piloto.py                # [#166] Validador dos dados do piloto
+│   ├── validar_s02.py                   # [#172] Validador dos dados da S02
 │   └── analisar_piloto.py               # [#167] Análise do piloto
-├── docker/                              # [#166] Compose, instalação e dados sintéticos do Moodle
-├── tests/                               # [#166/#167] Testes dos scripts
+├── docker/                              # [#166/#172] Compose, instalação e dados sintéticos do Moodle
+├── tests/                               # [#166/#167/#172] Testes dos scripts
 ├── pyproject.toml                       # [#166] Dependências dos scripts
 ├── dados/
 │   ├── piloto/                          # Dados reais do piloto (CSV, JSON e axe/)
@@ -181,7 +183,7 @@ Os dados que o #164 havia versionado eram sintéticos (distribuições lognormai
 | P3 | O Moodle 5.3 exige MariaDB >= 11.4 (o plano previa 10.11). | As duas versões usam MariaDB 11.4. |
 | P4 | Não há imagem pronta do Moodle 4.5/5.x utilizável (`bitnami/moodle:4.5` e `5.0` não existem no registry). A imagem `moodlehq/moodle-php-apache` traz só PHP e Apache. | O código vem das tags oficiais (`docker/preparar_codigo.sh`, em `docker/codigo/`, fora do git), com `composer install --no-dev` em contêiner. O servidor web passa a ser o Apache da imagem (o plano previa Nginx). O 5.x serve a partir de `public/` (`APACHE_DOCUMENT_ROOT`) e move os scripts de `admin/tool/.../cli` para `public/`. As imagens ficam fixadas por digest. |
 | P5 | O contêiner do Moodle subiu sem rede quando a porta já estava ocupada por outro projeto Compose, e a instalação falhou com "could not connect to the database". | O projeto Compose tem nome fixo (`lab05`). Em caso de conflito de porta, `docker compose down` e `up -d --force-recreate`. |
-| P6 | `maketestcourse.php` não cria quiz, e a API de banco de questões difere entre 4.5 e 5.x. Também falhou com MariaDB 11.4 em modo estrito (`password` nulo) ao criar o quiz. | `docker/semear_dados.php` cria o quiz pela API de módulos (`quizpassword = ''`), **sem questões**. A tela medida (`/mod/quiz/view.php`) não depende delas. **Pendência para a S02:** a tela de tentativa de quiz (5 questões) não foi medida (follow-up #172). |
+| P6 | `maketestcourse.php` não cria quiz, e a API de banco de questões difere entre 4.5 e 5.x. Também falhou com MariaDB 11.4 em modo estrito (`password` nulo) ao criar o quiz. | `docker/semear_dados.php` cria o quiz (`quizpassword = ''`, `questionsperpage = 0`) e, para o #172, semeia 5 questões `multichoice` de forma compatível com 4.5 e 5.3 (`context_module` + `question_get_default_category` / `question_make_default_categories`, `quiz_add_quiz_question` e `recompute_quiz_sumgrades`). O piloto S01 manteve `questionario` (`/mod/quiz/view.php`); a S02 usa `coleta_s02.py`, `validar_s02.py` e `auditoria_axe.py --s02` para medir `tentativa_quiz` (`/mod/quiz/attempt.php`) com início via `startattempt.php` e descarte via `quiz_delete_attempt` a cada repetição. |
 | P7 | Com o cookie do estudante, `/login/index.php` não é a tela pública de login. | A tela `login` é medida por cliente HTTP sem sessão. |
 | P8 | A ordem entre login e purga de cache altera o que a 1ª repetição mede: com a purga antes do login, o próprio login (sessão, caches de usuário) aquece caches da 1ª repetição. | Ordem fixada: autenticar, purgar caches, medir. A 1ª repetição de cada tela é `cold`. |
 | P9 | O Moodle não expõe a versão na página de login (sem `<meta generator>`). | O `release` é lido de `version.php` dentro do contêiner e gravado em `resumo_piloto.json` (`meta.releases_moodle`). |

@@ -114,9 +114,11 @@ lab05/
 │   ├── semear_dados.php
 │   └── .env.example
 ├── scripts/
-│   ├── coleta_piloto.py                 # [#164/#166] Medição HTTP/TTFB (real e --simulado)
-│   ├── auditoria_axe.py                 # [#166] Auditoria axe-core
+│   ├── coleta_piloto.py                 # [#164/#166] Medição HTTP/TTFB do piloto (real e --simulado)
+│   ├── coleta_s02.py                    # [#172] Medição HTTP/TTFB da S02 com tentativa_quiz (real e --simulado)
+│   ├── auditoria_axe.py                 # [#166/#172] Auditoria axe-core (piloto e --s02)
 │   ├── validar_piloto.py                # [#166] Validador dos dados do piloto
+│   ├── validar_s02.py                   # [#172] Validador dos dados da S02
 │   └── analisar_piloto.py               # [#167] Análise do piloto
 ├── tests/                               # [#166/#167] Testes dos scripts
 ├── dados/

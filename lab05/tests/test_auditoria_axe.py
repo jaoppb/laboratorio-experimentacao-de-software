@@ -9,6 +9,7 @@ import pytest
 
 import auditoria_axe as aa
 import coleta_piloto as cp
+import coleta_s02 as cs
 import validar_piloto as vp
 
 
@@ -87,10 +88,18 @@ class _Navegador:
         def goto(url):
             pagina.url = url
 
+        def locator(_selector):
+            def click():
+                base = pagina.url.split("/mod/quiz/")[0]
+                pagina.url = f"{base}/mod/quiz/attempt.php?attempt=88&cmid=6"
+
+            return types.SimpleNamespace(first=types.SimpleNamespace(click=click))
+
         pagina = types.SimpleNamespace(
             context=contexto,
             url="http://x/my/",
             goto=goto,
+            locator=locator,
             fill=lambda *a, **k: None,
             click=lambda *a, **k: None,
             wait_for_url=lambda *a, **k: None,
@@ -165,3 +174,67 @@ def test_auditar_nao_grava_nada_quando_uma_auditoria_falha(monkeypatch, tmp_path
     assert [p.name for p in destino.iterdir()] == [antigo.name]
     assert antigo.read_text(encoding="utf-8") == "relatório de execução anterior"
     assert all(c.fechado for c in navegador.contextos)
+
+
+def test_auditar_s02_inicia_e_descarta_tentativa_quiz(monkeypatch, tmp_path):
+    navegador = _Navegador()
+    _instalar_dubles(monkeypatch, navegador)
+    descartadas: list[tuple[str, int]] = []
+
+    gravados = aa.auditar(
+        URLS,
+        cs.TELAS_S02,
+        "aluno",
+        "senha",
+        tmp_path / "axe",
+        descartar_tentativa=lambda serv, aid: descartadas.append((serv, aid)),
+    )
+
+    assert sorted(p.name for p in gravados) == sorted(
+        f"{v}_{t}.json" for v in cp.VERSOES for t, _ in cs.TELAS_S02
+    )
+    assert vp.validar_axe(tmp_path / "axe", telas=cs.TELAS_S02) == []
+    assert descartadas == [("moodle45", 88), ("moodle53", 88)]
+    assert all(c.fechado for c in navegador.contextos)
+
+
+def test_auditar_s02_descarta_tentativa_mesmo_quando_axe_falha(monkeypatch, tmp_path):
+    navegador = _Navegador()
+
+    class AxeQueFalha:
+        def run(self, pagina, options=None):
+            if "attempt.php" in pagina.url:
+                raise RuntimeError("falha no axe")
+            return types.SimpleNamespace(response={"passes": [{}], "violations": []})
+
+    _instalar_dubles(monkeypatch, navegador)
+    monkeypatch.setattr(sys.modules["axe_playwright_python.sync_playwright"], "Axe", AxeQueFalha)
+    descartadas: list[tuple[str, int]] = []
+
+    with pytest.raises(RuntimeError, match="falha no axe"):
+        aa.auditar(
+            URLS,
+            cs.TELAS_S02,
+            "aluno",
+            "senha",
+            tmp_path / "axe",
+            descartar_tentativa=lambda serv, aid: descartadas.append((serv, aid)),
+        )
+
+    assert descartadas == [("moodle45", 88)]
+    assert all(c.fechado for c in navegador.contextos)
+
+
+def test_main_s02_usa_telas_s02_e_destino_padrao(monkeypatch, tmp_path):
+    monkeypatch.setenv("MOODLE_ALUNO_SENHA", "segredo")
+    monkeypatch.setattr(aa, "DIR_DADOS_S02", tmp_path / "reais")
+    recebido = {}
+
+    def auditar_falso(urls, telas, usuario, senha, destino):
+        recebido.update(urls=urls, telas=dict(telas), destino=destino)
+        return []
+
+    monkeypatch.setattr(aa, "auditar", auditar_falso)
+    assert aa.main(["--s02", "--rota-quiz", "/mod/quiz/view.php?id=12"]) == 0
+    assert recebido["telas"]["tentativa_quiz"] == "/mod/quiz/attempt.php?cmid=12"
+    assert recebido["destino"] == tmp_path / "reais" / "axe"

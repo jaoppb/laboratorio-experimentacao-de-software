@@ -222,31 +222,35 @@ def coletar_amostras_reais(
 # --------------------------------------------------------------------------- #
 
 
+CALIBRACAO_SIMULADA_PILOTO = {
+    "4.5_lts": {
+        "login": (120.0, 0.25),
+        "dashboard": (240.0, 0.35),
+        "curso": (310.0, 0.40),
+        "questionario": (270.0, 0.30),
+    },
+    "5.3_lts": {
+        "login": (110.0, 0.22),
+        "dashboard": (210.0, 0.30),
+        "curso": (275.0, 0.35),
+        "questionario": (245.0, 0.28),
+    },
+}
+
+
 def coletar_amostras_simuladas(
     n_repeticoes: int = 10,
     semente: int = 42,
+    telas: tuple[tuple[str, str], ...] = TELAS,
+    calibracao: dict[str, dict[str, tuple[float, float]]] | None = None,
+    telas_grandes: frozenset[str] = frozenset({"curso"}),
 ) -> list[dict[str, Any]]:
     """Gera amostras sintéticas lognormais. Não representam medições reais."""
     rng = np.random.default_rng(semente)
-
-    # Mediana (ms) e sigma_log por versão e tela.
-    calibracao = {
-        "4.5_lts": {
-            "login": (120.0, 0.25),
-            "dashboard": (240.0, 0.35),
-            "curso": (310.0, 0.40),
-            "questionario": (270.0, 0.30),
-        },
-        "5.3_lts": {
-            "login": (110.0, 0.22),
-            "dashboard": (210.0, 0.30),
-            "curso": (275.0, 0.35),
-            "questionario": (245.0, 0.28),
-        },
-    }
+    tabela = calibracao or CALIBRACAO_SIMULADA_PILOTO
 
     def medir(versao: str, tela: str, _rota: str, repeticao: int) -> dict[str, Any]:
-        mediana_base, sigma = calibracao[versao][tela]
+        mediana_base, sigma = tabela[versao][tela]
         fator_frio = 1.6 if repeticao == 1 else 1.0
         ttfb = float(rng.lognormal(mean=np.log(mediana_base * fator_frio), sigma=sigma))
         tempo_total = ttfb + float(rng.uniform(15.0, 45.0))
@@ -254,10 +258,10 @@ def coletar_amostras_simuladas(
             "status_http": 200,
             "ttfb_ms": round(ttfb, 2),
             "tempo_total_ms": round(tempo_total, 2),
-            "tamanho_bytes": 18450 if tela != "curso" else 42100,
+            "tamanho_bytes": 42100 if tela in telas_grandes else 18450,
         }
 
-    return coletar_amostras(medir, TELAS, n_repeticoes)
+    return coletar_amostras(medir, telas, n_repeticoes)
 
 
 # --------------------------------------------------------------------------- #
@@ -265,13 +269,16 @@ def coletar_amostras_simuladas(
 # --------------------------------------------------------------------------- #
 
 
-def calcular_resumo_estatistico(amostras: list[dict[str, Any]]) -> dict[str, Any]:
+def calcular_resumo_estatistico(
+    amostras: list[dict[str, Any]],
+    telas: tuple[tuple[str, str], ...] = TELAS,
+) -> dict[str, Any]:
     """Calcula estatísticas descritivas (mediana, IQR, p95) por versão e tela."""
     resumo: dict[str, Any] = {"versoes": {}}
 
     for versao in VERSOES:
         resumo["versoes"][versao] = {}
-        for tela_nome, _ in TELAS:
+        for tela_nome, _ in telas:
             valores = [
                 a["ttfb_ms"]
                 for a in amostras
@@ -301,6 +308,9 @@ def salvar_dados_piloto(
     amostras: list[dict[str, Any]],
     diretorio: Path = DIR_DADOS_PILOTO,
     meta: dict[str, Any] | None = None,
+    telas: tuple[tuple[str, str], ...] = TELAS,
+    nome_csv: str = "amostra_piloto.csv",
+    nome_json: str = "resumo_piloto.json",
 ) -> tuple[Path, Path]:
     """Grava amostras em CSV e resumo estatístico em JSON.
 
@@ -309,15 +319,15 @@ def salvar_dados_piloto(
     if not amostras:
         raise ErroColeta("Nenhuma amostra para salvar")
     diretorio.mkdir(parents=True, exist_ok=True)
-    caminho_csv = diretorio / "amostra_piloto.csv"
-    caminho_json = diretorio / "resumo_piloto.json"
+    caminho_csv = diretorio / nome_csv
+    caminho_json = diretorio / nome_json
 
     with open(caminho_csv, "w", newline="", encoding="utf-8") as f:
         escritor = csv.DictWriter(f, fieldnames=list(COLUNAS_CSV))
         escritor.writeheader()
         escritor.writerows(amostras)
 
-    resumo = calcular_resumo_estatistico(amostras)
+    resumo = calcular_resumo_estatistico(amostras, telas=telas)
     if meta:
         resumo = {"meta": meta, **resumo}
     with open(caminho_json, "w", encoding="utf-8") as f:
@@ -351,41 +361,56 @@ def resolver_alvo(
     return urls, telas
 
 
-def construir_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="Coleta piloto Lab05 - Moodle")
+def construir_parser(
+    descricao: str = "Coleta piloto Lab05 - Moodle",
+    default_repeticoes: int = 10,
+    help_simulado: str = "Gera dados sintéticos em dados/piloto_simulado/ (não são medições)",
+    help_saida: str = "Diretório de saída (default: dados/piloto, ou dados/piloto_simulado)",
+) -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(description=descricao)
     parser.add_argument(
         "--repeticoes",
         type=int,
-        default=10,
-        help="Número de repetições por tela e versão (default: 10)",
+        default=default_repeticoes,
+        help=f"Número de repetições por tela e versão (default: {default_repeticoes})",
     )
-    parser.add_argument(
-        "--simulado",
-        action="store_true",
-        help="Gera dados sintéticos em dados/piloto_simulado/ (não são medições)",
-    )
+    parser.add_argument("--simulado", action="store_true", help=help_simulado)
     adicionar_args_alvo(parser)
     parser.add_argument(
         "--sem-purga",
         action="store_true",
         help="Não purga o cache antes da coleta (a repetição 1 deixa de ser fria)",
     )
-    parser.add_argument(
-        "--saida",
-        type=Path,
-        default=None,
-        help="Diretório de saída (default: dados/piloto, ou dados/piloto_simulado)",
-    )
+    parser.add_argument("--saida", type=Path, default=None, help=help_saida)
     return parser
 
 
-def main(argv: list[str] | None = None) -> int:
-    args = construir_parser().parse_args(argv)
+def executar_cli(
+    argv: list[str] | None,
+    *,
+    parser: argparse.ArgumentParser,
+    dir_real: Path,
+    dir_simulado: Path,
+    resolver: Callable[[argparse.Namespace], tuple[dict[str, str], tuple[tuple[str, str], ...]]],
+    coletar_real: Callable[
+        [dict[str, httpx.Client], dict[str, httpx.Client], tuple[tuple[str, str], ...], int],
+        list[dict[str, Any]],
+    ],
+    coletar_simulado: Callable[[int], list[dict[str, Any]]],
+    telas_padrao: tuple[tuple[str, str], ...],
+    nome_csv: str = "amostra_piloto.csv",
+    nome_json: str = "resumo_piloto.json",
+    rotulo: str = "",
+) -> int:
+    """Fluxo compartilhado de CLI para coleta real e simulada (piloto e S02)."""
+    args = parser.parse_args(argv)
+    sufixo = f" {rotulo}" if rotulo else ""
 
     if args.simulado:
-        destino = args.saida or DIR_DADOS_SIMULADO
-        print(f"[SIMULADO] {args.repeticoes} repetições por tela (dados sintéticos)...")
-        amostras = coletar_amostras_simuladas(n_repeticoes=args.repeticoes)
+        destino = args.saida or dir_simulado
+        print(f"[SIMULADO{sufixo}] {args.repeticoes} repetições por tela (dados sintéticos)...")
+        amostras = coletar_simulado(args.repeticoes)
+        telas = telas_padrao
         meta = {
             "origem": "simulado",
             "ordem_pares": "contrabalanceada_abba",
@@ -396,8 +421,8 @@ def main(argv: list[str] | None = None) -> int:
         if not senha:
             print("Defina MOODLE_ALUNO_SENHA (ver docker/.env.example).", file=sys.stderr)
             return 2
-        destino = args.saida or DIR_DADOS_PILOTO
-        urls, telas = resolver_alvo(args)
+        destino = args.saida or dir_real
+        urls, telas = resolver(args)
 
         def novo_cliente(versao: str) -> httpx.Client:
             return httpx.Client(
@@ -414,10 +439,8 @@ def main(argv: list[str] | None = None) -> int:
             if not args.sem_purga:
                 for versao in VERSOES:
                     purgar_cache(SERVICOS[versao])
-            print(f"Coletando {args.repeticoes} repetições por tela e versão...")
-            amostras = coletar_amostras_reais(
-                clientes, publicos, telas, args.repeticoes
-            )
+            print(f"Coletando{sufixo} {args.repeticoes} repetições por tela e versão...")
+            amostras = coletar_real(clientes, publicos, telas, args.repeticoes)
         except (ErroColeta, httpx.HTTPError, subprocess.CalledProcessError) as erro:
             print(f"Coleta abortada: {erro}", file=sys.stderr)
             return 1
@@ -432,11 +455,31 @@ def main(argv: list[str] | None = None) -> int:
             "cache_purgado_antes": not args.sem_purga,
         }
 
-    caminho_csv, caminho_json = salvar_dados_piloto(amostras, destino, meta)
-    print("Coleta concluída.")
+    caminho_csv, caminho_json = salvar_dados_piloto(
+        amostras,
+        destino,
+        meta,
+        telas=telas,
+        nome_csv=nome_csv,
+        nome_json=nome_json,
+    )
+    print(f"Coleta{sufixo} concluída.")
     print(f"- Amostras: {caminho_csv} ({len(amostras)} registros)")
     print(f"- Resumo: {caminho_json}")
     return 0
+
+
+def main(argv: list[str] | None = None) -> int:
+    return executar_cli(
+        argv,
+        parser=construir_parser(),
+        dir_real=DIR_DADOS_PILOTO,
+        dir_simulado=DIR_DADOS_SIMULADO,
+        resolver=resolver_alvo,
+        coletar_real=coletar_amostras_reais,
+        coletar_simulado=lambda n: coletar_amostras_simuladas(n_repeticoes=n),
+        telas_padrao=TELAS,
+    )
 
 
 if __name__ == "__main__":
